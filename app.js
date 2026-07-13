@@ -421,7 +421,7 @@ function unlockSteps(){
   $$('.step').forEach(s => {
     const n = +s.dataset.step;
     if(n === 2) s.classList.toggle('locked', !(state.destinations||[]).length);
-    if(n >= 3) s.classList.toggle('locked', !state.trip);
+    if(n === 3) s.classList.toggle('locked', !state.trip);
   });
 }
 let _onSiteDone = false;
@@ -430,23 +430,15 @@ function openSub(t){
   Object.entries(TAB_PANELS).forEach(([k, sel]) => $(sel)?.classList.toggle('hidden', k !== t));
 }
 function gotoStep(n, sub){
-  n = Math.min(n, 5);
+  n = Math.min(n, 3);
   if(n === 2 && !(state.destinations||[]).length){ toast('Remplis d’abord le questionnaire 😉'); return; }
-  if(n >= 3 && !state.trip){ toast('Choisis d’abord un des 3 voyages 😉'); return; }
+  if(n === 3 && !state.trip){ toast('Choisis d’abord un des 3 voyages 😉'); return; }
   state.step = n; save();
   $$('.step').forEach(s => s.classList.toggle('active', +s.dataset.step === n));
   [1,2,3].forEach(i => $('#view'+i).classList.toggle('hidden', i !== n));
-  $('#view5').classList.toggle('hidden', n !== 4);   /* 4 = chat IA */
-  $('#view6').classList.toggle('hidden', n !== 5);   /* 5 = sur place */
   refreshPasses();
   window.scrollTo({top:0, behavior:'smooth'});
   if(n === 3) loadPlan();
-  if(n === 4) renderChat();
-  if(n === 5){
-    if(!_onSiteDone){ _onSiteDone = true; initOnSite(); }
-    renderSpends(); renderCountdown();
-    if(sub) openSub(sub);
-  }
 }
 $$('.step').forEach(s => s.onclick = () => { if(!s.classList.contains('locked')) gotoStep(+s.dataset.step); });
 
@@ -870,82 +862,10 @@ function renderPlan(d){
   $('#zonePlan').innerHTML = html;
   fitStats();
   refreshPasses();
-  showGlobe();
   startWx();
 }
 addEventListener('resize', () => { if($('#zonePlan')?.querySelector('.plan-stat')) fitStats(); });
 
-/* ============================================================
-   CARNET DE BORD — entrées datées + photos compressées (local)
-============================================================ */
-const LS_JOURNAL = 'acolite_journal';
-let _jrPhotos = [];
-function getJournal(){ try{ return JSON.parse(localStorage.getItem(LS_JOURNAL)) || {}; }catch(e){ return {}; } }
-function saveJournal(j){
-  try{ localStorage.setItem(LS_JOURNAL, JSON.stringify(j)); return true; }
-  catch(e){ toast('⚠️ Mémoire pleine — supprime des photos du carnet'); return false; }
-}
-/* compression : 900px max, JPEG 70 % → tient largement dans le localStorage */
-function shrinkImage(file){
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.onload = () => {
-      const MAX = 900;
-      const r = Math.min(1, MAX / Math.max(img.width, img.height));
-      const cv = document.createElement('canvas');
-      cv.width = Math.round(img.width * r); cv.height = Math.round(img.height * r);
-      const g = cv.getContext('2d');
-      if(!g) return rej(new Error('canvas'));
-      g.drawImage(img, 0, 0, cv.width, cv.height);
-      URL.revokeObjectURL(img.src);
-      res(cv.toDataURL('image/jpeg', 0.7));
-    };
-    img.onerror = () => rej(new Error('image'));
-    img.src = URL.createObjectURL(file);
-  });
-}
-function initJournal(){
-  const sel = $('#jrDay');
-  if(sel && !sel.options.length){
-    const n = state.cache.plan?.programme?.length || 10;
-    for(let i = 1; i <= n; i++){
-      const o = document.createElement('option');
-      o.value = i; o.textContent = 'Jour ' + i;
-      sel.appendChild(o);
-    }
-  }
-  renderJournal();
-}
-const _jrKey = () => `${state.trip?.nom || 'voyage'}`;
-function renderJournal(){
-  const z = $('#zoneJournal');
-  if(!z) return;
-  const all = getJournal()[_jrKey()] || [];
-  if(!all.length){ z.innerHTML = `<p class="hint">Ton carnet est vide. Note ce que tu vis, ajoute des photos — tout reste sur ton téléphone.</p>`; return; }
-  z.innerHTML = all.slice().sort((a,b) => a.jour - b.jour || a.ts - b.ts).map((e, i) => `
-    <div class="item" style="align-items:flex-start;flex-direction:column;gap:8px">
-      <div class="row" style="width:100%;justify-content:space-between;align-items:center">
-        <span class="tl-time">J${esc(String(e.jour))}</span>
-        <span class="hint">${new Date(e.ts).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}</span>
-        <span class="spend-del" data-jr="${i}">🗑</span>
-      </div>
-      ${e.texte ? `<p style="font-weight:600;font-size:.9rem;white-space:pre-wrap">${esc(e.texte)}</p>` : ''}
-      ${(e.photos||[]).length ? `<div class="row" style="gap:6px;flex-wrap:wrap">${e.photos.map(p =>
-        `<img src="${p}" alt="" style="width:88px;height:88px;object-fit:cover;border:3px solid var(--stroke);box-shadow:3px 3px 0 var(--stroke)">`).join('')}</div>` : ''}
-    </div>`).join('');
-}
-document.addEventListener('change', async e => {
-  if(e.target.id !== 'jrPhotos') return;
-  const files = [...e.target.files].slice(0, 4);
-  _jrPhotos = [];
-  $('#jrPreview').innerHTML = `<p class="hint">Compression…</p>`;
-  for(const f of files){
-    try{ _jrPhotos.push(await shrinkImage(f)); }catch(err){}
-  }
-  $('#jrPreview').innerHTML = _jrPhotos.map(p =>
-    `<img src="${p}" alt="" style="width:60px;height:60px;object-fit:cover;border:3px solid var(--stroke)">`).join('')
-    || `<p class="hint">Aucune photo lisible.</p>`;
-});
 document.addEventListener('click', e => {
   if(e.target.id === 'btnJournal'){
     const txt = $('#jrText').value.trim();
@@ -955,8 +875,6 @@ document.addEventListener('click', e => {
     j[k] = j[k] || [];
     j[k].push({ jour: +$('#jrDay').value || 1, texte: txt.slice(0, 1200), photos: _jrPhotos, ts: Date.now() });
     if(saveJournal(j)){
-      $('#jrText').value = ''; _jrPhotos = []; $('#jrPreview').innerHTML = '';
-      $('#jrPhotos').value = '';
       renderJournal();
       toast('📓 Souvenir enregistré');
     }
@@ -973,92 +891,6 @@ document.addEventListener('click', e => {
   }
 });
 
-/* ============================================================
-   DOCUMENTS & FAITS PAYS — REST Countries (gratuit, sans clé)
-============================================================ */
-const LS_DOCS = 'acolite_docs';
-const UE = ['FR','DE','IT','ES','PT','BE','NL','LU','AT','IE','FI','SE','DK','PL','CZ','SK','HU','SI','HR','RO','BG','GR','EE','LV','LT','MT','CY'];
-const SCHENGEN_EXTRA = ['CH','NO','IS','LI'];
-
-async function loadDocs(){
-  const t = state.trip;
-  if(!t || !$('#zoneDocs')) return;
-  const cc = COUNTRY_CC[String(t.pays || '').toLowerCase()];
-  const inUE = cc && UE.includes(cc);
-  const inSchengen = inUE || (cc && SCHENGEN_EXTRA.includes(cc));
-
-  /* faits réels sur le pays */
-  let facts = state.cache._facts;
-  if(!facts && cc){
-    try{
-      const r = await fetch(`https://restcountries.com/v3.1/alpha/${cc}?fields=name,currencies,languages,idd,car,timezones,capital`).then(x => x.ok ? x.json() : null);
-      if(r){
-        const cur = Object.values(r.currencies || {})[0];
-        facts = {
-          monnaie: cur ? `${cur.name} (${cur.symbol || ''})` : null,
-          langues: Object.values(r.languages || {}).join(', '),
-          tel: r.idd?.root ? r.idd.root + (r.idd.suffixes?.[0] || '') : null,
-          conduite: r.car?.side === 'left' ? 'à gauche 🇬🇧' : 'à droite',
-          fuseau: (r.timezones || [])[0],
-          capitale: (r.capital || [])[0]
-        };
-        state.cache._facts = facts; save();
-      }
-    }catch(e){}
-  }
-  if(facts){
-    $('#zoneFacts').innerHTML = `<p class="hint">🌍 <strong>${esc(t.pays)}</strong> · monnaie : ${esc(facts.monnaie || '?')} · langue(s) : ${esc(facts.langues || '?')} · indicatif ${esc(facts.tel || '?')} · on conduit ${esc(facts.conduite)}${facts.fuseau ? ' · fuseau ' + esc(facts.fuseau) : ''} <em>(données officielles)</em></p>`;
-  }
-
-  /* checklist documents adaptée à la destination */
-  const docs = [
-    inSchengen
-      ? { k:'id', t:"Carte d'identité ou passeport valide", d:'Espace Schengen : la CNI suffit pour un Français.' }
-      : { k:'id', t:'Passeport valide', d:'Hors Schengen : passeport souvent exigé valable 6 mois après le retour.' },
-    !inUE && cc ? { k:'visa', t:'Visa / autorisation de voyage', d:'Vérifie sur France Diplomatie si un visa ou une autorisation (type ESTA/eTA) est nécessaire.' } : null,
-    inUE ? { k:'ceam', t:'Carte Européenne d\'Assurance Maladie (CEAM)', d:'Gratuite sur ameli.fr, à demander 2 semaines avant. Elle couvre les soins dans l\'UE.' }
-         : { k:'assur', t:'Assurance voyage / rapatriement', d:'Indispensable hors UE : vérifie ce que couvre déjà ta carte bancaire.' },
-    { k:'resa', t:'Billets et réservations (papier + téléphone)', d:'Garde une copie hors-ligne : le réseau n\'est pas garanti à l\'arrivée.' },
-    { k:'copie', t:'Photos de tes papiers (cloud + papier)', d:'En cas de perte ou de vol, ça sauve le voyage.' },
-    { k:'cb', t:'Moyens de paiement + banque prévenue', d:'Préviens ta banque du voyage et emporte une 2e carte, rangée ailleurs.' },
-    facts?.conduite?.includes('gauche') ? { k:'permis', t:'Permis de conduire (conduite à gauche !)', d:'Si tu loues une voiture : permis international parfois requis.' } : null
-  ].filter(Boolean);
-
-  let done;
-  try{ done = JSON.parse(localStorage.getItem(LS_DOCS)) || {}; }catch(e){ done = {}; }
-  const key = t.nom;
-  const mine = done[key] || {};
-  $('#zoneDocs').innerHTML = docs.map(x => `
-    <div class="check ${mine[x.k] ? 'done' : ''}" data-doc="${esc(x.k)}" style="align-items:flex-start">
-      <span class="box">${mine[x.k] ? '✔' : ''}</span>
-      <div>
-        <p style="font-weight:800;font-size:.88rem">${esc(x.t)}</p>
-        <p class="hint" style="margin:2px 0 0">${esc(x.d)}</p>
-      </div>
-    </div>`).join('');
-  updateDocProg();
-}
-function updateDocProg(){
-  const tot = $$('#zoneDocs .check').length;
-  const ok = $$('#zoneDocs .check.done').length;
-  const bar = $('#docProg');
-  if(bar) bar.style.width = tot ? Math.round(ok / tot * 100) + '%' : '0%';
-  if(tot && ok === tot) toast('📄 Tous tes papiers sont prêts !');
-}
-document.addEventListener('click', e => {
-  const el = e.target.closest('[data-doc]');
-  if(!el) return;
-  let done;
-  try{ done = JSON.parse(localStorage.getItem(LS_DOCS)) || {}; }catch(err){ done = {}; }
-  const key = state.trip?.nom || '?';
-  done[key] = done[key] || {};
-  const k = el.dataset.doc;
-  done[key][k] = !done[key][k];
-  localStorage.setItem(LS_DOCS, JSON.stringify(done));
-  el.classList.toggle('done', done[key][k]);
-  el.querySelector('.box').textContent = done[key][k] ? '✔' : '';
-  updateDocProg();
-});
 
 /* ============================================================
    ALERTE PRIX — mémorise le prix du vol et signale les baisses
@@ -1098,137 +930,6 @@ function trackPrice(prix, source){
   }
 }
 
-/* ============================================================
-   CHAT — conversation avec Acolite (onglet 4)
-   Il connaît le voyage, le budget, le programme, la météo.
-============================================================ */
-const LS_CHAT = 'acolite_chat';
-function getChat(){ try{ return JSON.parse(localStorage.getItem(LS_CHAT)) || {}; }catch(e){ return {}; } }
-function chatKey(){ return state.trip?.nom || 'general'; }
-function chatHist(){ return getChat()[chatKey()] || []; }
-function chatPush(role, text){
-  const all = getChat();
-  const k = chatKey();
-  all[k] = [...(all[k] || []), { role, text, ts: Date.now() }].slice(-40);
-  try{ localStorage.setItem(LS_CHAT, JSON.stringify(all)); }catch(e){}
-}
-
-const CHAT_SUGG = [
-  "Il pleut, que faire aujourd'hui ?",
-  "Où manger pas cher près de mon logement ?",
-  "Comment aller au centre depuis l'aéroport ?",
-  "Un truc à faire ce soir ?",
-  "Combien prévoir par jour sur place ?",
-  "Quelles arnaques éviter ?",
-  "Comment dire bonjour dans la langue locale ?"
-];
-
-function renderChat(){
-  const log = $('#chatLog');
-  if(!log) return;
-  const h = chatHist();
-  if(!h.length){
-    log.innerHTML = `<div class="msg ai"><span class="who">Acolite</span>${
-      state.trip
-        ? `Salut ${esc(getUser()?.pseudo || '')} ! Je connais ton voyage à <strong>${esc(state.trip.nom)}</strong> — le programme, le budget, la météo, ton quartier. Demande-moi ce que tu veux, je réponds avec ton contexte.`
-        : `Salut ! Choisis d'abord un voyage dans l'onglet 2, et je pourrai te répondre avec tout le contexte (programme, budget, météo…). En attendant, tu peux quand même me poser des questions de voyage.`
-    }</div>`;
-  } else {
-    log.innerHTML = h.map(m => `<div class="msg ${m.role === 'me' ? 'me' : 'ai'}">
-      <span class="who">${m.role === 'me' ? (getUser()?.pseudo || 'Moi') : 'Acolite'}</span>${esc(m.text)}</div>`).join('');
-  }
-  log.scrollTop = log.scrollHeight;
-
-  const ctx = $('#chatCtx');
-  if(ctx){
-    const p = state.cache.plan;
-    ctx.textContent = state.trip
-      ? `${state.trip.nom}${p?.logement?.quartier ? ' · ' + p.logement.quartier : ''}${p?.budget?.total ? ' · ' + p.budget.total + ' €/pers' : ''}`
-      : 'Aucun voyage sélectionné';
-  }
-  const sg = $('#chatSugg');
-  if(sg && !sg.children.length){
-    sg.innerHTML = CHAT_SUGG.map(q => `<div class="chip chatq">${esc(q)}</div>`).join('');
-  }
-}
-
-async function chatSend(text){
-  text = String(text || '').trim().slice(0, 500);
-  if(!text) return;
-  const log = $('#chatLog');
-  chatPush('me', text);
-  renderChat();
-  $('#chatIn').value = '';
-  $('#chatIn').style.height = 'auto';
-
-  const th = document.createElement('div');
-  th.className = 'msg ai think';
-  th.innerHTML = `<span class="who">Acolite</span><span class="typing"><i></i><i></i><i></i></span>`;
-  log.appendChild(th);
-  log.scrollTop = log.scrollHeight;
-
-  const p = state.prefs || {}, plan = state.cache.plan || {}, R = state.cache._real || {};
-  const d = stayDates();
-  const now = new Date();
-  const dep = d ? new Date(d.in) : null;
-  const jour = dep && now >= dep ? Math.ceil((now - dep) / 86400000) : null;
-  const depense = (state.spends || []).reduce((a, x) => a + x.amount, 0);
-  /* les 6 derniers échanges pour garder le fil de la conversation */
-  const fil = chatHist().slice(-7, -1).map(m => `${m.role === 'me' ? 'Voyageur' : 'Toi'} : ${m.text}`).join('\n');
-
-  try{
-    const r = await gemini(`Tu es Acolite, le copilote de voyage de ce voyageur. Tu discutes avec lui dans un chat.
-Réponds en français, de façon CONVERSATIONNELLE et courte (4 phrases max, pas de liste à rallonge sauf si on te demande une liste). Sois concret et utile, jamais creux.
-
-${state.trip ? `CONTEXTE DU VOYAGE — sers-t'en vraiment :
-- Destination : ${state.trip.nom}, ${state.trip.pays}
-- Date et heure : ${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}
-${jour ? `- Jour ${jour} du séjour (il est SUR PLACE)` : d ? `- Départ prévu le ${d.in}` : ''}
-- Voyageurs : ${p.adults || 2} adulte(s)${p.kids ? ` + ${p.kids} enfant(s)` : ''}
-${plan.logement?.quartier ? `- Logement : ${plan.logement.type || ''} dans le quartier ${plan.logement.quartier}` : ''}
-${plan.budget?.total ? `- Budget prévu : ${plan.budget.total} €/personne · déjà dépensé : ${depense.toFixed(0)} €` : ''}
-${plan.programme?.length ? `- Programme : ${plan.programme.map(x => `J${x.jour} ${x.resume}`).join(' | ')}` : ''}
-${R.meteo ? `- Météo réelle : ${R.meteo}` : ''}
-${R.feries ? `- Jours fériés pendant le séjour : ${R.feries}` : ''}
-${state.trip.langue ? `- Langue locale : ${state.trip.langue}` : ''}` : "Le voyageur n'a pas encore choisi de destination."}
-
-RÈGLES : uniquement des lieux qui EXISTENT VRAIMENT (dans le doute, reste générique). Prix réalistes. Tiens compte de l'heure (ne propose pas un musée fermé). Ne répète pas le contexte, réponds directement.
-
-${fil ? `CONVERSATION EN COURS :\n${fil}\n` : ''}
-NOUVEAU MESSAGE DU VOYAGEUR : ${text}`, false, 800, false, 0.75);
-
-    const txt = typeof r === 'string' ? r : (r?.texte || r?.reponse || JSON.stringify(r));
-    th.remove();
-    chatPush('ai', String(txt).trim());
-    renderChat();
-  }catch(e){
-    th.remove();
-    chatPush('ai', `Je n'ai pas réussi à répondre (${e.message}). Réessaie dans un instant.`);
-    renderChat();
-  }
-}
-
-document.addEventListener('click', e => {
-  if(e.target.closest('#chatSend')){ chatSend($('#chatIn').value); return; }
-  const q = e.target.closest('.chip.chatq');
-  if(q){ chatSend(q.textContent); return; }
-  if(e.target.closest('#chatClear')){
-    if(!confirm('Effacer toute la conversation ?')) return;
-    const all = getChat();
-    delete all[chatKey()];
-    localStorage.setItem(LS_CHAT, JSON.stringify(all));
-    renderChat();
-  }
-});
-document.addEventListener('keydown', e => {
-  if(e.target.id !== 'chatIn') return;
-  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); chatSend(e.target.value); }
-});
-document.addEventListener('input', e => {
-  if(e.target.id !== 'chatIn') return;
-  e.target.style.height = 'auto';
-  e.target.style.height = Math.min(110, e.target.scrollHeight) + 'px';
-});
 
 /* --- PLAN B : régénère UNE seule journée (sans tout refaire) --- */
 async function planB(jour){
@@ -1274,33 +975,6 @@ document.addEventListener('click', e => {
   if(e.target.closest('[data-changedest]')) changeDest();
 });
 
-/* --- Compte à rebours + météo qui se précise --- */
-function renderCountdown(){
-  const z = $('#zoneCountdown'), card = $('#cdCard');
-  if(!z || !card) return;
-  const d = stayDates(), t = state.trip;
-  if(!d || !t){ card.style.display = 'none'; return; }
-  const dep = new Date(d.in + 'T00:00:00'), fin = new Date(d.out + 'T23:59:59'), now = new Date();
-  const jours = Math.ceil((dep - now) / 86400000);
-  const m = state.cache._real?.mNums;
-  const fiable = jours <= 7 && jours >= 0;
-  let titre, sous;
-  if(jours > 0){ titre = `J-${jours}`; sous = `avant ${t.nom} ${t.drapeau || ''}`; }
-  else if(now <= fin){
-    const nDays = Math.max(1, Math.round((fin - dep) / 86400000));
-    const j = Math.min(nDays, Math.ceil((now - dep) / 86400000));
-    titre = `JOUR ${j}`; sous = `sur ${nDays} à ${t.nom} — profite ! 🎉`;
-  } else { titre = '✈️ Terminé'; sous = `${t.nom}, c'était bien ?`; }
-  card.style.display = 'block';
-  z.innerHTML = `
-    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-      <div style="font-family:'Sora';font-weight:900;font-size:2.1rem;line-height:1;background:var(--primary);border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);padding:10px 14px">${esc(titre)}</div>
-      <div style="flex:1;min-width:150px">
-        <p style="font-weight:800;font-size:.95rem;margin:0">${esc(sous)}</p>
-        ${m ? `<p class="hint" style="margin:4px 0 0">🌡 ${m.min}–${m.max}°C · pluie ${m.rain}% — ${fiable ? '<strong>prévision fiable</strong> (moins de 7 jours)' : 'estimation d\'après le climat du mois, elle se précisera à l\'approche du départ'}</p>` : ''}
-      </div>
-    </div>`;
-}
 
 /* --- Pop-up Questions : réponses obligatoires avant le voyage final --- */
 let _qsList = [];
@@ -1884,16 +1558,6 @@ function renderStay(d){
 /* ============================================================
    ÉTAPE 4 — SUR PLACE
 ============================================================ */
-function initOnSite(){
-  const sel = $('#itiDay');
-  if(!sel.options.length){
-    for(let i=1;i<=14;i++){ const o=document.createElement('option'); o.value=i; o.textContent='Jour '+i; sel.appendChild(o); }
-  }
-  setMap(`${state.trip.nom}, ${state.trip.pays}`);
-  loadFood(); loadShop(); loadSpec(); loadBag(); loadTalk(); loadBudget(); loadInfo();
-  loadAct(); loadTools();
-  renderSpends(); initNote(); renderResas(); initJournal(); renderCountdown(); loadDocs();
-}
 
 function setMap(q){
   $('#mapFrame').src = `https://maps.google.com/maps?q=${encodeURIComponent(q)}&hl=fr&z=14&output=embed`;
@@ -2610,7 +2274,7 @@ Réponds UNIQUEMENT en JSON : {"local":"la traduction","pron":"prononciation pho
     $('#zoneTr').innerHTML = `<div class="phrase"><div class="fr">${esc(q)}</div><div class="loc">${esc(data.local)}</div><div class="pron">🔊 ${esc(data.pron)}</div></div>`;
   }catch(e){ if(e.message!=='NO_KEY') $('#zoneTr').innerHTML = errHTML('Traduction impossible.'); }
 };
-$('#trInp').addEventListener('keydown', e => { if(e.key==='Enter') $('#btnTr').click(); });
+const _trI = $('#trInp'); if(_trI) _trI.addEventListener('keydown', e => { if(e.key==='Enter') $('#btnTr')?.click(); });
 
 // --- Compte à rebours ---
 let countT;
@@ -2974,117 +2638,6 @@ window.addEventListener('unhandledrejection', e => {
   const now = Date.now();
   if(now - _lastErrToast > 8000){ _lastErrToast = now; try{ toast("⚠️ Une action a échoué — réessaie"); }catch(err){} }
 });
-
-/* ============================================================
-   CARTE DU TRAJET — 2D, lisible, néo-brutaliste (canvas maison)
-   L'ancien globe 3D était illisible : remplacé par une carte
-   du monde en projection, avec l'arc de vol animé.
-============================================================ */
-let _mapAnim = null;
-async function showGlobe(){
-  const card = $('#globeCard'), cv = $('#globeCv');
-  if(!card || !cv || !state.trip) return;
-  try{
-    let G = state.cache._globe;
-    if(!G || G.key !== state.trip.nom){
-      const [a, b] = await Promise.all([ geoPlace(state.prefs?.from || 'Paris'), geoPlace(state.trip.nom) ]);
-      if(!a || !b) { card.style.display = 'none'; return; }
-      G = { key: state.trip.nom, a:{lat:+a.latitude, lon:+a.longitude}, b:{lat:+b.latitude, lon:+b.longitude} };
-      state.cache._globe = G; save();
-    }
-    card.style.display = 'block';
-    const W = card.clientWidth || 340, H = 200;
-    const dpr = Math.min(devicePixelRatio || 1, 2);
-    cv.width = W * dpr; cv.height = H * dpr;
-    cv.style.width = '100%'; cv.style.height = H + 'px';
-    const g = cv.getContext('2d');
-    if(!g){ card.style.display = 'none'; return; }
-    g.scale(dpr, dpr);
-
-    const dark = document.documentElement.dataset.theme === 'dark';
-    const INK = dark ? '#F4F3EF' : '#101010';
-    const BG  = dark ? '#16161F' : '#FFFFFF';
-    const Y   = '#FFE600';
-
-    /* on cadre sur les 2 villes, avec de la marge */
-    const pad = 0.35;
-    const latSpan = Math.max(14, Math.abs(G.a.lat - G.b.lat) * (1 + pad * 2));
-    const lonSpan = Math.max(20, Math.abs(G.a.lon - G.b.lon) * (1 + pad * 2));
-    const cLat = (G.a.lat + G.b.lat) / 2, cLon = (G.a.lon + G.b.lon) / 2;
-    const span = Math.max(latSpan, lonSpan * H / W);
-    const proj = p => ({
-      x: W/2 + (p.lon - cLon) / (span * W / H) * W,
-      y: H/2 - (p.lat - cLat) / span * H
-    });
-    const A = proj(G.a), B = proj(G.b);
-    /* arc bombé entre les deux */
-    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
-    const dx = B.x - A.x, dy = B.y - A.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const CX = mx - dy / len * len * 0.28, CY = my + dx / len * len * 0.28;
-    const pt = t => ({
-      x: (1-t)*(1-t)*A.x + 2*(1-t)*t*CX + t*t*B.x,
-      y: (1-t)*(1-t)*A.y + 2*(1-t)*t*CY + t*t*B.y
-    });
-
-    if(_mapAnim) cancelAnimationFrame(_mapAnim);
-    let f = 0;
-    (function tick(){
-      if(!cv.isConnected) return;
-      f++;
-      const prog = Math.min(1, f / 90);
-      g.fillStyle = BG; g.fillRect(0, 0, W, H);
-      /* grille de méridiens : repère discret, pas de sphère bizarre */
-      g.strokeStyle = INK; g.globalAlpha = .12; g.lineWidth = 1;
-      for(let x = 0; x < W; x += 28){ g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
-      for(let y = 0; y < H; y += 28){ g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
-      g.globalAlpha = 1;
-      /* arc de vol, tracé progressivement */
-      g.strokeStyle = Y; g.lineWidth = 5; g.lineCap = 'round';
-      g.beginPath();
-      for(let t = 0; t <= prog; t += 0.01){ const p = pt(t); t === 0 ? g.moveTo(p.x, p.y) : g.lineTo(p.x, p.y); }
-      g.stroke();
-      g.strokeStyle = INK; g.lineWidth = 1.5; g.setLineDash([5, 5]); g.globalAlpha = .45;
-      g.beginPath();
-      for(let t = prog; t <= 1; t += 0.01){ const p = pt(t); t === prog ? g.moveTo(p.x, p.y) : g.lineTo(p.x, p.y); }
-      g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
-      /* avion sur l'arc */
-      const P = pt(prog), P2 = pt(Math.min(1, prog + 0.02));
-      g.save();
-      g.translate(P.x, P.y);
-      g.rotate(Math.atan2(P2.y - P.y, P2.x - P.x) + Math.PI / 2);
-      g.fillStyle = '#FF6B00'; g.strokeStyle = INK; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(0, -9); g.lineTo(7, 7); g.lineTo(0, 3); g.lineTo(-7, 7); g.closePath();
-      g.fill(); g.stroke();
-      g.restore();
-      /* les 2 villes : carrés durs + étiquettes */
-      const dot = (p, fill, label, align) => {
-        g.fillStyle = INK; g.fillRect(p.x - 6 + 2, p.y - 6 + 2, 12, 12);
-        g.fillStyle = fill; g.fillRect(p.x - 6, p.y - 6, 12, 12);
-        g.strokeStyle = INK; g.lineWidth = 2.5; g.strokeRect(p.x - 6, p.y - 6, 12, 12);
-        g.font = '800 11px Inter, Arial';
-        g.textAlign = align;
-        const tw = g.measureText(label).width;
-        const lx = align === 'left' ? p.x + 12 : p.x - 12;
-        g.fillStyle = BG;
-        g.fillRect(align === 'left' ? lx - 3 : lx - tw - 3, p.y - 8, tw + 6, 16);
-        g.strokeStyle = INK; g.lineWidth = 1.5;
-        g.strokeRect(align === 'left' ? lx - 3 : lx - tw - 3, p.y - 8, tw + 6, 16);
-        g.fillStyle = INK;
-        g.fillText(label, lx, p.y + 4);
-      };
-      const rightward = B.x >= A.x;
-      dot(A, BG, (state.prefs?.from || 'Départ').slice(0, 14), rightward ? 'right' : 'left');
-      dot(B, Y, (state.trip.nom || '').slice(0, 14), rightward ? 'left' : 'right');
-      /* distance réelle */
-      if(state.cache._real?.dist){
-        g.font = '900 11px Sora, Arial'; g.textAlign = 'center'; g.fillStyle = INK;
-        g.fillText(`${state.cache._real.dist} KM`, W / 2, H - 10);
-      }
-      if(prog < 1) _mapAnim = requestAnimationFrame(tick);
-    })();
-  }catch(e){ card.style.display = 'none'; }
-}
 
 /* --- Voyage <-> QR : encodage compact + import --- */
 function tripPayload(){
