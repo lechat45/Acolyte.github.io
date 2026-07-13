@@ -137,7 +137,10 @@
 
   <!-- ================= CATÉGORIE : CARTE ================= -->
   <section class="hidden" id="catMap">
-    <div class="maproutes" id="zoneProjRoutes"></div>
+    <div class="mapbar">
+      <select id="mapDay" aria-label="Choisir le trajet à afficher"></select>
+      <a class="rt" id="projOpen" href="#" target="_blank" rel="noopener">↗ Maps</a>
+    </div>
     <iframe id="projMap" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
   </section>
 
@@ -305,6 +308,15 @@
     </div>
     <div id="priceAlert" style="display:none;margin-bottom:10px"></div>
     <div id="zoneTransport"><div class="loader"><div class="orbit"></div>Analyse du meilleur trajet…</div></div>
+  </div>
+</div>
+
+<!-- ===== Barre "l'IA cherche" : remplace la nav du bas pendant la réflexion ===== -->
+<div class="searchbar" id="searchBar" hidden>
+  <div class="sb-mark"><span>A</span></div>
+  <div class="sb-body">
+    <div class="sb-text" id="sbText">Acolite explore le monde…</div>
+    <div class="sb-track"><i></i></div>
   </div>
 </div>
 
