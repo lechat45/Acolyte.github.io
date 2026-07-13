@@ -577,12 +577,17 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 ============================================================ */
 .catnav{
   position:fixed;left:0;right:0;bottom:0;z-index:38;
-  display:flex;width:100%;
-  background:var(--secondary);border-top:3px solid var(--stroke);
+  display:grid;grid-template-columns:repeat(3, 1fr);   /* 3 boutons EXACTEMENT égaux */
+  width:100%;
+  background:var(--secondary);
+  border-top:3px solid var(--stroke);
+  border-radius:18px 18px 0 0;                          /* coins du haut arrondis */
   padding-bottom:env(safe-area-inset-bottom);
+  overflow:hidden;                                      /* l'arrondi rogne les boutons */
+  box-shadow:0 -4px 0 rgba(0,0,0,.06);
 }
 .catnav button{
-  flex:1;border:none;border-right:3px solid var(--stroke);background:var(--secondary);
+  width:100%;border:none;border-right:3px solid var(--stroke);background:var(--secondary);
   font-family:'Sora',sans-serif;font-weight:900;font-size:.7rem;text-transform:uppercase;
   padding:9px 4px 11px;cursor:pointer;color:var(--txt);display:flex;flex-direction:column;
   align-items:center;gap:2px;transition:background .1s ease;
@@ -713,10 +718,11 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 .dest-facts{
   border-top:3px solid var(--stroke);
   margin-top:10px;padding-top:10px;
-  display:grid;gap:7px;
+  display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;
 }
+@media(max-width:400px){ .dest-facts{grid-template-columns:1fr} }
 .dest-facts .fact{
-  display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  display:flex;flex-direction:column;gap:2px;   /* libellé AU-DESSUS : plus de colonne étranglée */
   font-size:.82rem;
 }
 .dest-facts .fk{
@@ -724,8 +730,9 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   font-family:'Sora',sans-serif;font-size:.72rem;text-transform:uppercase;letter-spacing:.02em;
 }
 .dest-facts .fv{
-  font-weight:600;text-align:right;color:var(--txt-2);
-  word-break:break-word;
+  font-weight:600;color:var(--txt);
+  line-height:1.35;
+  overflow-wrap:break-word;word-break:normal;hyphens:none;
 }
 
 /* ============================================================
@@ -829,4 +836,70 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   .pass-tear{justify-content:center}
   .pass-acts{justify-content:center;min-width:0}
   .barcode{display:none}
+}
+
+/* ===== Barre "l'IA cherche" (remplace la nav pendant la réflexion) ===== */
+.searchbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:39;
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  background:var(--primary);
+  border-top:3px solid var(--stroke);
+  border-radius:18px 18px 0 0;
+  animation:sbIn .3s cubic-bezier(.2,1.3,.4,1) both;
+}
+.searchbar[hidden]{display:none}
+.sb-mark{
+  width:38px;height:38px;flex-shrink:0;display:grid;place-items:center;
+  background:var(--secondary);border:3px solid var(--stroke);box-shadow:2px 2px 0 var(--stroke);
+  animation:sbPulse 1.1s ease-in-out infinite;
+}
+.sb-mark span{font-family:'Sora',sans-serif;font-weight:900;font-size:1.15rem;color:var(--txt);line-height:1}
+.sb-body{flex:1;min-width:0}
+.sb-text{
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.72rem;text-transform:uppercase;
+  letter-spacing:.04em;color:#101010;margin-bottom:5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.sb-track{
+  height:10px;background:rgba(16,16,16,.14);
+  border:2px solid #101010;overflow:hidden;
+}
+.sb-track i{
+  display:block;height:100%;width:38%;
+  background:#101010;
+  animation:sbSlide 1.25s ease-in-out infinite;
+}
+@keyframes sbSlide{0%{transform:translateX(-105%)}100%{transform:translateX(275%)}}
+@keyframes sbPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12) rotate(-4deg)}}
+@keyframes sbIn{from{transform:translateY(100%)}to{transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .sb-mark,.sb-track i,.searchbar{animation:none}
+  .sb-track i{width:100%}
+}
+
+/* ===== Carte : sélecteur de trajet ===== */
+.mapbar{
+  position:absolute;top:12px;left:12px;right:12px;z-index:5;
+  display:flex;gap:8px;align-items:center;
+}
+.mapbar select{
+  flex:1;min-width:0;
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.78rem;
+  padding:11px 12px;
+  background:var(--primary);color:#101010;
+  border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);
+  cursor:pointer;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,#101010 50%),linear-gradient(135deg,#101010 50%,transparent 50%);
+  background-position:calc(100% - 18px) 50%, calc(100% - 12px) 50%;
+  background-size:6px 6px, 6px 6px;
+  background-repeat:no-repeat;
+  padding-right:34px;
+}
+.mapbar .rt{
+  flex-shrink:0;
+  background:var(--secondary);color:var(--txt);
+  border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);
+  padding:11px 12px;font-family:'Sora',sans-serif;font-weight:900;font-size:.78rem;
+  text-decoration:none;white-space:nowrap;
 }

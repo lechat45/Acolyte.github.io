@@ -294,7 +294,7 @@ async function proposeTrips(extra = '', lucky = false){
   state.prefs = prefs; save();
   const zone = $('#zoneResults');
   zone.innerHTML = `<div class="card">${loaderHTML(lucky ? "Roulette mondiale en cours… 🎲" : "Acolite explore le monde pour toi…")}</div>`;
-  toast('🔎 Acolite prépare tes propositions…');
+  searchBar(true, lucky ? 'Roulette mondiale en cours… 🎲' : 'Acolite explore le monde…');
   $('#btnGo').disabled = true; $('#btnLucky').disabled = true;
 
   const prompt = `Tu es Acolite, un expert voyage français, chaleureux et concret.
@@ -357,12 +357,18 @@ Réponds UNIQUEMENT en JSON valide, structure exacte. Commence OBLIGATOIREMENT p
     /* → Questions de précision AVANT que tu ne choisisses : la pop-up s'ouvre ici */
     const qs = (d.questions || []).filter(q => q && q.texte);
     if(qs.length && !state._qsDone) openQsPopup(qs);
+    else { $('#ovQs').classList.remove('show'); $('#zoneQs').innerHTML = ''; }
   }catch(e){
     if(e.message !== 'NO_KEY') zone.innerHTML = `<div class="card">${errHTML("Impossible de contacter Gemini. Vérifie ta clé ou ta connexion.")}</div>`;
     else zone.innerHTML = '';
   }
+  searchBar(false);
   $('#btnGo').disabled = false; $('#btnLucky').disabled = false;
 }
+
+/* "Hôtel familial ou appart-hôtel" → "Hôtel familial" ; "180-250€ par nuit" → "180-250€" */
+const shortType = s => String(s || 'logement').split(/\s*(?:\(|\bou\b|\/)/i)[0].trim().slice(0, 18) || 'logement';
+const cleanPrix = s => String(s || '').replace(/\s*(par|\/)\s*nuit/gi, '').trim();
 
 function renderDestinations(d){
   const zone = $('#zoneResults');
@@ -377,11 +383,11 @@ function renderDestinations(d){
       <h3>${esc(x.nom)}</h3><div class="country">${esc(x.pays)}</div>
       <p>${esc(x.resume)}</p>
       <div class="dest-facts">
-        <div class="fact"><span class="fk">💶 Budget total</span><span class="fv">${esc(x.budget_estime)}</span></div>
-        <div class="fact"><span class="fk">${tIco} ${esc(x.transport_conseille||'avion')}</span><span class="fv">${esc(x.transport_prix||'—')}${x.transport_duree ? ' · ' + esc(x.transport_duree) : ''}</span></div>
-        <div class="fact"><span class="fk">🏨 ${esc(String(x.logement_type||'logement').split('(')[0].trim())}</span><span class="fv">${esc(x.logement_quartier||'—')}${x.logement_prix ? ' · ' + esc(x.logement_prix) + '/nuit' : ''}</span></div>
+        <div class="fact"><span class="fk">💶 Budget</span><span class="fv">${esc(x.budget_estime)}</span></div>
+        <div class="fact"><span class="fk">${tIco} ${esc(x.transport_conseille||'avion')}</span><span class="fv">${esc(x.transport_prix||'—')}${x.transport_duree ? ` · ${esc(x.transport_duree)}` : ''}</span></div>
+        <div class="fact"><span class="fk">🏨 ${esc(shortType(x.logement_type))}</span><span class="fv">${esc(x.logement_quartier||'—')}${x.logement_prix ? ` · ${esc(cleanPrix(x.logement_prix))}/nuit` : ''}</span></div>
         <div class="fact"><span class="fk">☀️ Météo</span><span class="fv">${esc(x.meteo_periode)}</span></div>
-        <div class="fact"><span class="fk">⏱ Durée idéale</span><span class="fv">${esc(x.duree_ideale)}</span></div>
+        <div class="fact"><span class="fk">⏱ Durée</span><span class="fv">${esc(x.duree_ideale)}</span></div>
         <div class="fact"><span class="fk">🗣️ Langue</span><span class="fv">${esc(x.langue||'—')}</span></div>
       </div>
       ${(x.transport_pourquoi || x.logement_pourquoi) ? `<p class="hint" style="margin-top:8px">${x.transport_pourquoi ? '✈️ ' + esc(x.transport_pourquoi) : ''}${x.transport_pourquoi && x.logement_pourquoi ? ' · ' : ''}${x.logement_pourquoi ? '🏨 ' + esc(x.logement_pourquoi) : ''}</p>` : ''}
@@ -390,7 +396,8 @@ function renderDestinations(d){
     </div>`;
   });
   html += `</div>`;
-  const qs = (d.questions || (d.question_affinage?.texte ? [d.question_affinage] : [])).filter(q => q && q.texte);
+  /* les questions d'affinage n'apparaissent QUE dans la pop-up, et une seule fois */
+  const qs = state._qsDone ? [] : (d.questions || []).filter(q => q && q.texte);
   if(qs.length){
     html += `<div class="divider"></div>
     <h3>🎯 Précisons ton voyage</h3>
@@ -2569,7 +2576,35 @@ function switchCat(cat){
 }
 $$('.catnav button').forEach(b => b.onclick = () => switchCat(b.dataset.cat));
 
-/* --- Carte du projet : ligne de rectangles (chemins) + carte plein cadre --- */
+/* --- Barre "l'IA cherche" : remplace la nav du bas pendant la réflexion --- */
+const SB_MSG = [
+  'Acolite explore le monde…',
+  'Il compare les destinations…',
+  'Il vérifie les vols et les prix…',
+  'Il repère les bons quartiers…',
+  'Il finalise tes propositions…'
+];
+let _sbTimer = null;
+function searchBar(on, first){
+  const bar = $('#searchBar'), nav = $('.catnav');
+  if(!bar || !nav) return;
+  clearInterval(_sbTimer);
+  if(on){
+    let i = 0;
+    $('#sbText').textContent = first || SB_MSG[0];
+    bar.hidden = false;
+    nav.style.display = 'none';          /* les 3 boutons laissent la place à la barre */
+    _sbTimer = setInterval(() => {
+      i = (i + 1) % SB_MSG.length;
+      $('#sbText').textContent = SB_MSG[i];
+    }, 2200);
+  } else {
+    bar.hidden = true;
+    nav.style.display = '';
+  }
+}
+
+/* --- Carte du projet : sélecteur de trajet + carte plein cadre --- */
 function projRoute(saddr, stops, walk){
   const daddr = stops.map(encodeURIComponent).join('+to:');
   $('#projMap').src = `https://maps.google.com/maps?saddr=${encodeURIComponent(saddr)}&daddr=${daddr}${walk?'&dirflg=w':''}&hl=fr&output=embed`;
@@ -2577,10 +2612,11 @@ function projRoute(saddr, stops, walk){
 
 function buildProjectMap(){
   const t = state.trip, p = state.prefs || {}, c = state.cache;
-  const strip = $('#zoneProjRoutes');
+  const sel = $('#mapDay');
+  if(!sel) return;
   if(!t){
-    strip.innerHTML = '';
-    /* pas de voyage → carte centrée sur la position de l'utilisateur */
+    sel.innerHTML = '<option>Aucun voyage en cours</option>';
+    sel.disabled = true;
     $('#projMap').src = `https://maps.google.com/maps?q=Europe&hl=fr&z=4&output=embed`;
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(
@@ -2590,20 +2626,24 @@ function buildProjectMap(){
     }
     return;
   }
+  sel.disabled = false;
   const routes = [];
-  routes.push({ label:`${({plane:'✈️',train:'🚆',car:'🚗'})[state.mode]||'🚗'} Aller`,
+  routes.push({ label:`${({plane:'✈️',train:'🚆',car:'🚗'})[state.mode]||'✈️'} Aller — ${p.from || 'départ'} → ${t.nom}`,
                 saddr: p.from || 'Paris', stops:[`${t.nom}, ${t.pays}`], walk:false });
   const base = c.plan?.logement?.quartier ? `${c.plan.logement.quartier}, ${t.nom}` : `${t.nom}, ${t.pays}`;
-  const days = (c.fullPlan?.jours?.length)
-    ? c.fullPlan.jours.map(j => ({ jour:j.jour, lieux:(j.etapes||[]).map(e=>e.lieu) }))
-    : (c.plan?.programme||[]).map(p => ({ jour:p.jour, lieux:p.lieux||[] }));
-  days.forEach(j => {
-    const lieux = (j.lieux||[]).filter(Boolean).map(l=>`${l}, ${t.nom}`).slice(0,8);
-    if(lieux.length) routes.push({ label:`🗓️ Jour ${j.jour}`, saddr: base, stops: lieux, walk:true });
+  const days = (c.plan?.programme || []).map(x => ({ jour:x.jour, resume:x.resume, lieux:x.lieux || [] }));
+  days.forEach(x => {
+    const lieux = (x.lieux || []).filter(Boolean).map(l => `${l}, ${t.nom}`).slice(0, 8);
+    if(lieux.length){
+      routes.push({
+        label: `🗓️ Jour ${x.jour} — ${String(x.resume || '').slice(0, 30)}`,
+        saddr: base, stops: lieux, walk: true
+      });
+    }
   });
   window._projRoutes = routes;
-  strip.innerHTML = routes.map((r,i)=>`<span class="rt ${i===0?'on':''}" data-projroute="${i}">${esc(r.label)}</span>`).join('')
-    + `<a class="rt" id="projOpen" href="#" target="_blank" rel="noopener">↗ Maps</a>`;
+  sel.innerHTML = routes.map((r, i) => `<option value="${i}">${esc(r.label)}</option>`).join('');
+  sel.value = '0';
   const r0 = routes[0];
   projRoute(r0.saddr, r0.stops, r0.walk);
   updateProjOpen(r0);
@@ -2612,13 +2652,12 @@ function updateProjOpen(r){
   const a = $('#projOpen');
   if(a) a.href = 'https://www.google.com/maps/dir/' + [r.saddr, ...r.stops].map(encodeURIComponent).join('/');
 }
-document.addEventListener('click', e => {
-  const rt = e.target.closest('[data-projroute]');
-  if(!rt) return;
-  $$('#zoneProjRoutes .rt').forEach(x=>x.classList.remove('on'));
-  rt.classList.add('on');
-  const r = (window._projRoutes||[])[+rt.dataset.projroute];
-  if(r){ projRoute(r.saddr, r.stops, r.walk); updateProjOpen(r); }
+document.addEventListener('change', e => {
+  if(e.target.id !== 'mapDay') return;
+  const r = (window._projRoutes || [])[+e.target.value];
+  if(!r) return;
+  projRoute(r.saddr, r.stops, r.walk);
+  updateProjOpen(r);
 });
 
 /* --- Profil : infos + stats + paramètres --- */
