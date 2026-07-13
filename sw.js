@@ -1,6 +1,9 @@
 /* Acolite — Service Worker : app hors-ligne (coque en cache, réseau d'abord pour le HTML) */
-const CACHE = 'acolite-v1';
-const SHELL = ['./acolite.html', './config.js', './manifest.json', './icon-192.png', './icon-512.png'];
+const CACHE = 'acolite-v6';
+const SHELL = [
+  './index.html', './style.css', './app.js', './config.js', './manifest.json',
+  './icon-192.png', './icon-512.png', './icon-maskable-192.png', './icon-maskable-512.png'
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -19,7 +22,7 @@ self.addEventListener('fetch', e => {
         caches.open(CACHE).then(c => c.put(e.request, copy));
         return r;
       }).catch(() => caches.match(e.request, { ignoreSearch: true })
-        .then(m => m || caches.match('./acolite.html')))
+        .then(m => m || caches.match('./index.html')))
     );
   }
   /* APIs externes : réseau uniquement — les données de l'app vivent déjà dans localStorage */
