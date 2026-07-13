@@ -61,6 +61,9 @@ const GEM_PREFERRED = ['gemini-2.5-flash','gemini-flash-latest','gemini-2.0-flas
 
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
+/* Anti-XSS : toute donnée venue de l'IA ou d'une API passe ici avant affichage.
+   (Rôle équivalent à DOMPurify pour notre usage : on n'injecte JAMAIS de HTML tiers,
+   uniquement du texte échappé dans nos propres gabarits.) */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let state = {
@@ -106,6 +109,8 @@ const hasGroq = () => useBackend() || !!groqKey();
 
 /* --- Découverte automatique du modèle Gemini disponible sur la clé --- */
 async function resolveGemModel(key, force = false){
+  /* Réglage "Modèle" du panneau Préférences */
+  if(SET?.model && SET.model !== 'auto') return SET.model;
   if(!force){
     const cached = localStorage.getItem(LS_GEMM);
     if(cached) return cached;
@@ -250,6 +255,29 @@ async function ai(kind, prompt, expectJson = true, maxTok = 4096){
   return { data, via:'gemini' };
 }
 
+/* Squelettes : l'écran se remplit tout de suite, la perception de vitesse double */
+function skeletonCards(n = 3){
+  return Array.from({length: n}, () => `
+    <div class="sk-card">
+      <div class="sk sk-title"></div>
+      <div class="sk sk-line"></div>
+      <div class="sk sk-line short"></div>
+      <div class="sk-grid">
+        <div class="sk sk-box"></div><div class="sk sk-box"></div>
+        <div class="sk sk-box"></div><div class="sk sk-box"></div>
+      </div>
+      <div class="sk sk-btn"></div>
+    </div>`).join('');
+}
+function skeletonPlan(){
+  return `<div class="sk-grid" style="margin-bottom:14px">
+      <div class="sk sk-box tall"></div><div class="sk sk-box tall"></div>
+      <div class="sk sk-box tall"></div><div class="sk sk-box tall"></div>
+    </div>
+    <div class="sk sk-title"></div>
+    <div class="sk sk-line"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div>`;
+}
+
 function loaderHTML(msg){ return `<div class="loader"><div class="orbit"></div>${esc(msg)}</div>`; }
 function errHTML(msg){ return `<div class="err">⚠️ ${esc(msg)}</div>`; }
 function badge(via){ return via === 'groq' ? '<span class="ai-badge groq">⚡ Groq</span>' : '<span class="ai-badge gemini">✦ Gemini</span>'; }
@@ -269,7 +297,8 @@ CONTEXTE VOYAGEUR :
 - Durée : ${p.days || '?'} · Période : ${p.when || 'flexible'}
 - Budget/pers : ${p.budget || '?'} · Voyageurs : ${p.adults||2} adulte(s)${p.kids ? ' + ' + p.kids + ' enfant(s)' : ''}
 - Destination souhaitée : ${p.dest || 'libre, à proposer'}
-- Limites & conditions : ${p.free || 'aucune'}`;
+- Limites & conditions : ${p.free || 'aucune'}
+${prefsBlock()}`;
 }
 
 /* ============================================================
@@ -293,7 +322,7 @@ async function proposeTrips(extra = '', lucky = false){
   const prefs = readPrefs(extra);
   state.prefs = prefs; save();
   const zone = $('#zoneResults');
-  zone.innerHTML = `<div class="card">${loaderHTML(lucky ? "Roulette mondiale en cours… 🎲" : "Acolite explore le monde pour toi…")}</div>`;
+  zone.innerHTML = skeletonCards(3);   /* l'écran se remplit tout de suite */
   searchBar(true, lucky ? 'Roulette mondiale en cours… 🎲' : 'Acolite explore le monde…');
   $('#btnGo').disabled = true; $('#btnLucky').disabled = true;
 
@@ -396,17 +425,7 @@ function renderDestinations(d){
     </div>`;
   });
   html += `</div>`;
-  /* les questions d'affinage n'apparaissent QUE dans la pop-up, et une seule fois */
-  const qs = state._qsDone ? [] : (d.questions || []).filter(q => q && q.texte);
-  if(qs.length){
-    html += `<div class="divider"></div>
-    <h3>🎯 Précisons ton voyage</h3>
-    <p class="hint" style="margin:4px 0 10px">Réponds à une question — les propositions sont refaites en tenant compte de ta réponse.</p>`;
-    qs.forEach(q => {
-      html += `<h4 style="margin:10px 0 6px;font-family:'Sora'">${esc(q.texte)}</h4>
-      <div class="chips">${(q.options||[]).map(o=>`<div class="chip refine" data-q="${esc(q.texte)}" data-r="${esc(o)}">${esc(o)}</div>`).join('')}</div>`;
-    });
-  }
+  /* Les questions ne s'affichent QUE dans la pop-up — jamais dans la page. */
   html += `</div>`;
   zone.innerHTML = html;
 
@@ -432,6 +451,8 @@ function pushHistory(t){
 function chooseTrip(i){
   state.trip = state.destinations[i];
   pushHistory(state.trip);
+  applyVibe();
+  buzz('big');
   state.cache = {}; state.checklist = {}; state.spends = []; state.chatLog = []; state.notes = ''; state.resas = [];
   state._geo = null; state.planAnswers = []; state._qsDone = false; _onSiteDone = false;
   save();
@@ -513,6 +534,16 @@ function openSub(t){
   Object.entries(TAB_PANELS).forEach(([k, sel]) => $(sel)?.classList.toggle('hidden', k !== t));
 }
 function gotoStep(n, sub){
+  /* Transitions natives quand le navigateur sait le faire (Chrome/Safari récents) */
+  if(document.startViewTransition && SET?.motion !== false && !_inTransition){
+    _inTransition = true;
+    document.startViewTransition(() => { _inTransition = false; _gotoStep(n, sub); });
+    return;
+  }
+  _gotoStep(n, sub);
+}
+let _inTransition = false;
+function _gotoStep(n, sub){
   n = Math.min(n, 3);
   if(n === 2 && !(state.destinations||[]).length){ toast('Remplis d’abord le questionnaire 😉'); return; }
   if(n === 3 && !state.trip){ toast('Choisis d’abord un des 3 voyages 😉'); return; }
@@ -562,6 +593,7 @@ const _avg = arr => Math.round(arr.reduce((x,y)=>x+y,0) / arr.length);
 const COUNTRY_CC = { 'france':'FR','italie':'IT','espagne':'ES','portugal':'PT','allemagne':'DE','autriche':'AT','belgique':'BE','pays-bas':'NL','suisse':'CH','royaume-uni':'GB','angleterre':'GB','irlande':'IE','écosse':'GB','grèce':'GR','croatie':'HR','slovénie':'SI','hongrie':'HU','pologne':'PL','tchéquie':'CZ','république tchèque':'CZ','slovaquie':'SK','roumanie':'RO','bulgarie':'BG','suède':'SE','norvège':'NO','danemark':'DK','finlande':'FI','islande':'IS','estonie':'EE','lettonie':'LV','lituanie':'LT','luxembourg':'LU','malte':'MT','chypre':'CY','états-unis':'US','etats-unis':'US','canada':'CA','mexique':'MX','brésil':'BR','argentine':'AR','chili':'CL','japon':'JP','corée du sud':'KR','chine':'CN','inde':'IN','thaïlande':'TH','vietnam':'VN','indonésie':'ID','malaisie':'MY','singapour':'SG','australie':'AU','nouvelle-zélande':'NZ','maroc':'MA','tunisie':'TN','égypte':'EG','afrique du sud':'ZA','turquie':'TR','albanie':'AL','serbie':'RS','monténégro':'ME','bosnie-herzégovine':'BA','macédoine du nord':'MK','ukraine':'UA','géorgie':'GE','arménie':'AM' };
 
 async function realData(){
+  if(SET?.reels === false) return '';   /* le voyageur a désactivé les données réelles */
   const t = state.trip; if(!t) return '';
   const key = t.nom + ',' + t.pays;
   let R = state.cache._real;
@@ -652,7 +684,10 @@ async function realData(){
     state.cache._real = R; save();
   }
   const L = [];
-  if(R.dist) L.push(`Distance ${state.prefs?.from || 'départ'} → ${t.nom} : environ ${R.dist} km à vol d'oiseau (calcul réel)`);
+  if(R.dist){
+    L.push(`Distance ${state.prefs?.from || 'départ'} → ${t.nom} : environ ${R.dist} km à vol d'oiseau (calcul réel)`);
+    state.cache[`dist_${t.nom}`] = R.dist; save();   /* alimente le passeport */
+  }
   if(R.meteo) L.push(`Météo réelle à ${t.nom} en ce moment : ${R.meteo}`);
   if(state.cache.realPrice) L.push(`Prix de vol réel constaté par nos moteurs : ${state.cache.realPrice}`);
   if(R.train) L.push(`Trajet en TRAIN réel ${state.prefs?.from || 'départ'} → ${t.nom} : ${R.train}`);
@@ -687,7 +722,7 @@ Réponds en JSON : {"ok":true} si tout est cohérent, sinon {"ok":false,"problem
 async function loadPlan(force = false){
   const zone = $('#zonePlan');
   if(state.cache.plan && !force){ renderPlan(state.cache.plan); syncModeFromPlan(state.cache.plan); return; }
-  zone.innerHTML = loaderHTML('Acolite organise ton voyage de A à Z…');
+  zone.innerHTML = skeletonPlan();
   const t = state.trip;
   const answers = (state.planAnswers||[]).join(' · ');
   const realCtx = await realData();
@@ -730,8 +765,9 @@ Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (ra
 }
 Le programme couvre toute la durée (${state.prefs.days}), 1 ligne par jour.`;
   try{
-    let d = await gemini(prompt, true, 8192, false, 0.45);
-    d = await reviewPlan(d, prompt);
+    const tok = { court: 4096, normal: 8192, long: 12288 }[SET?.detail || 'normal'];
+    let d = await gemini(prompt, true, tok, false, 0.45);
+    if(SET?.verif !== false) d = await reviewPlan(d, prompt);   /* relecture croisée : réglable */
     state.cache.plan = d; save();
     renderPlan(d);
     syncModeFromPlan(d);
@@ -2552,7 +2588,7 @@ const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
   toast('Re-bonjour ' + email.split('@')[0] + ' 👋');
 };
 
-function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); }
+function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); renderPassport(); }
 function requireAuth(){
   const u = getUser();
   if(u && u.verified && localStorage.getItem(LS_AUTH) === '1'){ enterApp(); return; }
@@ -2572,9 +2608,493 @@ function switchCat(cat){
   $('#catProfile').classList.toggle('hidden', cat !== 'profile');
   window.scrollTo({top:0});
   if(cat === 'map') buildProjectMap();
-  if(cat === 'profile') renderProfile();
+  if(cat === 'profile'){ renderProfile(); renderSettings(); renderPassport(); }
 }
 $$('.catnav button').forEach(b => b.onclick = () => switchCat(b.dataset.cat));
+
+/* ============================================================
+   MONÉTISATION — structure prête, MASQUÉE (rien ne s'affiche)
+   ------------------------------------------------------------
+   Le jour où tu ouvres l'abonnement : passe FLAGS.billing à true.
+   Tant que c'est false, AUCUN élément payant n'apparaît et
+   AUCUNE fonction n'est bloquée. Le code est prêt, c'est tout.
+============================================================ */
+const FLAGS = {
+  billing: false,        /* ← passe à true pour activer l'abonnement */
+  showUpsell: false,     /* bannières "Passer à Plus" */
+  enforceLimits: false   /* appliquer réellement les quotas gratuits */
+};
+
+const PLANS = {
+  free: {
+    id:'free', nom:'Acolite', prix:0,
+    limites: { voyagesParMois: 5, modelesAvances: false, horsLigne: false, exports: 3 }
+  },
+  plus: {
+    id:'plus', nom:'Acolite Plus', prix:4.99, periode:'mois',
+    limites: { voyagesParMois: Infinity, modelesAvances: true, horsLigne: true, exports: Infinity }
+  },
+  family: {
+    id:'family', nom:'Acolite Family', prix:9.99, periode:'mois',
+    limites: { voyagesParMois: Infinity, modelesAvances: true, horsLigne: true, exports: Infinity, membres: 6 }
+  },
+  explorer: {
+    id:'explorer', nom:'Acolite Explorer', prix:39, periode:'an',
+    limites: { voyagesParMois: Infinity, modelesAvances: true, horsLigne: true, exports: Infinity, cashback: true }
+  }
+};
+
+const LS_PLAN = 'acolite_plan';
+function currentPlan(){
+  if(!FLAGS.billing) return PLANS.plus;          /* facturation off → tout est ouvert */
+  try{ return PLANS[localStorage.getItem(LS_PLAN) || 'free'] || PLANS.free; }catch(e){ return PLANS.free; }
+}
+function can(feature){
+  if(!FLAGS.enforceLimits) return true;          /* aucun blocage tant que ce n'est pas activé */
+  return !!currentPlan().limites[feature];
+}
+function quotaLeft(key){
+  if(!FLAGS.enforceLimits) return Infinity;
+  const lim = currentPlan().limites[key];
+  if(lim === Infinity) return Infinity;
+  const mois = new Date().toISOString().slice(0, 7);
+  let u;
+  try{ u = JSON.parse(localStorage.getItem('acolite_usage')) || {}; }catch(e){ u = {}; }
+  return Math.max(0, lim - ((u[mois] || {})[key] || 0));
+}
+function useQuota(key){
+  if(!FLAGS.enforceLimits) return;
+  const mois = new Date().toISOString().slice(0, 7);
+  let u;
+  try{ u = JSON.parse(localStorage.getItem('acolite_usage')) || {}; }catch(e){ u = {}; }
+  u[mois] = u[mois] || {};
+  u[mois][key] = (u[mois][key] || 0) + 1;
+  try{ localStorage.setItem('acolite_usage', JSON.stringify(u)); }catch(e){}
+}
+
+/* ============================================================
+   PRÉFÉRENCES — pilotent l'IA ET l'interface
+============================================================ */
+const LS_SET = 'acolite_settings';
+const SET_DEF = {
+  style: [],            /* détente, culture, aventure… (multi) */
+  rythme: 'equilibre',
+  food: 'aucun',
+  acces: 'non',
+  eco: 'non',
+  model: 'auto',
+  detail: 'normal',
+  verif: true,          /* relecture croisée par une 2e IA */
+  reels: true,          /* données réelles (météo, trains, fériés…) */
+  font: 100,
+  motion: true,         /* animations */
+  haptic: true,         /* vibrations */
+  oled: false,          /* noir absolu (économie de batterie sur OLED) */
+  vibe: true            /* couleur d'accent selon la destination */
+};
+let SET = { ...SET_DEF };
+/* Les préférences sont rattachées AU COMPTE : si deux personnes utilisent
+   le même appareil, chacune retrouve les siennes. */
+function setKey(){
+  let u = null;
+  try{ u = JSON.parse(localStorage.getItem('acolite_user')); }catch(e){}
+  return LS_SET + (u?.email ? ':' + u.email : '');
+}
+function loadSettings(){
+  try{
+    const perso = JSON.parse(localStorage.getItem(setKey()) || 'null');
+    const global = JSON.parse(localStorage.getItem(LS_SET) || 'null');   /* migration douce */
+    SET = { ...SET_DEF, ...(perso || global || {}) };
+  }catch(e){ SET = { ...SET_DEF }; }
+  applySettings();
+}
+function saveSettings(){
+  try{ localStorage.setItem(setKey(), JSON.stringify(SET)); }catch(e){}
+  applySettings();
+}
+function applySettings(){
+  const r = document.documentElement;
+  r.style.fontSize = (SET.font || 100) + '%';
+  r.classList.toggle('no-motion', !SET.motion);
+  r.classList.toggle('oled', !!SET.oled);
+  applyVibe();
+}
+
+/* Ce bloc part dans TOUS les prompts : l'IA connaît enfin tes goûts */
+function prefsBlock(){
+  const L = [];
+  if(SET.style?.length) L.push(`Style de voyage recherché : ${SET.style.join(', ')}`);
+  const R = { doux:'rythme DOUX : peu d\'activités par jour, du temps libre, pas de course',
+              equilibre:'rythme ÉQUILIBRÉ : 2-3 activités par jour',
+              intense:'rythme INTENSE : programme dense, on optimise chaque heure' };
+  L.push(R[SET.rythme] || R.equilibre);
+  const F = { vege:'végétarien', vegan:'végan', halal:'halal', casher:'casher', sansgluten:'sans gluten' };
+  if(F[SET.food]) L.push(`Alimentation ${F[SET.food]} : les restaurants et adresses proposés DOIVENT proposer cette option`);
+  if(SET.acces === 'oui') L.push("ACCESSIBILITÉ : le voyageur est à mobilité réduite — privilégie les lieux accessibles, évite les escaliers, sentiers escarpés et longues marches, et signale-le");
+  if(SET.eco === 'oui') L.push("ÉCOLOGIE : le voyageur veut ÉVITER L'AVION quand c'est raisonnable — privilégie le train ou le bus si le trajet reste faisable, et explique le compromis");
+  const D = { court:'Sois CONCIS : phrases courtes, va à l\'essentiel.',
+              normal:'', long:'Sois DÉTAILLÉ : explique tes choix, donne des astuces concrètes et des alternatives.' };
+  if(D[SET.detail]) L.push(D[SET.detail]);
+  return L.length ? `\nPRÉFÉRENCES PERMANENTES DU VOYAGEUR (à respecter dans TOUTES tes réponses) :\n- ${L.join('\n- ')}\n` : '';
+}
+
+/* --- Rendu du panneau Préférences --- */
+const OPT = {
+  stStyle:  { key:'style',  multi:true,  items:[['detente','🏖 Détente'],['culture','🏛 Culture'],['aventure','🥾 Aventure'],['fete','🎉 Fête'],['nature','🌿 Nature'],['gastro','🍽 Gastronomie'],['famille','👨‍👩‍👧 Famille'],['romantique','💘 Romantique']] },
+  stRythme: { key:'rythme', items:[['doux','🐢 Doux'],['equilibre','⚖️ Équilibré'],['intense','⚡ Intense']] },
+  stFood:   { key:'food',   items:[['aucun','Aucune contrainte'],['vege','🥗 Végétarien'],['vegan','🌱 Végan'],['halal','☪️ Halal'],['casher','✡️ Casher'],['sansgluten','🌾 Sans gluten']] },
+  stAcces:  { key:'acces',  items:[['non','Aucun besoin'],['oui','♿ Mobilité réduite']] },
+  stEco:    { key:'eco',    items:[['non','Peu importe'],['oui','🌱 Éviter l\'avion si possible']] },
+  stIA:     { key:null,     toggles:[['verif','🔍 Relecture par une 2e IA'],['reels','📡 Données réelles (météo, trains, fériés)']] },
+  stUI:     { key:null,     toggles:[['motion','✨ Animations'],['haptic','📳 Vibrations'],['oled','🌑 Noir absolu (OLED)'],['vibe','🎨 Couleur selon la destination']] }
+};
+function renderSettings(){
+  Object.entries(OPT).forEach(([id, cfg]) => {
+    const box = $('#' + id);
+    if(!box) return;
+    if(cfg.toggles){
+      box.innerHTML = cfg.toggles.map(([k, lbl]) =>
+        `<div class="chip ${SET[k] ? 'on' : ''}" data-tog="${k}">${lbl} ${SET[k] ? '✔' : ''}</div>`).join('');
+      return;
+    }
+    box.innerHTML = cfg.items.map(([v, lbl]) => {
+      const on = cfg.multi ? (SET[cfg.key] || []).includes(v) : SET[cfg.key] === v;
+      return `<div class="chip ${on ? 'on' : ''}" data-set="${cfg.key}" data-val="${v}" data-multi="${cfg.multi ? 1 : 0}">${lbl}</div>`;
+    }).join('');
+  });
+  const m = $('#stModel'); if(m) m.value = SET.model;
+  const dt = $('#stDetail'); if(dt) dt.value = SET.detail;
+  const f = $('#stFont'); if(f) f.value = SET.font;
+  const fv = $('#stFsVal'); if(fv) fv.textContent = SET.font + ' %';
+}
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-set]');
+  if(c){
+    const k = c.dataset.set, v = c.dataset.val;
+    if(c.dataset.multi === '1'){
+      const arr = SET[k] || [];
+      SET[k] = arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v];
+    } else SET[k] = v;
+    saveSettings(); renderSettings();
+    toast('✔ Préférence enregistrée — l\'IA en tiendra compte');
+    return;
+  }
+  const tg = e.target.closest('[data-tog]');
+  if(tg){
+    SET[tg.dataset.tog] = !SET[tg.dataset.tog];
+    saveSettings(); renderSettings();
+    return;
+  }
+  if(e.target.id === 'stReset'){
+    if(!confirm('Réinitialiser toutes tes préférences ?')) return;
+    SET = { ...SET_DEF };
+    saveSettings(); renderSettings();
+    toast('↺ Préférences réinitialisées');
+  }
+});
+document.addEventListener('change', e => {
+  if(e.target.id === 'stModel'){ SET.model = e.target.value; localStorage.removeItem(LS_GEMM); saveSettings(); toast('🤖 Modèle : ' + e.target.selectedOptions[0].text); }
+  if(e.target.id === 'stDetail'){ SET.detail = e.target.value; saveSettings(); }
+});
+document.addEventListener('input', e => {
+  if(e.target.id !== 'stFont') return;
+  SET.font = +e.target.value;
+  $('#stFsVal').textContent = SET.font + ' %';
+  saveSettings();
+});
+
+/* ============================================================
+   PASSEPORT DE VOYAGE — tes voyages, tes pays, tes kilomètres
+   100 % local, gratuit, calculé depuis ton historique.
+============================================================ */
+function renderPassport(){
+  const zone = $('#zonePassport');
+  if(!zone) return;
+  const h = getHistory();
+  if(!h.length){
+    zone.innerHTML = `<p class="hint">Ton passeport est vierge. Choisis un premier voyage et il se remplira tout seul. ✈️</p>`;
+    return;
+  }
+  const pays = [...new Set(h.map(x => x.pays).filter(Boolean))];
+  const villes = [...new Set(h.map(x => x.nom).filter(Boolean))];
+  /* kilomètres réellement parcourus (distances mises en cache) */
+  let km = 0;
+  h.forEach(x => {
+    const d = state.cache[`dist_${x.nom}`];
+    if(d) km += d * 2;   /* aller-retour */
+  });
+  const drapeaux = h.map(x => x.drapeau).filter(Boolean);
+  const tours = km ? (km / 40075) : 0;
+  zone.innerHTML = `
+    <div class="plan-grid" style="margin-bottom:12px">
+      <div class="plan-stat"><div class="k">Voyages</div><div class="v">${h.length}</div><div class="s">depuis le début</div></div>
+      <div class="plan-stat"><div class="k">Pays</div><div class="v">${pays.length}</div><div class="s">${pays.length > 1 ? 'visités' : 'visité'}</div></div>
+      ${km ? `<div class="plan-stat"><div class="k">Distance</div><div class="v">${Math.round(km).toLocaleString('fr-FR')}</div><div class="s">km parcourus</div></div>` : ''}
+      ${tours >= 0.05 ? `<div class="plan-stat"><div class="k">Tour du monde</div><div class="v">${tours.toFixed(2)}×</div><div class="s">soit ${Math.round(tours * 100)} % du globe</div></div>` : ''}
+    </div>
+    ${drapeaux.length ? `<div style="font-size:1.7rem;line-height:1.5;letter-spacing:4px;margin-bottom:12px">${drapeaux.join(' ')}</div>` : ''}
+    <h3 style="margin:0 0 8px">📖 Tes tampons</h3>
+    ${h.slice().reverse().map(x => `
+      <div class="item">
+        <div class="emo">${esc(x.drapeau || '📍')}</div>
+        <div style="flex:1;min-width:0">
+          <h4>${esc(x.nom)}</h4>
+          <p>${esc(x.pays || '')}</p>
+        </div>
+        <div class="side"><span class="tag">${new Date(x.quand).toLocaleDateString('fr-FR', {month:'short', year:'numeric'})}</span></div>
+      </div>`).join('')}
+    <p class="hint" style="margin-top:10px">Tout est calculé sur ton appareil, rien n'est envoyé nulle part.</p>`;
+}
+
+/* ============================================================
+   MON VOL — inspiré de Flighty, avec des sources 100 % GRATUITES
+   • Suivi live : OpenSky (ADS-B). Position réelle de l'avion.
+   • Risque de retard : METAR de la NOAA (vent, visibilité, orages).
+   • Jet lag : calcul du décalage horaire.
+   ⚠️ Pas de portes ni de tapis à bagages : ces données sont payantes.
+============================================================ */
+async function trackFlight(){
+  const zone = $('#zoneFly');
+  const cs = ($('#flyNum').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if(!cs){ toast('Entre un numéro de vol 😉'); return; }
+  const fr24 = `https://www.flightradar24.com/${encodeURIComponent(cs)}`;
+  if(!useBackend()){
+    zone.innerHTML = `<p class="hint">Le suivi en direct passe par ton relais Cloudflare (fichier <code>worker.js</code>, secrets <code>OPENSKY_ID</code> / <code>OPENSKY_SECRET</code> — compte gratuit sur opensky-network.org).<br>
+      En attendant : <a class="tl-loc" href="${esc(fr24)}" target="_blank" rel="noopener" style="margin-top:8px">🔎 Suivre ${esc(cs)} sur Flightradar24</a></p>`;
+    return;
+  }
+  zone.innerHTML = skeletonCards(1);
+  try{
+    const r = await fetch(`${API()}/flight?callsign=${encodeURIComponent(cs)}`);
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    if(!d.found){
+      zone.innerHTML = `<div class="item"><div class="emo">🛬</div><div style="flex:1">
+        <h4>Avion non détecté</h4>
+        <p>${esc(d.message || '')}</p>
+        <p class="hint" style="margin-top:4px">Le suivi ne fonctionne que quand l'avion est <strong>en vol</strong> et couvert par le réseau (très bon en Europe et aux USA).</p>
+        <a class="tl-loc" href="${esc(fr24)}" target="_blank" rel="noopener" style="margin-top:8px">🔎 Vérifier sur Flightradar24</a>
+      </div></div>`;
+      return;
+    }
+    const alt = d.altitude_m ? Math.round(d.altitude_m) : null;
+    zone.innerHTML = `
+      <div class="item" style="background:var(--primary)">
+        <div class="emo">✈️</div>
+        <div style="flex:1;min-width:0">
+          <h4 style="color:#101010">${esc(d.callsign)} — ${d.au_sol ? 'au sol' : 'EN VOL'}</h4>
+          <p style="color:#101010">
+            ${alt ? `Altitude <strong>${alt.toLocaleString('fr-FR')} m</strong>` : ''}
+            ${d.vitesse_kmh ? ` · <strong>${d.vitesse_kmh} km/h</strong>` : ''}
+            ${d.montee_ms > 1 ? ' · en montée ↗' : d.montee_ms < -1 ? ' · en descente ↘' : ''}
+          </p>
+          <p class="hint" style="color:#101010;opacity:.7;margin-top:3px">
+            Survole ${esc(d.pays || '?')}${d.vu_il_y_a_s != null ? ` · position d'il y a ${d.vu_il_y_a_s} s` : ''}
+          </p>
+        </div>
+      </div>
+      <iframe src="https://www.openstreetmap.org/export/embed.html?bbox=${d.lon-1.6},${d.lat-1},${d.lon+1.6},${d.lat+1}&layer=mapnik&marker=${d.lat},${d.lon}"
+        style="width:100%;height:200px;border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);margin-top:10px" loading="lazy"></iframe>
+      <p class="hint" style="margin-top:8px">Position réelle issue du réseau OpenSky (ADS-B). <a href="${esc(fr24)}" target="_blank" rel="noopener" style="color:var(--accent-orange);font-weight:900">Vue détaillée ↗</a></p>`;
+  }catch(e){
+    zone.innerHTML = `<p class="hint">❌ ${esc(e.message)} — <a href="${esc(fr24)}" target="_blank" rel="noopener" style="color:var(--accent-orange);font-weight:900">suivre sur Flightradar24 ↗</a></p>`;
+  }
+}
+
+/* --- Risque de retard, calculé depuis la météo aéronautique réelle (NOAA) --- */
+async function loadMetar(){
+  const zone = $('#zoneMetar');
+  const t = state.trip;
+  if(!zone || !t) return;
+  const dep = (state.prefs?.fromIata || '').toUpperCase();
+  const arr = (t.iata || '').toUpperCase();
+  if(!arr){ zone.innerHTML = `<p class="hint">Aéroport inconnu pour cette destination.</p>`; return; }
+  if(!useBackend()){
+    zone.innerHTML = `<p class="hint">Le bulletin météo des aéroports passe par ton relais Cloudflare (route <code>/metar</code>, gratuite et sans clé). Déploie <code>worker.js</code> pour l'activer.</p>`;
+    return;
+  }
+  zone.innerHTML = skeletonCards(1);
+  try{
+    const ids = [dep, arr].filter(Boolean).join(',');
+    const r = await fetch(`${API()}/metar?ids=${encodeURIComponent(ids)}`);
+    const rows = await r.json();
+    if(!Array.isArray(rows) || !rows.length) throw new Error('aucun bulletin');
+    zone.innerHTML = rows.map(m => {
+      const vent = m.wspd || 0, rafale = m.wgst || 0, vis = m.visib;
+      const orage = /TS|SQ/.test(m.rawOb || '');
+      const neige = /SN|FZ/.test(m.rawOb || '');
+      const brouillard = typeof vis === 'number' && vis < 1.5;
+      let score = 0;
+      if(vent > 25) score += 2; else if(vent > 15) score += 1;
+      if(rafale > 35) score += 2;
+      if(orage) score += 3;
+      if(neige) score += 3;
+      if(brouillard) score += 2;
+      const niveau = score >= 4 ? ['🔴','Risque ÉLEVÉ de retard','var(--danger)']
+                   : score >= 2 ? ['🟠','Risque modéré','var(--accent-orange)']
+                   : ['🟢','Conditions normales','var(--ok)'];
+      const causes = [
+        orage && 'orages',
+        neige && 'neige / givre',
+        brouillard && 'visibilité réduite',
+        vent > 15 && `vent ${Math.round(vent)} kt`,
+        rafale > 25 && `rafales ${Math.round(rafale)} kt`
+      ].filter(Boolean);
+      return `<div class="item">
+        <div class="emo">${niveau[0]}</div>
+        <div style="flex:1;min-width:0">
+          <h4 style="color:${niveau[2]}">${esc(m.icaoId || '')} — ${niveau[1]}</h4>
+          <p>${causes.length ? esc(causes.join(' · ')) : 'Ciel dégagé, vent faible'}</p>
+          <p class="hint" style="margin-top:3px">${esc(String(m.rawOb || '').slice(0, 70))}</p>
+        </div>
+      </div>`;
+    }).join('') + `<p class="hint" style="margin-top:8px">Estimation calculée à partir du bulletin METAR officiel (NOAA). Ce n'est pas une prévision de la compagnie : les vrais retards ne sont pas publics gratuitement.</p>`;
+  }catch(e){
+    zone.innerHTML = `<p class="hint">Bulletin indisponible (${esc(e.message)}).</p>`;
+  }
+}
+
+/* --- Plan anti-jet lag (pur calcul, gratuit) --- */
+function renderJetlag(){
+  const zone = $('#zoneJet');
+  const t = state.trip;
+  if(!zone || !t) return;
+  const tz = state.cache._facts?.fuseau;
+  const dist = state.cache._real?.dist || 0;
+  /* décalage estimé depuis la longitude (précis à 1 h près) */
+  const g = state.cache._globe;
+  let h = null;
+  if(g) h = Math.round((g.b.lon - g.a.lon) / 15);
+  if(h === null || !Math.abs(h)){
+    zone.innerHTML = `<p class="hint">Pas de décalage horaire notable : ton corps ne sentira rien. 👍</p>`;
+    return;
+  }
+  const est = h > 0;
+  const jours = Math.ceil(Math.abs(h) / 1.5);
+  zone.innerHTML = `
+    <div class="item">
+      <div class="emo">${est ? '🌅' : '🌇'}</div>
+      <div style="flex:1">
+        <h4>${Math.abs(h)} h de décalage vers l'${est ? 'est' : 'ouest'}</h4>
+        <p>${est
+          ? "Vers l'est : c'est le plus dur. Tu devras t'endormir plus tôt que ton corps ne le veut."
+          : "Vers l'ouest : plus facile. Tu devras tenir éveillé plus longtemps."}</p>
+        <p class="hint" style="margin-top:4px">Compte environ <strong>${jours} jour(s)</strong> pour t'adapter.</p>
+      </div>
+    </div>
+    <div class="item"><div class="emo">💡</div><div style="flex:1"><h4>Les 3 jours avant</h4>
+      <p>Décale ton coucher de <strong>1 h ${est ? 'plus tôt' : 'plus tard'}</strong> chaque soir.</p></div></div>
+    <div class="item"><div class="emo">☀️</div><div style="flex:1"><h4>À l'arrivée</h4>
+      <p>${est
+        ? "Cherche la lumière du MATIN, évite le soleil de fin de journée. Ne fais pas de sieste après 15 h."
+        : "Cherche la lumière du SOIR, tiens jusqu'à 22 h locales. Pas de sieste."}</p></div></div>
+    <div class="item"><div class="emo">✈️</div><div style="flex:1"><h4>Dans l'avion</h4>
+      <p>Règle ta montre sur l'heure d'arrivée dès le décollage. Bois de l'eau, évite l'alcool et le café.</p></div></div>`;
+}
+
+document.addEventListener('click', e => {
+  if(e.target.closest('#btnOpenFly')){
+    if(!state.trip){ toast('Choisis d’abord un voyage 😉'); return; }
+    $('#ovFly').classList.add('show');
+    loadMetar();
+    renderJetlag();
+    return;
+  }
+  if(e.target.closest('#btnFlyTrack')) trackFlight();
+});
+document.addEventListener('keydown', e => {
+  if(e.target.id === 'flyNum' && e.key === 'Enter') trackFlight();
+});
+
+/* ============================================================
+   LEXIQUE DE SURVIE — phrases clés, générées 1 fois, DISPO HORS-LIGNE
+============================================================ */
+async function loadLexique(force = false){
+  const zone = $('#zoneLex');
+  if(!zone || !state.trip) return;
+  const ck = 'lex_' + state.trip.nom;
+  if(state.cache[ck] && !force){ renderLexique(state.cache[ck]); return; }
+  if(!navigator.onLine){
+    zone.innerHTML = `<p class="hint">📴 Hors-ligne : ouvre le lexique une fois connecté, il restera ensuite disponible sans réseau.</p>`;
+    return;
+  }
+  zone.innerHTML = skeletonCards(1);
+  try{
+    const d = await ai('light', `Destination : ${state.trip.nom} (${state.trip.pays}), langue locale : ${state.trip.langue || 'langue du pays'}.
+Donne les 14 phrases INDISPENSABLES à un voyageur français, dans la langue locale, avec une prononciation SIMPLE écrite à la française.
+Inclus obligatoirement : bonjour, merci, s'il vous plaît, excusez-moi, oui/non, combien ça coûte, où sont les toilettes, je ne comprends pas, parlez-vous anglais, l'addition, aidez-moi, appelez un médecin, je suis allergique, au revoir.
+Si la langue locale est le français, donne plutôt les expressions locales typiques.
+Réponds UNIQUEMENT en JSON : {"phrases":[{"fr":"...","local":"...","prononciation":"..."}]}`, true, 1800);
+    const rows = (d.data?.phrases || d.phrases || []).filter(x => x && x.fr);
+    if(!rows.length) throw new Error('vide');
+    state.cache[ck] = rows; save();
+    renderLexique(rows);
+  }catch(e){
+    zone.innerHTML = `<p class="hint">❌ Lexique indisponible (${esc(e.message)}). <a href="#" id="lexRetry" style="color:var(--accent-orange);font-weight:900">Réessayer</a></p>`;
+  }
+}
+function renderLexique(rows){
+  $('#zoneLex').innerHTML = `<p class="hint" style="margin-bottom:10px">💾 Enregistré sur ton téléphone — consultable <strong>sans réseau</strong>, même en avion.</p>`
+    + rows.map(p => `
+      <div class="lex">
+        <div class="lex-fr">${esc(p.fr)}</div>
+        <div class="lex-loc">${esc(p.local)}</div>
+        <div class="lex-pro">🔊 ${esc(p.prononciation || '')}</div>
+      </div>`).join('');
+}
+document.addEventListener('click', e => {
+  if(e.target.id === 'lexRetry'){ e.preventDefault(); loadLexique(true); return; }
+  if(e.target.closest('#btnOpenLex')){
+    if(!state.trip){ toast('Choisis d’abord un voyage 😉'); return; }
+    $('#ovLex').classList.add('show');
+    loadLexique();
+  }
+});
+
+/* --- Barre de progression de lecture (longs itinéraires) --- */
+function initScrollBar(){
+  const bar = document.createElement('div');
+  bar.id = 'readBar';
+  document.body.appendChild(bar);
+  const upd = () => {
+    const h = document.documentElement.scrollHeight - innerHeight;
+    bar.style.width = h > 240 ? Math.min(100, (scrollY / h) * 100) + '%' : '0%';
+  };
+  addEventListener('scroll', upd, { passive:true });
+  addEventListener('resize', upd);
+  upd();
+}
+initScrollBar();
+
+/* --- Thème contextuel : la couleur d'accent s'adapte à la destination --- */
+const VIBES = [
+  { k:['plage','mer','île','iles','maldives','bali','grèce','sicile','corse','caraïbes','cuba','martinique'], c:'#00D9C0', n:'océan' },
+  { k:['montagne','alpes','ski','neige','islande','norvège','laponie','suisse'],                              c:'#7BB6FF', n:'altitude' },
+  { k:['désert','maroc','sahara','égypte','jordanie','dubaï','emirats'],                                      c:'#FF8A3D', n:'désert' },
+  { k:['jungle','amazonie','costa rica','vietnam','thaïlande','brésil','indonésie'],                          c:'#3FD07A', n:'tropiques' },
+  { k:['tokyo','japon','séoul','corée','new york','hong kong','singapour','shanghai'],                        c:'#FF4D8D', n:'métropole' },
+  { k:['rome','florence','venise','paris','vienne','prague','lisbonne','séville','athènes'],                  c:'#C084FC', n:'patrimoine' }
+];
+function applyVibe(){
+  const t = state.trip;
+  const root = document.documentElement;
+  if(!t || SET?.vibe === false){ root.style.removeProperty('--accent-cyan'); return; }
+  const hay = `${t.nom} ${t.pays} ${(t.points_forts || []).join(' ')}`.toLowerCase();
+  const v = VIBES.find(x => x.k.some(k => hay.includes(k)));
+  if(v) root.style.setProperty('--accent-cyan', v.c);
+  else root.style.removeProperty('--accent-cyan');
+}
+
+/* --- Retour haptique : une petite vibration aux moments clés --- */
+const HAPTIC = { tap: 10, ok: [15, 40, 25], err: [40, 60, 40], big: [10, 30, 10, 30, 60] };
+function buzz(kind = 'tap'){
+  if(!SET?.haptic) return;
+  if(!navigator.vibrate) return;
+  try{ navigator.vibrate(HAPTIC[kind] || HAPTIC.tap); }catch(e){}
+}
+document.addEventListener('click', e => {
+  if(e.target.closest('button, .chip, .dest, .step, .catnav button')) buzz('tap');
+}, true);
 
 /* --- Barre "l'IA cherche" : remplace la nav du bas pendant la réflexion --- */
 const SB_MSG = [
@@ -2605,9 +3125,26 @@ function searchBar(on, first){
 }
 
 /* --- Carte du projet : sélecteur de trajet + carte plein cadre --- */
-function projRoute(saddr, stops, walk){
-  const daddr = stops.map(encodeURIComponent).join('+to:');
-  $('#projMap').src = `https://maps.google.com/maps?saddr=${encodeURIComponent(saddr)}&daddr=${daddr}${walk?'&dirflg=w':''}&hl=fr&output=embed`;
+async function projRoute(route){
+  const frame = $('#projMap');
+  if(!frame) return;
+  /* On centre la carte sur le point clé du trajet (OpenStreetMap : intégration libre,
+     Google refuse l'affichage en iframe sans clé payante). */
+  const cible = route.stops[route.stops.length - 1] || route.saddr;
+  const key = 'geo_' + cible;
+  let g = state.cache[key];
+  if(!g){
+    const r = await geoPlace(cible);
+    if(r){ g = { lat:+r.latitude, lon:+r.longitude }; state.cache[key] = g; save(); }
+  }
+  if(!g){
+    frame.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-10,35,30,60&layer=mapnik';
+    return;
+  }
+  const dx = route.walk ? 0.012 : 0.06, dy = route.walk ? 0.008 : 0.04;
+  frame.src = `https://www.openstreetmap.org/export/embed.html`
+    + `?bbox=${g.lon - dx},${g.lat - dy},${g.lon + dx},${g.lat + dy}`
+    + `&layer=mapnik&marker=${g.lat},${g.lon}`;
 }
 
 function buildProjectMap(){
@@ -2617,10 +3154,13 @@ function buildProjectMap(){
   if(!t){
     sel.innerHTML = '<option>Aucun voyage en cours</option>';
     sel.disabled = true;
-    $('#projMap').src = `https://maps.google.com/maps?q=Europe&hl=fr&z=4&output=embed`;
+    $('#projMap').src = 'https://www.openstreetmap.org/export/embed.html?bbox=-10,35,30,60&layer=mapnik';
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(
-        pos => { $('#projMap').src = `https://maps.google.com/maps?q=${pos.coords.latitude},${pos.coords.longitude}&hl=fr&z=13&output=embed`; },
+        pos => {
+          const la = pos.coords.latitude, lo = pos.coords.longitude;
+          $('#projMap').src = `https://www.openstreetmap.org/export/embed.html?bbox=${lo-0.05},${la-0.03},${lo+0.05},${la+0.03}&layer=mapnik&marker=${la},${lo}`;
+        },
         () => {}, { timeout: 6000 }
       );
     }
@@ -2645,7 +3185,7 @@ function buildProjectMap(){
   sel.innerHTML = routes.map((r, i) => `<option value="${i}">${esc(r.label)}</option>`).join('');
   sel.value = '0';
   const r0 = routes[0];
-  projRoute(r0.saddr, r0.stops, r0.walk);
+  projRoute(r0);
   updateProjOpen(r0);
 }
 function updateProjOpen(r){
@@ -2656,7 +3196,7 @@ document.addEventListener('change', e => {
   if(e.target.id !== 'mapDay') return;
   const r = (window._projRoutes || [])[+e.target.value];
   if(!r) return;
-  projRoute(r.saddr, r.stops, r.walk);
+  projRoute(r);
   updateProjOpen(r);
 });
 
@@ -2742,9 +3282,20 @@ const _e32 = $('#pfMyData'); if(_e32) _e32.onclick = () => {
   toast('📄 Données téléchargées');
 };
 
+/* Suppression de compte : double confirmation (impossible par accident) */
 const _e33 = $('#pfDelete'); if(_e33) _e33.onclick = () => {
-  if(!confirm('Supprimer définitivement ton compte et toutes tes données locales ?')) return;
-  localStorage.removeItem(LS_USER); localStorage.removeItem(LS_AUTH); localStorage.removeItem(LS_TRIP);
+  const u = getUser();
+  const attendu = (u?.pseudo || 'SUPPRIMER');
+  if(!confirm('⚠️ Dernière chance.\n\nTon compte, tes voyages, tes notes et tes souvenirs seront DÉFINITIVEMENT effacés de cet appareil.\n\nContinuer ?')) return;
+  const saisi = prompt(`Pour confirmer, écris ton pseudo exactement :\n\n${attendu}`);
+  if(saisi === null) return;
+  if(saisi.trim() !== attendu){
+    toast('❌ Pseudo incorrect — suppression annulée');
+    return;
+  }
+  ['acolite_user','acolite_logged','acolite_trip_v2','acolite_settings','acolite_history',
+   'acolite_theme','acolite_prices','acolite_docs','acolite_journal','acolite_chat','acolite_relay'
+  ].forEach(k => localStorage.removeItem(k));
   location.reload();
 };
 
@@ -3179,6 +3730,11 @@ document.addEventListener('click', async e => {
 });
 
 /* ---------- Boot ---------- */
+/* aucune date de départ dans le passé */
+const _fd = document.getElementById('fDepart');
+if(_fd) _fd.min = new Date().toISOString().slice(0, 10);
+
+loadSettings();
 load();
 checkImportHash();
 if(state.prefs){

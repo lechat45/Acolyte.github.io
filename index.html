@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://restcountries.com https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev; frame-src https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://restcountries.com https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev; frame-src https://www.openstreetmap.org https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="theme-color" content="#FFE600" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0B0B10" media="(prefers-color-scheme: dark)">
@@ -33,8 +33,6 @@
   <header>
     <div class="logo"><div class="dot"></div><span>Acolite</span></div>
     <div class="row">
-      <button class="icon-btn" id="btnExport" title="Exporter le voyage (.md)">⬇</button>
-      <button class="icon-btn" id="btnReset" title="Nouveau voyage">↺</button>
     </div>
   </header>
 
@@ -51,9 +49,9 @@
       <h2>Où est-ce qu'on t'emmène ? 🌍</h2>
       <p class="sub">Décris tes envies, Acolite te propose des destinations sur mesure — puis t'aide à affiner.</p>
       <div class="grid">
-        <div class="field"><label>Ville de départ</label><input id="fFrom" placeholder="Paris" autocomplete="off"></div>
-        <div class="field"><label>Destination souhaitée</label><input id="fDest" placeholder="Pays ou ville — vide = surprends-moi" autocomplete="off"></div>
-        <div class="field"><label>Durée</label>
+        <div class="field"><label for="fFrom">Ville de départ</label><input id="fFrom" placeholder="Paris" autocomplete="off"></div>
+        <div class="field"><label for="fDest">Destination souhaitée</label><input id="fDest" placeholder="Pays ou ville — vide = surprends-moi" autocomplete="off"></div>
+        <div class="field"><label for="fDays">Durée</label>
           <select id="fDays">
             <option value="un week-end (2-3 jours)">Week-end (2-3 j)</option>
             <option value="une semaine" selected>1 semaine</option>
@@ -61,9 +59,9 @@
             <option value="trois semaines ou plus">3 semaines +</option>
           </select>
         </div>
-        <div class="field"><label>Période</label><input id="fWhen" placeholder="août 2026, vacances de la Toussaint…"></div>
-        <div class="field"><label>Date de départ (optionnel)</label><input id="fDepart" type="date"></div>
-        <div class="field"><label>Budget total / personne</label>
+        <div class="field"><label for="fWhen">Période</label><input id="fWhen" placeholder="août 2026, vacances de la Toussaint…"></div>
+        <div class="field"><label for="fDepart">Date de départ (optionnel)</label><input id="fDepart" type="date"></div>
+        <div class="field"><label for="fBudget">Budget total / personne</label>
           <select id="fBudget">
             <option value="petit budget (moins de 500€)">Petit (&lt; 500 €)</option>
             <option value="budget moyen (500-1200€)" selected>Moyen (500 – 1200 €)</option>
@@ -71,20 +69,22 @@
             <option value="budget élevé (2500€ et plus)">Élevé (2500 € +)</option>
           </select>
         </div>
-        <div class="field"><label>Adultes</label>
+        <div class="field"><label for="fAdults">Adultes</label>
           <select id="fAdults"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
         </div>
-        <div class="field"><label>Enfants</label>
+        <div class="field"><label for="fKids">Enfants</label>
           <select id="fKids"><option selected>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select>
         </div>
       </div>
-      <div class="field" style="margin-top:14px"><label>Tes limites & conditions</label>
+      <div class="field" style="margin-top:14px"><label for="fFree">Tes limites & conditions</label>
         <textarea id="fFree" placeholder="Ex : max 3h de trajet, pas d'auberge, je pars avec un bébé, je veux la plage, budget serré sur le logement…"></textarea>
       </div>
       <div style="margin-top:18px;display:flex;flex-direction:column;gap:12px">
         <button class="btn" id="btnGo" style="width:100%;justify-content:center">✨ Propose-moi des voyages</button>
-        <button class="btn ghost" id="btnLucky" style="width:100%;justify-content:center">🎲 Surprends-moi</button>
-        <button class="btn ghost sm" id="btnScanTicket" style="width:100%;justify-content:center;margin-top:8px">📷 Scanner un ticket d'ami</button>
+        <div class="btn-duo">
+          <button class="btn ghost" id="btnLucky">🎲 Surprends-moi</button>
+          <button class="btn ghost" id="btnScanTicket">📷 Scanner un ticket</button>
+        </div>
       </div>
     </div>
   </section>
@@ -105,31 +105,16 @@
       <div class="divider"></div>
       <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
       <button class="btn ghost" id="btnOpenSim" style="width:100%;justify-content:center;margin-top:10px">🛫 Simulation des vols & trains</button>
+      <button class="btn ghost" id="btnOpenFly" style="width:100%;justify-content:center;margin-top:10px">✈️ Mon vol — suivi, retards, jet lag</button>
+      <button class="btn ghost" id="btnOpenLex" style="width:100%;justify-content:center;margin-top:10px">🗣 Lexique de survie (hors-ligne)</button>
+      <div class="btn-duo" style="margin-top:10px">
+        <button class="btn ghost sm" id="btnExport">⬇ Exporter (.md)</button>
+        <button class="btn ghost sm" id="btnReset">↺ Nouveau voyage</button>
+      </div>
     </div>
   </section>
 
   <!-- ================= VUE 4 : DORMIR ================= -->
-  <section class="view hidden" id="view4">
-    <div id="passSlot4"></div>
-    <div class="card">
-      <h2>Où poser tes valises ? 🏨</h2>
-      <p class="sub">Les meilleurs quartiers selon ton profil, avec la recherche pré-remplie sur Booking, Airbnb et Hostelworld.</p>
-      <div class="grid tight" style="margin-bottom:14px">
-        <div class="field"><label>Type préféré</label>
-          <select id="stayType">
-            <option value="">Ouvert à tout</option><option>Hôtel</option><option>Appartement</option><option>Auberge de jeunesse</option><option>Maison / villa</option><option>Hébergement insolite</option>
-          </select>
-        </div>
-        <div class="field"><label>Priorité</label>
-          <select id="stayPrio">
-            <option value="">Équilibré</option><option>Le moins cher</option><option>Le plus central</option><option>Le plus calme</option><option>Le plus charmant</option>
-          </select>
-        </div>
-        <div class="field" style="align-self:end"><button class="btn sm violet" id="btnStayGo" style="width:100%">🔄 Relancer avec ces critères</button></div>
-      </div>
-      <div id="zoneStay"><div class="loader"><div class="orbit"></div>Repérage des meilleurs quartiers…</div></div>
-    </div>
-  </section>
 
   <!-- ================= VUE 5 : SUR PLACE ================= -->
 
@@ -159,6 +144,71 @@
 
 
     <div class="card">
+      <div class="acc" id="accPass">
+        <div class="acc-head" data-acc>🛂 MON PASSEPORT <span class="arr">›</span></div>
+        <div class="acc-body">
+          <div id="zonePassport"></div>
+        </div>
+      </div>
+
+      <div class="acc" id="accPrefs">
+        <div class="acc-head" data-acc>🎛 PRÉFÉRENCES <span class="arr">›</span></div>
+        <div class="acc-body">
+
+          <h3 style="margin:0 0 6px">🧭 Ton style de voyage</h3>
+          <p class="hint" style="margin:0 0 8px">L'IA en tient compte à chaque proposition et à chaque plan.</p>
+          <div class="chips" id="stStyle"></div>
+
+          <h3 style="margin:16px 0 6px">⚡ Ton rythme</h3>
+          <div class="chips" id="stRythme"></div>
+
+          <h3 style="margin:16px 0 6px">🍽 Alimentation</h3>
+          <div class="chips" id="stFood"></div>
+
+          <h3 style="margin:16px 0 6px">♿ Accessibilité</h3>
+          <div class="chips" id="stAcces"></div>
+
+          <h3 style="margin:16px 0 6px">🌱 Transport</h3>
+          <div class="chips" id="stEco"></div>
+
+          <div class="divider"></div>
+
+          <h3 style="margin:0 0 6px">🤖 Intelligence artificielle</h3>
+          <div class="grid tight">
+            <div class="field">
+              <label for="stModel">Modèle</label>
+              <select id="stModel">
+                <option value="auto">Automatique (recommandé)</option>
+                <option value="gemini-2.5-flash">Rapide — Flash</option>
+                <option value="gemini-2.5-pro">Puissant — Pro (plus lent)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="stDetail">Niveau de détail</label>
+              <select id="stDetail">
+                <option value="court">Concis — l'essentiel</option>
+                <option value="normal" selected>Normal</option>
+                <option value="long">Détaillé — tout expliquer</option>
+              </select>
+            </div>
+          </div>
+          <div class="chips" id="stIA" style="margin-top:8px"></div>
+
+          <div class="divider"></div>
+
+          <h3 style="margin:0 0 6px">🎨 Confort de lecture</h3>
+          <div class="field">
+            <label>Taille du texte : <span id="stFsVal">100 %</span></label>
+            <input type="range" id="stFont" min="90" max="130" step="5" value="100">
+          </div>
+          <div class="chips" id="stUI" style="margin-top:8px"></div>
+
+          <div class="row" style="margin-top:14px">
+            <button class="btn sm ghost" id="stReset">↺ Tout réinitialiser</button>
+          </div>
+        </div>
+      </div>
+
       <div class="acc" id="accActions">
       <div class="acc-head" data-acc>⚙ ACTIONS <span class="arr">›</span></div>
       <div class="acc-body">
@@ -202,12 +252,14 @@
         <div class="head"><div class="emo">🚪</div><h4>Se déconnecter</h4></div>
         <div class="side"><button class="btn sm ghost" id="pfLogout">Déconnexion</button></div>
       </div>
-      <div class="item act" style="border-color:var(--danger)">
-        <div class="head"><div class="emo">🗑</div><h4 style="color:var(--danger)">Supprimer mon compte</h4></div>
-        <div class="side"><button class="btn sm ghost" id="pfDelete" style="border-color:var(--danger);color:var(--danger)">Supprimer</button></div>
-      </div>
       </div><!-- /acc-body -->
       </div><!-- /acc -->
+    </div>
+
+    <div class="danger-zone">
+      <h3>⚠️ Zone sensible</h3>
+      <p>La suppression est <strong>définitive</strong> : compte, voyages, notes et souvenirs seront perdus. Aucun retour possible.</p>
+      <button class="btn danger" id="pfDelete">🗑 Supprimer définitivement mon compte</button>
     </div>
 
   </section>
@@ -227,24 +279,24 @@
     <p class="sub" id="authSub">Crée ton compte pour commencer l'aventure.</p>
 
     <div id="authSignup">
-      <div class="field"><label>Ton pseudo</label><input id="auPseudo" placeholder="ex : Sacha" maxlength="20" autocomplete="nickname"></div>
-      <div class="field" style="margin-top:12px"><label>Adresse email</label><input id="auEmail" type="email" placeholder="toi@exemple.com" autocomplete="email"></div>
-      <div class="field" style="margin-top:12px"><label>Mot de passe</label><input id="auPass" type="password" placeholder="8 caractères minimum" autocomplete="new-password"></div>
-      <div class="field" style="margin-top:12px"><label>Confirme le mot de passe</label><input id="auPass2" type="password" autocomplete="new-password"></div>
+      <div class="field"><label for="auPseudo">Ton pseudo</label><input id="auPseudo" placeholder="ex : Sacha" maxlength="20" autocomplete="nickname"></div>
+      <div class="field" style="margin-top:12px"><label for="auEmail">Adresse email</label><input id="auEmail" type="email" placeholder="toi@exemple.com" autocomplete="email"></div>
+      <div class="field" style="margin-top:12px"><label for="auPass">Mot de passe</label><input id="auPass" type="password" placeholder="8 caractères minimum" autocomplete="new-password"></div>
+      <div class="field" style="margin-top:12px"><label for="auPass2">Confirme le mot de passe</label><input id="auPass2" type="password" autocomplete="new-password"></div>
       <button class="btn" id="btnSignup" style="margin-top:16px;width:100%;justify-content:center">Créer mon compte →</button>
       <p class="auth-switch">Déjà un compte ? <a id="goLogin">Se connecter</a></p>
     </div>
 
     <div id="authLogin" class="hidden">
-      <div class="field"><label>Adresse email</label><input id="loEmail" type="email" autocomplete="email"></div>
-      <div class="field" style="margin-top:12px"><label>Mot de passe</label><input id="loPass" type="password" autocomplete="current-password"></div>
+      <div class="field"><label for="loEmail">Adresse email</label><input id="loEmail" type="email" autocomplete="email"></div>
+      <div class="field" style="margin-top:12px"><label for="loPass">Mot de passe</label><input id="loPass" type="password" autocomplete="current-password"></div>
       <button class="btn" id="btnLogin" style="margin-top:16px;width:100%;justify-content:center">Se connecter →</button>
       <p class="auth-switch">Pas de compte ? <a id="goSignup">En créer un</a></p>
     </div>
 
     <div id="authVerify" class="hidden">
       <p style="font-weight:700;font-size:.92rem;margin-bottom:12px">📬 Un code de vérification à 6 chiffres a été envoyé à <strong id="vfEmail"></strong>. Entre-le pour sécuriser ton compte.</p>
-      <div class="field"><label>Code de vérification</label><input id="vfCode" class="code-inp" inputmode="numeric" maxlength="6" placeholder="······"></div>
+      <div class="field"><label for="vfCode">Code de vérification</label><input id="vfCode" class="code-inp" inputmode="numeric" maxlength="6" placeholder="······"></div>
       <button class="btn" id="btnVerify" style="margin-top:16px;width:100%;justify-content:center">Vérifier ✔</button>
       <p class="auth-switch"><a id="btnResend">Renvoyer le code</a> · <a id="vfBack">Changer d'email</a></p>
       <p class="hint" id="vfDemo"></p>
@@ -271,7 +323,7 @@
   <div class="modal" style="max-height:88vh;overflow-y:auto">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
       <h2 style="margin:0">Scanner un ticket 📷</h2>
-      <button class="icon-btn" data-closescan>✕</button>
+      <button class="close-btn" data-closescan aria-label="Fermer">✕</button>
     </div>
     <p class="sub">Vise le QR d'un ticket Acolite pour importer le voyage (idéal entre amis).</p>
     <video id="scanVideo" playsinline muted style="width:100%;border:3px solid var(--stroke);border-radius:var(--r);background:#101010;min-height:200px"></video>
@@ -279,6 +331,47 @@
     <label class="btn ghost sm" style="width:100%;justify-content:center;margin-top:8px">🖼 Ou choisir une photo du ticket
       <input type="file" id="scanFile" accept="image/*" style="display:none">
     </label>
+    <button class="modal-close" data-closescan>Fermer</button>
+  </div>
+</div>
+
+<!-- ===== Pop-up MON VOL ===== -->
+<div class="overlay" id="ovFly">
+  <div class="modal" style="max-height:88vh;overflow-y:auto">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0">Mon vol ✈️</h2>
+      <button class="close-btn" data-close="ovFly" aria-label="Fermer">✕</button>
+    </div>
+
+    <h3 style="margin:10px 0 6px">🛰 Suivi en direct</h3>
+    <p class="hint" style="margin:0 0 8px">Entre ton numéro de vol : Acolite te dit où est l'avion, en vrai.</p>
+    <div class="row">
+      <input id="flyNum" placeholder="ex : AF1234, FR8291" style="flex:1;min-width:120px;text-transform:uppercase">
+      <button class="btn sm" id="btnFlyTrack">Suivre</button>
+    </div>
+    <div id="zoneFly" style="margin-top:10px"></div>
+
+    <div class="divider"></div>
+    <h3 style="margin:0 0 6px">🌩 Risque de retard météo</h3>
+    <div id="zoneMetar"></div>
+
+    <div class="divider"></div>
+    <h3 style="margin:0 0 6px">😴 Plan anti-jet lag</h3>
+    <div id="zoneJet"></div>
+
+    <button class="modal-close" data-close="ovFly">Fermer</button>
+  </div>
+</div>
+
+<!-- ===== Pop-up LEXIQUE DE SURVIE ===== -->
+<div class="overlay" id="ovLex">
+  <div class="modal" style="max-height:88vh;overflow-y:auto">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0">Lexique de survie 🗣</h2>
+      <button class="close-btn" data-close="ovLex" aria-label="Fermer">✕</button>
+    </div>
+    <div id="zoneLex"></div>
+    <button class="modal-close" data-close="ovLex">Fermer</button>
   </div>
 </div>
 
@@ -287,9 +380,10 @@
   <div class="modal" style="max-height:88vh;overflow-y:auto">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
       <h2 style="margin:0">Réservation 🎫</h2>
-      <button class="icon-btn" data-close="ovResa">✕</button>
+      <button class="close-btn" data-close="ovResa" aria-label="Fermer">✕</button>
     </div>
     <div id="zoneResa"></div>
+    <button class="modal-close" data-close="ovResa">Fermer</button>
   </div>
 </div>
 
@@ -298,7 +392,7 @@
   <div class="modal" style="max-height:88vh;overflow-y:auto">
     <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
       <h2 style="margin:0">Simulation 🛫</h2>
-      <button class="icon-btn" data-close="ovSim">✕</button>
+      <button class="close-btn" data-close="ovSim" aria-label="Fermer">✕</button>
     </div>
     <p class="sub">Vrais prix et vrais horaires — mode pré-sélectionné par le plan, change-le pour comparer.</p>
     <div class="toggle">
@@ -308,6 +402,7 @@
     </div>
     <div id="priceAlert" style="display:none;margin-bottom:10px"></div>
     <div id="zoneTransport"><div class="loader"><div class="orbit"></div>Analyse du meilleur trajet…</div></div>
+    <button class="modal-close" data-close="ovSim">Fermer</button>
   </div>
 </div>
 

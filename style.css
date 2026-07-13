@@ -587,12 +587,16 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   box-shadow:0 -4px 0 rgba(0,0,0,.06);
 }
 .catnav button{
-  width:100%;border:none;border-right:3px solid var(--stroke);background:var(--secondary);
+  width:100%;min-width:0;                       /* aucune colonne ne peut s'élargir */
+  border:none;background:var(--secondary);
   font-family:'Sora',sans-serif;font-weight:900;font-size:.7rem;text-transform:uppercase;
-  padding:9px 4px 11px;cursor:pointer;color:var(--txt);display:flex;flex-direction:column;
-  align-items:center;gap:2px;transition:background .1s ease;
+  padding:10px 4px 12px;cursor:pointer;color:var(--txt);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  transition:background .1s ease;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.catnav button:last-child{border-right:none}
+/* séparateurs dessinés SANS toucher à la largeur des colonnes */
+.catnav button + button{box-shadow:inset 3px 0 0 var(--stroke)}
 .catnav button .ico{font-size:1.25rem;line-height:1}
 .catnav button.on{background:var(--primary)}
 .catnav button:not(.on):hover{background:var(--bg)}
@@ -903,3 +907,142 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   padding:11px 12px;font-family:'Sora',sans-serif;font-weight:900;font-size:.78rem;
   text-decoration:none;white-space:nowrap;
 }
+
+/* ===== Panneau Préférences ===== */
+.acc-body input[type="range"]{
+  width:100%;height:10px;-webkit-appearance:none;appearance:none;
+  background:var(--secondary);border:3px solid var(--stroke);
+  box-shadow:3px 3px 0 var(--stroke);cursor:pointer;margin-top:6px;
+}
+.acc-body input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:22px;height:22px;
+  background:var(--primary);border:3px solid var(--stroke);cursor:grab;
+}
+.acc-body input[type="range"]::-moz-range-thumb{
+  width:22px;height:22px;background:var(--primary);border:3px solid var(--stroke);cursor:grab;
+}
+/* Animations désactivables depuis les préférences */
+:root.no-motion *,
+:root.no-motion *::before,
+:root.no-motion *::after{
+  animation:none !important;
+  transition:none !important;
+}
+
+/* ===== Boutons secondaires côte à côte ===== */
+.btn-duo{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;
+}
+.btn-duo .btn{width:100%;justify-content:center;text-align:center;padding:12px 8px;font-size:.78rem}
+@media(max-width:340px){ .btn-duo{grid-template-columns:1fr} }
+
+/* ===== Fermeture des modales : cible tactile confortable (44×44 min) ===== */
+.close-btn{
+  flex-shrink:0;
+  width:44px;height:44px;min-width:44px;min-height:44px;
+  display:grid;place-items:center;
+  background:var(--secondary);color:var(--txt);
+  border:3px solid var(--stroke);box-shadow:3px 3px 0 var(--stroke);
+  font-size:1.1rem;font-weight:900;cursor:pointer;
+  transition:transform .1s,box-shadow .1s,background .1s;
+}
+.close-btn:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--stroke)}
+.close-btn:hover{background:var(--accent-orange);color:#101010}
+/* Bouton "Fermer" large, collé en bas des longues modales défilantes */
+.modal-close{
+  position:sticky;bottom:0;
+  width:100%;margin-top:16px;
+  min-height:52px;
+  background:var(--secondary);color:var(--txt);
+  border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.85rem;
+  text-transform:uppercase;letter-spacing:.06em;
+  cursor:pointer;
+}
+.modal-close:active{transform:translate(4px,4px);box-shadow:0 0 0 var(--stroke)}
+
+/* ===== Zone sensible (suppression de compte), isolée en bas du profil ===== */
+.danger-zone{
+  margin-top:28px;padding:18px;
+  border:4px dashed var(--danger);
+  background:var(--secondary);
+}
+.danger-zone h3{
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.95rem;
+  color:var(--danger);margin:0 0 6px;
+}
+.danger-zone p{font-size:.82rem;font-weight:600;color:var(--txt-2);margin:0 0 14px;line-height:1.5}
+.btn.danger{
+  width:100%;justify-content:center;
+  background:var(--danger);color:#fff;
+  border-color:var(--stroke);
+}
+.btn.danger:active{transform:translate(4px,4px);box-shadow:0 0 0 var(--stroke)}
+
+/* ===== Safe area : la nav ne chevauche jamais l'indicateur gestuel ===== */
+.catnav{padding-bottom:env(safe-area-inset-bottom, 0px)}
+.wrap{padding-bottom:calc(120px + env(safe-area-inset-bottom, 0px))}
+#catMap{bottom:calc(64px + env(safe-area-inset-bottom, 0px))}
+
+/* ===== Squelettes de chargement ===== */
+.sk-card{
+  border:4px solid var(--stroke);box-shadow:6px 6px 0 var(--stroke);
+  background:var(--secondary);padding:16px;margin-bottom:16px;
+}
+.sk{
+  background:linear-gradient(90deg, var(--bg) 25%, rgba(0,0,0,.06) 50%, var(--bg) 75%);
+  background-size:200% 100%;
+  animation:skShine 1.3s linear infinite;
+  border:2px solid var(--stroke);
+}
+:root[data-theme="dark"] .sk{
+  background:linear-gradient(90deg, var(--bg) 25%, rgba(255,255,255,.09) 50%, var(--bg) 75%);
+  background-size:200% 100%;
+}
+.sk-title{height:24px;width:55%;margin-bottom:12px}
+.sk-line{height:12px;width:100%;margin-bottom:8px}
+.sk-line.short{width:65%}
+.sk-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.sk-box{height:52px}
+.sk-box.tall{height:92px}
+.sk-btn{height:44px;width:100%;margin-top:12px}
+@keyframes skShine{to{background-position:-200% 0}}
+:root.no-motion .sk{animation:none}
+
+/* ===== Barre de progression de lecture ===== */
+#readBar{
+  position:fixed;top:0;left:0;height:4px;width:0;
+  background:var(--primary);border-bottom:2px solid var(--stroke);
+  z-index:100;transition:width .1s linear;pointer-events:none;
+}
+
+/* ===== Lexique de survie ===== */
+.lex{
+  border:3px solid var(--stroke);box-shadow:3px 3px 0 var(--stroke);
+  background:var(--secondary);padding:11px 13px;margin-bottom:9px;
+}
+.lex-fr{font-weight:700;font-size:.82rem;color:var(--txt-2)}
+.lex-loc{
+  font-family:'Sora',sans-serif;font-weight:900;font-size:1rem;
+  margin:3px 0;overflow-wrap:break-word;
+}
+.lex-pro{font-size:.76rem;font-weight:600;color:var(--txt-2);font-style:italic}
+
+/* ===== Mode noir absolu (OLED : les pixels noirs s'éteignent) ===== */
+:root.oled[data-theme="dark"]{
+  --bg:#000000;
+  --secondary:#0A0A0D;
+}
+:root.oled[data-theme="dark"] body{background-image:none}
+
+/* ===== Transitions d'écran natives (View Transitions API) ===== */
+@view-transition{ navigation:auto }
+::view-transition-old(root){ animation:vtOut .18s ease both }
+::view-transition-new(root){ animation:vtIn .22s ease both }
+@keyframes vtOut{to{opacity:0;transform:translateY(-8px)}}
+@keyframes vtIn{from{opacity:0;transform:translateY(10px)}}
+:root.no-motion::view-transition-old(root),
+:root.no-motion::view-transition-new(root){animation:none}
+
+/* ===== Anti-débordement mobile (min-width:0 partout où ça compte) ===== */
+.grid > *, .row > *, .plan-grid > *, .dest-facts > *, .btn-duo > *{min-width:0}
