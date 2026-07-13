@@ -251,14 +251,15 @@
 </div>
 
 
-<!-- ===== Pop-up QUESTIONS de l'IA (avant génération finale) ===== -->
+<!-- ===== Pop-up : questions de l'IA avant la génération du voyage complet ===== -->
 <div class="overlay" id="ovQs">
   <div class="modal" style="max-height:88vh;overflow-y:auto">
-    <h2 style="margin:0 0 4px">Acolite a des questions 🤔</h2>
-    <p class="sub">Réponds pour qu'il génère un voyage vraiment sur mesure.</p>
+    <h2 style="margin:0 0 4px">🎯 Précisons ton voyage</h2>
+    <p class="sub">Acolite a besoin de quelques précisions pour viser juste. Réponds, et il ajuste tes propositions de voyage.</p>
     <div id="zoneQs"></div>
-    <button class="btn" id="btnQsGo" style="width:100%;justify-content:center;margin-top:14px" disabled>✅ Générer mon voyage</button>
-    <button class="btn ghost sm" id="btnQsSkip" style="width:100%;justify-content:center;margin-top:8px">Passer les questions</button>
+    <div id="qsProg" class="qs-prog"></div>
+    <button class="btn" id="btnQsGo" style="width:100%;justify-content:center;margin-top:14px" disabled>✅ Affiner mes propositions</button>
+    <button class="btn ghost sm" id="btnQsSkip" style="width:100%;justify-content:center;margin-top:8px">Passer — garder ces propositions</button>
   </div>
 </div>
 

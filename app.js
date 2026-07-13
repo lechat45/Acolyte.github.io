@@ -300,6 +300,10 @@ async function proposeTrips(extra = '', lucky = false){
   const prompt = `Tu es Acolite, un expert voyage français, chaleureux et concret.
 ${ctx()}
 ${lucky ? 'MODE SURPRISE : propose des destinations inattendues, originales, auxquelles le voyageur ne penserait jamais, mais qui collent quand même au budget et à la période.' : ''}
+TOUT DOIT ÊTRE TROUVÉ DÈS MAINTENANT : pour CHAQUE proposition, tu donnes déjà le transport (mode, prix A/R, durée) ET le logement (type, quartier réel, prix/nuit). Le voyageur doit pouvoir comparer sans rien avoir à deviner. Uniquement des quartiers qui EXISTENT VRAIMENT.
+
+QUESTIONS DE PRÉCISION : si des infos te manquent pour viser juste (rythme, ambiance, priorités, contraintes), pose 2 ou 3 questions courtes dans "questions", chacune avec 2 à 4 options cliquables. Si le voyageur a déjà tout précisé, renvoie "questions":[].
+
 ${(state.seen||[]).length && !prefs.dest ? 'DÉJÀ PROPOSÉ à ce voyageur (ne PAS reproposer sauf s\'il le demande) : ' + state.seen.join(', ') + '.' : ''}
 ${(getHistory()||[]).length ? 'VOYAGES DÉJÀ CHOISIS par ce voyageur par le passé : ' + getHistory().map(h=>h.nom).join(', ') + ' — ne les repropose pas, mais inspire-toi de ses goûts.' : ''}
 DÉCIDE toi-même du NOMBRE de propositions (1 à 3) selon la demande :
@@ -328,7 +332,13 @@ Réponds UNIQUEMENT en JSON valide, structure exacte. Commence OBLIGATOIREMENT p
      "langue":"langue principale parlée",
      "monnaie":"monnaie locale",
      "transport_conseille":"avion" ou "train" ou "voiture",
-     "transport_pourquoi":"6-10 mots : pourquoi ce transport vu le budget/conditions"
+     "transport_pourquoi":"6-10 mots : pourquoi ce transport vu le budget/conditions",
+     "transport_prix":"fourchette A/R par personne, ex 90-140€",
+     "transport_duree":"durée porte-à-porte, ex 2h15 de vol + 1h de transferts",
+     "logement_type":"1 ou 2 mots MAX : hôtel, appartement, auberge, villa…",
+     "logement_quartier":"LE quartier précis conseillé (nom réel), ex Trastevere",
+     "logement_prix":"fourchette par nuit, ex 80-120€",
+     "logement_pourquoi":"6-10 mots : pourquoi ce quartier"
    }
  ],
  "questions":[
@@ -342,9 +352,11 @@ Réponds UNIQUEMENT en JSON valide, structure exacte. Commence OBLIGATOIREMENT p
     state.destinations = d.destinations || [];
     state.seen = [...new Set([...(state.seen||[]), ...state.destinations.map(x=>x.nom)])].slice(-15);
     state.lastProps = d; save();
-    unlockSteps();
     renderDestinations(d);
     gotoStep(2);
+    /* → Questions de précision AVANT que tu ne choisisses : la pop-up s'ouvre ici */
+    const qs = (d.questions || []).filter(q => q && q.texte);
+    if(qs.length && !state._qsDone) openQsPopup(qs);
   }catch(e){
     if(e.message !== 'NO_KEY') zone.innerHTML = `<div class="card">${errHTML("Impossible de contacter Gemini. Vérifie ta clé ou ta connexion.")}</div>`;
     else zone.innerHTML = '';
@@ -364,13 +376,15 @@ function renderDestinations(d){
       <div class="flag">${esc(x.drapeau||'📍')}</div>
       <h3>${esc(x.nom)}</h3><div class="country">${esc(x.pays)}</div>
       <p>${esc(x.resume)}</p>
-      <div style="border-top:2px solid var(--stroke);padding-top:10px;display:grid;gap:6px;font-size:.84rem;font-weight:600">
-        <div>💶 <strong>Budget :</strong> ${esc(x.budget_estime)}</div>
-        <div>☀️ <strong>Météo sur place :</strong> ${esc(x.meteo_periode)}</div>
-        <div>⏱ <strong>Durée idéale :</strong> ${esc(x.duree_ideale)}</div>
-        <div>${tIco} <strong>Transport conseillé :</strong> ${esc(x.transport_conseille||'avion')}</div>
-        <div>🗣️ <strong>Langue :</strong> ${esc(x.langue||'')}</div>
+      <div class="dest-facts">
+        <div class="fact"><span class="fk">💶 Budget total</span><span class="fv">${esc(x.budget_estime)}</span></div>
+        <div class="fact"><span class="fk">${tIco} ${esc(x.transport_conseille||'avion')}</span><span class="fv">${esc(x.transport_prix||'—')}${x.transport_duree ? ' · ' + esc(x.transport_duree) : ''}</span></div>
+        <div class="fact"><span class="fk">🏨 ${esc(String(x.logement_type||'logement').split('(')[0].trim())}</span><span class="fv">${esc(x.logement_quartier||'—')}${x.logement_prix ? ' · ' + esc(x.logement_prix) + '/nuit' : ''}</span></div>
+        <div class="fact"><span class="fk">☀️ Météo</span><span class="fv">${esc(x.meteo_periode)}</span></div>
+        <div class="fact"><span class="fk">⏱ Durée idéale</span><span class="fv">${esc(x.duree_ideale)}</span></div>
+        <div class="fact"><span class="fk">🗣️ Langue</span><span class="fv">${esc(x.langue||'—')}</span></div>
       </div>
+      ${(x.transport_pourquoi || x.logement_pourquoi) ? `<p class="hint" style="margin-top:8px">${x.transport_pourquoi ? '✈️ ' + esc(x.transport_pourquoi) : ''}${x.transport_pourquoi && x.logement_pourquoi ? ' · ' : ''}${x.logement_pourquoi ? '🏨 ' + esc(x.logement_pourquoi) : ''}</p>` : ''}
       <div class="tags" style="margin-top:10px">${(x.points_forts||[]).map(p=>`<span class="tag">${esc(p)}</span>`).join('')}</div>
       <button class="btn sm" style="width:100%;justify-content:center;margin-top:6px">Choisir ce voyage →</button>
     </div>`;
@@ -429,28 +443,44 @@ function passHTML(){
   const to   = (t.iata || t.nom.slice(0,3)).toUpperCase();
   const plan = state.cache.plan;
   const d    = stayDates();
-  const dates = d ? `${d.in.split('-').reverse().slice(0,2).join('/')} → ${d.out.split('-').reverse().slice(0,2).join('/')}` : (p.when || 'dates flexibles');
-  const budget = plan?.budget?.total ? `${plan.budget.total} €/pers` : (t.budget_estime || '—');
-  const logt = plan?.logement ? String(plan.logement.type||'').split('(')[0].trim() : '';
+  const jj   = s => s.split('-').reverse().slice(0,2).join('/');
+  const dates = d ? `${jj(d.in)} → ${jj(d.out)}` : (p.when || 'dates flexibles');
+  const nuits = d ? Math.max(1, Math.round((new Date(d.out) - new Date(d.in)) / 86400000)) : null;
+  const pax   = `${p.adults || 1} ad.${p.kids ? ` + ${p.kids} enf.` : ''}`;
+  /* on garde un type de logement COURT : "Appartement ou Hôtel familial" → "Appartement" */
+  const logt = plan?.logement
+    ? String(plan.logement.type || '').split(/\s*(?:\(|ou |\/)/)[0].trim().slice(0, 16)
+    : '';
+  const budget = plan?.budget?.total ? `${plan.budget.total} €` : (t.budget_estime || '—').replace(/\/pers.*$/i, '');
+
   return `<div class="pass">
-    <div class="pass-in">
-      <div style="min-width:0">
-        <div class="route">${esc(from)} <span class="plane">✈</span> ${esc(to)}</div>
-        <div class="meta">${esc(t.nom)}, ${esc(t.pays)} ${esc(t.drapeau||'')} · ${esc(p.days||'')} · ${esc(dates)}</div>
+    <div class="pass-top">
+      <div class="pass-route">
+        <span class="iata">${esc(from)}</span>
+        <span class="dash"></span>
+        <span class="plane">✈</span>
+        <span class="dash"></span>
+        <span class="iata">${esc(to)}</span>
       </div>
-      <button class="btn ghost sm" data-changedest style="flex-shrink:0">Changer</button>
+      <button class="pass-change" data-changedest title="Changer de destination">↩</button>
     </div>
-    <div class="pass-acts">
-      <button class="pact" data-passpng title="Télécharger le ticket avec QR">📷<span>Ticket PNG</span></button>
-      <button class="pact" data-sharelink title="Partager un lien d'import">🔗<span>Lien</span></button>
-      <button class="pact" data-ics title="Ajouter le programme à l'agenda">📅<span>Agenda</span></button>
+
+    <div class="pass-info">
+      <div class="pi"><span class="pk">Destination</span><span class="pv">${esc(t.nom)} ${esc(t.drapeau || '')}</span></div>
+      <div class="pi"><span class="pk">Dates</span><span class="pv">${esc(dates)}${nuits ? ` · ${nuits} n.` : ''}</span></div>
+      <div class="pi"><span class="pk">Passagers</span><span class="pv">${esc(pax)}</span></div>
+      <div class="pi"><span class="pk">Budget</span><span class="pv">${esc(budget)}${logt ? ` · ${esc(logt)}` : ''}</span></div>
     </div>
-    <p class="pass-note">🎟 Ticket souvenir — ne permet pas d'embarquer. Le QR sert uniquement à importer ce voyage dans Acolite.</p>
-    <div class="tear">
-      <span>PASSAGERS · ${p.adults||2} adulte(s)${p.kids ? ' + ' + p.kids + ' enfant(s)' : ''}</span>
-      <span>BUDGET · ${esc(budget)}${logt ? ' · ' + esc(logt) : ''}</span>
-      <div class="barcode">${'<i></i>'.repeat(22)}</div>
+
+    <div class="pass-tear">
+      <div class="barcode">${'<i></i>'.repeat(26)}</div>
+      <div class="pass-acts">
+        <button class="pact" data-passpng title="Télécharger le ticket avec son QR code">📷<span>Ticket</span></button>
+        <button class="pact" data-sharelink title="Partager un lien qui importe ce voyage">🔗<span>Lien</span></button>
+        <button class="pact" data-ics title="Ajouter le programme à ton agenda">📅<span>Agenda</span></button>
+      </div>
     </div>
+    <p class="pass-note">Ticket souvenir — ne permet pas d'embarquer. Le QR sert uniquement à importer ce voyage dans Acolite.</p>
   </div>`;
 }
 function changeDest(){ gotoStep(1); }
@@ -654,15 +684,22 @@ async function loadPlan(force = false){
   const t = state.trip;
   const answers = (state.planAnswers||[]).join(' · ');
   const realCtx = await realData();
+  /* Le transport et le logement ont DÉJÀ été trouvés à l'étape 2 : on les garde et on approfondit */
+  const dejaTrouve = (t.transport_conseille || t.logement_quartier)
+    ? `\nCHOIX DÉJÀ VALIDÉS À L'ÉTAPE 2 (le voyageur les a acceptés en choisissant ce voyage — GARDE-LES, sauf si les données réelles les contredisent) :
+- Transport : ${t.transport_conseille || '?'}${t.transport_prix ? ` (${t.transport_prix})` : ''}${t.transport_duree ? `, ${t.transport_duree}` : ''}
+- Logement : ${t.logement_type || '?'} dans le quartier ${t.logement_quartier || '?'}${t.logement_prix ? ` (${t.logement_prix}/nuit)` : ''}
+TON TRAVAIL : approfondir (détails pratiques, programme jour par jour, budget précis), PAS tout recommencer.\n`
+    : '';
   const prompt = `Tu es Acolite, organisateur de voyage expert. ${ctx()}
-${realCtx}
+${realCtx}${dejaTrouve}
 Destination validée : ${t.nom} (${t.pays}).
 RÈGLE ABSOLUE : ne cite que des quartiers, lieux et établissements RÉELS et vérifiables. En cas de doute, omets plutôt qu'inventer.
 Si les données réelles incluent un trajet en train ou un taux de change, appuie ton choix de transport et tes conversions de budget DESSUS.
 ${answers ? 'RÉPONSES du voyageur à tes questions précédentes (à intégrer au plan) : ' + answers : ''}
 
 MISSION : organise TOUT le voyage. C'est TOI qui décides du transport (avion, train ou voiture) en fonction du budget, de la distance depuis ${state.prefs.from} et des limites du voyageur — justifie ton choix. Trouve le meilleur type de logement et le quartier. Structure le séjour. Reste STRICTEMENT dans le budget.
-${state._qsDone ? 'INTERDIT de poser des questions : renvoie "questions":[].' : answers ? 'Ne repose PAS de questions déjà répondues. Si tout est clair, renvoie "questions":[].' : 'Si des infos te manquent vraiment pour affiner (max 3 questions), pose-les avec des options courtes.'}
+INTERDIT de poser des questions : renvoie "questions":[]. Le voyageur a déjà tout précisé, construis le voyage complet directement.
 
 Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (raisonnement interne, jamais montré) AVANT le reste :
 {
@@ -687,13 +724,6 @@ Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (ra
 Le programme couvre toute la durée (${state.prefs.days}), 1 ligne par jour.`;
   try{
     let d = await gemini(prompt, true, 8192, false, 0.45);
-    /* 1er passage : si l'IA a des questions → pop-up AVANT le voyage final */
-    const qs = (d.questions||[]).filter(q => q && q.texte);
-    if(qs.length && !state._qsDone){
-      zone.innerHTML = `<div class="loader"><div class="orbit"></div>Acolite a besoin de tes réponses…</div>`;
-      openQsPopup(qs);
-      return;
-    }
     d = await reviewPlan(d, prompt);
     state.cache.plan = d; save();
     renderPlan(d);
@@ -1026,6 +1056,8 @@ document.addEventListener('click', e => {
 let _qsList = [];
 function openQsPopup(qs){
   _qsList = qs.slice(0, 3);
+  const pg = $('#qsProg');
+  if(pg) pg.innerHTML = _qsList.map(() => '<i></i>').join('');
   $('#zoneQs').innerHTML = _qsList.map((q, i) => `
     <h4 style="margin:14px 0 6px;font-family:'Sora'">${i+1}. ${esc(q.texte)}</h4>
     <div class="chips" data-qi="${i}">${(q.options||[]).map(o=>`<div class="chip qsopt" data-qi="${i}" data-a="${esc(o)}">${esc(o)}</div>`).join('')}</div>`).join('');
@@ -1037,24 +1069,29 @@ document.addEventListener('click', e => {
   if(c){
     $$(`.chip.qsopt[data-qi="${c.dataset.qi}"]`).forEach(x => x.classList.remove('on'));
     c.classList.add('on');
-    $('#btnQsGo').disabled = $$('#zoneQs .chips').some(g => !g.querySelector('.on'));
+    const reste = $$('#zoneQs .chips').filter(g => !g.querySelector('.on')).length;
+    $('#btnQsGo').disabled = reste > 0;
+    $$('#qsProg i').forEach((el, i) => el.classList.toggle('on', !!$$('#zoneQs .chips')[i]?.querySelector('.on')));
+    const btn = $('#btnQsGo');
+    if(btn) btn.textContent = reste ? `Encore ${reste} question${reste > 1 ? 's' : ''}…` : '✅ Affiner mes propositions';
     return;
   }
   if(e.target.id === 'btnQsGo'){
     $$('#zoneQs .chip.qsopt.on').forEach(c2 => {
-      state.planAnswers.push(`${_qsList[+c2.dataset.qi]?.texte} → ${c2.dataset.a}`.slice(0,200));
+      state.propAnswers = state.propAnswers || [];
+      state.propAnswers.push(`${_qsList[+c2.dataset.qi]?.texte} → ${c2.dataset.a}`.slice(0, 200));
     });
-    state.planAnswers = state.planAnswers.slice(-12);
+    state.propAnswers = (state.propAnswers || []).slice(-12);
     state._qsDone = true; save();
     $('#ovQs').classList.remove('show');
-    toast('✔ Réponses prises en compte — génération du voyage…');
-    loadPlan(true);
+    toast('🎯 Merci — Acolite affine tes propositions…');
+    proposeTrips(state.propAnswers.join(' · '));   /* on relance les PROPOSITIONS avec les réponses */
     return;
   }
   if(e.target.id === 'btnQsSkip'){
     state._qsDone = true; save();
     $('#ovQs').classList.remove('show');
-    loadPlan(true);
+    toast('Ok, Acolite garde ses propositions actuelles 👍');
   }
 });
 
@@ -2381,8 +2418,8 @@ document.addEventListener('click', e => {
 /* ============================================================
    UI GÉNÉRALE
 ============================================================ */
-const _e14 = $('#btnGo'); if(_e14) _e14.onclick = () => { state.propAnswers = []; proposeTrips(); };
-const _e15 = $('#btnLucky'); if(_e15) _e15.onclick = () => { state.propAnswers = []; proposeTrips('', true); };
+const _e14 = $('#btnGo'); if(_e14) _e14.onclick = () => { state.propAnswers = []; state._qsDone = false; proposeTrips(); };
+const _e15 = $('#btnLucky'); if(_e15) _e15.onclick = () => { state.propAnswers = []; state._qsDone = false; proposeTrips('', true); };
 
 
 
