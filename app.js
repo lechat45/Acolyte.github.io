@@ -392,7 +392,7 @@ function passHTML(){
         <div class="route">${esc(from)} <span class="plane">✈</span> ${esc(to)}</div>
         <div class="meta">${esc(t.nom)}, ${esc(t.pays)} ${esc(t.drapeau||'')} · ${esc(p.days||'')} · ${esc(dates)}</div>
       </div>
-      <button class="btn ghost sm" onclick="changeDest()" style="flex-shrink:0">Changer</button>
+      <button class="btn ghost sm" data-changedest style="flex-shrink:0">Changer</button>
     </div>
     <div class="pass-acts">
       <button class="pact" data-passpng title="Télécharger le ticket avec QR">📷<span>Ticket PNG</span></button>
@@ -421,7 +421,7 @@ function unlockSteps(){
   $$('.step').forEach(s => {
     const n = +s.dataset.step;
     if(n === 2) s.classList.toggle('locked', !(state.destinations||[]).length);
-    if(n === 3 || n === 4) s.classList.toggle('locked', !state.trip);
+    if(n >= 3) s.classList.toggle('locked', !state.trip);
   });
 }
 let _onSiteDone = false;
@@ -430,19 +430,23 @@ function openSub(t){
   Object.entries(TAB_PANELS).forEach(([k, sel]) => $(sel)?.classList.toggle('hidden', k !== t));
 }
 function gotoStep(n, sub){
-  n = Math.min(n, 4);
+  n = Math.min(n, 5);
   if(n === 2 && !(state.destinations||[]).length){ toast('Remplis d’abord le questionnaire 😉'); return; }
-  if((n === 3 || n === 4) && !state.trip){ toast('Choisis d’abord un des 3 voyages 😉'); return; }
+  if(n >= 3 && !state.trip){ toast('Choisis d’abord un des 3 voyages 😉'); return; }
   state.step = n; save();
   $$('.step').forEach(s => s.classList.toggle('active', +s.dataset.step === n));
-  /* l'étape 4 affiche la vue "Sur place" (view5) */
   [1,2,3].forEach(i => $('#view'+i).classList.toggle('hidden', i !== n));
-  $('#view5').classList.toggle('hidden', n !== 4);
+  $('#view5').classList.toggle('hidden', n !== 4);   /* 4 = chat IA */
+  $('#view6').classList.toggle('hidden', n !== 5);   /* 5 = sur place */
   refreshPasses();
   window.scrollTo({top:0, behavior:'smooth'});
   if(n === 3) loadPlan();
-  if(n === 4 && !_onSiteDone){ _onSiteDone = true; initOnSite(); }
-  if(n === 4){ renderSpends(); renderCountdown(); if(sub) openSub(sub); }
+  if(n === 4) renderChat();
+  if(n === 5){
+    if(!_onSiteDone){ _onSiteDone = true; initOnSite(); }
+    renderSpends(); renderCountdown();
+    if(sub) openSub(sub);
+  }
 }
 $$('.step').forEach(s => s.onclick = () => { if(!s.classList.contains('locked')) gotoStep(+s.dataset.step); });
 
@@ -804,42 +808,70 @@ function renderPlan(d){
   const icons = {avion:'✈️', train:'🚆', voiture:'🚗'};
   const tr = d.transport||{}, lg = d.logement||{}, bd = d.budget||{};
   const qs = (d.questions||[]).filter(q=>q && q.texte);
+  const A = (state.prefs?.adults||1) + (state.prefs?.kids||0);
+  const dts = stayDates();
+  const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : null;
+
   let html = `
-    ${d._checked ? `<p class="hint" style="margin:0 0 12px">🔍 ${d._checked === 'fixed' ? 'Incohérences détectées et corrigées par relecture croisée' : 'Cohérence budget / durée / transport vérifiée par relecture croisée'}</p>` : ''}
+    <p class="sub" style="margin:-4px 0 12px">Le voyage qu'Acolite a construit pour toi${nuits ? `, sur ${nuits} nuit(s)` : ''}${A > 1 ? `, pour ${A} personnes` : ''}. ${d._checked === 'fixed' ? '⚠️ Une seconde IA a relu le plan et corrigé des incohérences.' : d._checked ? '✔ Budget, durée et transport relus par une seconde IA.' : ''}</p>
+
+    <h3 style="margin:0 0 10px">📋 L'essentiel</h3>
     <div class="plan-grid">
-      <div class="plan-stat"><div class="k">Transport</div><div class="v">${icons[tr.mode]||'✈️'} ${esc(tr.mode||'?')}</div><div class="s">${esc(tr.prix_estime||'')}</div></div>
-      <div class="plan-stat"><div class="k">Logement</div><div class="v">🏨 ${esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${esc(lg.quartier||'')}${lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : ''}</div></div>
-      <div class="plan-stat"><div class="k">Budget final</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">par personne</div></div>
-      ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Météo</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
+      <div class="plan-stat"><div class="k">Comment y aller</div><div class="v">${icons[tr.mode]||'✈️'} ${esc(tr.mode||'?')}</div><div class="s">${esc(tr.prix_estime||'')}</div></div>
+      <div class="plan-stat"><div class="k">Où dormir</div><div class="v">🏨 ${esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${esc(lg.quartier||'')}${lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : ''}</div></div>
+      <div class="plan-stat"><div class="k">Ce que ça coûte</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">par personne${A > 1 && bd.total ? ` · ${bd.total * A} € au total` : ''}</div></div>
+      ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Le temps qu'il fera</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
     </div>
-    ${bd.repartition ? `<p class="hint" style="margin:10px 0 0">💶 ${esc(bd.repartition)}</p>` : ''}
-    <h3 style="margin:18px 0 10px">📆 Programme jour par jour</h3>
-    ${(d.programme||[]).map(j=>`
-      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:9px">
-        <span class="tl-time" style="flex-shrink:0">J${esc(String(j.jour))}</span>
+
+    <div class="divider"></div>
+    <h3 style="margin:0 0 10px">🧠 Pourquoi ces choix</h3>
+    <div class="item" style="align-items:flex-start"><div class="emo">${icons[tr.mode]||'✈️'}</div>
+      <div style="flex:1"><h4>Y aller en ${esc(tr.mode||'transport')}</h4><p>${esc(tr.pourquoi||'—')}</p>
+      ${tr.details ? `<p class="hint" style="margin-top:4px">${esc(tr.details)}</p>` : ''}</div></div>
+    <div class="item" style="align-items:flex-start"><div class="emo">🏨</div>
+      <div style="flex:1"><h4>Dormir à ${esc(lg.quartier||'—')}</h4><p>${esc(lg.pourquoi||'—')}</p></div></div>
+    ${bd.repartition ? `<div class="item" style="align-items:flex-start"><div class="emo">💶</div>
+      <div style="flex:1"><h4>Le budget en détail</h4><p>${esc(bd.repartition)}</p></div></div>` : ''}
+    ${d.conseil_cle ? `<div class="item" style="align-items:flex-start;background:var(--primary)"><div class="emo">💡</div>
+      <div style="flex:1"><h4 style="color:#101010">Le conseil à retenir</h4><p style="color:#101010">${esc(d.conseil_cle)}</p></div></div>` : ''}
+
+    <div class="divider"></div>
+    <h3 style="margin:0 0 4px">📆 Ton programme, jour par jour</h3>
+    <p class="hint" style="margin:0 0 12px">Une journée ne te convient pas ? Le bouton 🔄 la refait à elle seule (pluie, fatigue, budget…).</p>
+    ${(d.programme||[]).map(jr=>`
+      <div class="item" style="align-items:flex-start">
+        <span class="tl-time" style="flex-shrink:0">J${esc(String(jr.jour))}</span>
         <div style="flex:1;min-width:0">
-          <p style="font-weight:600;font-size:.88rem;margin-top:3px">${esc(j.resume)}</p>
-          ${(j.lieux||[]).length ? `<p class="hint" style="margin:2px 0 0">📍 ${j.lieux.map(esc).join(' · ')}</p>` : ''}
+          <h4>${esc(jr.resume)}</h4>
+          ${(jr.lieux||[]).length ? `<p class="hint" style="margin:3px 0 0">📍 ${jr.lieux.map(esc).join(' · ')}</p>` : ''}
         </div>
-        <button class="btn sm ghost" data-planb="${esc(String(j.jour))}" title="Régénérer cette journée" style="flex-shrink:0;padding:5px 8px">🔄</button>
+        <button class="btn sm ghost" data-planb="${esc(String(jr.jour))}" title="Refaire cette journée" style="flex-shrink:0;padding:6px 9px">🔄</button>
       </div>`).join('')}`;
+
   if(qs.length){
-    html += `<div class="divider"></div><h3 style="margin-bottom:4px">🤔 Une précision et le plan s'ajuste</h3>`;
+    html += `<div class="divider"></div><h3 style="margin:0 0 4px">🤔 Affine encore</h3>
+      <p class="hint" style="margin:0 0 10px">Réponds et Acolite adapte le voyage.</p>`;
     qs.forEach(q=>{
       html += `<h4 style="margin:10px 0 6px;font-family:'Sora'">${esc(q.texte)}</h4>
       <div class="chips">${(q.options||[]).map(o=>`<div class="chip planq" data-q="${esc(q.texte)}" data-a="${esc(o)}">${esc(o)}</div>`).join('')}</div>`;
     });
   }
-  html += `<div class="row" style="margin-top:14px">
-      <button class="btn sm ghost" id="btnPlanRedo">🔄 Réorganiser</button>
-      <button class="btn sm ghost" onclick="changeDest()">↩ Changer de destination</button>
-    </div>
-    <button class="btn" id="btnGoBag" style="width:100%;justify-content:center;margin-top:10px">🎒 Préparer ma valise (adaptée à la météo réelle)</button>`;
+
+  html += `
+    <div class="divider"></div>
+    <h3 style="margin:0 0 4px">👉 Et maintenant ?</h3>
+    <p class="hint" style="margin:0 0 4px"><strong>Réservation</strong> : tous les liens (billets, hôtels avec prix réels, activités), déjà pré-remplis.<br>
+    <strong>Simulation</strong> : les vrais prix des vols et des trains, jour par jour, pour choisir le bon moment.</p>
+    <div class="row" style="margin-top:14px">
+      <button class="btn sm ghost" id="btnPlanRedo">🔄 Tout réorganiser</button>
+      <button class="btn sm ghost" data-changedest>↩ Changer de destination</button>
+    </div>`;
+
   $('#zonePlan').innerHTML = html;
-  fitStats();      /* aucune valeur coupée */
-  refreshPasses(); /* le pass reprend le budget/logement réels du plan */
-  showGlobe();     /* globe 3D + arc de vol */
-  startWx();       /* météo animée */
+  fitStats();
+  refreshPasses();
+  showGlobe();
+  startWx();
 }
 addEventListener('resize', () => { if($('#zonePlan')?.querySelector('.plan-stat')) fitStats(); });
 
@@ -1066,53 +1098,136 @@ function trackPrice(prix, source){
   }
 }
 
-/* --- ASSISTANT SUR PLACE : répond avec tout le contexte du voyage --- */
-async function askAcolite(q){
-  const z = $('#zoneAsk');
-  if(!state.trip){ toast('Choisis d’abord un voyage'); return; }
-  q = String(q || '').trim().slice(0, 300);
-  if(!q) return;
-  z.innerHTML = loaderHTML('Acolite réfléchit…');
+/* ============================================================
+   CHAT — conversation avec Acolite (onglet 4)
+   Il connaît le voyage, le budget, le programme, la météo.
+============================================================ */
+const LS_CHAT = 'acolite_chat';
+function getChat(){ try{ return JSON.parse(localStorage.getItem(LS_CHAT)) || {}; }catch(e){ return {}; } }
+function chatKey(){ return state.trip?.nom || 'general'; }
+function chatHist(){ return getChat()[chatKey()] || []; }
+function chatPush(role, text){
+  const all = getChat();
+  const k = chatKey();
+  all[k] = [...(all[k] || []), { role, text, ts: Date.now() }].slice(-40);
+  try{ localStorage.setItem(LS_CHAT, JSON.stringify(all)); }catch(e){}
+}
+
+const CHAT_SUGG = [
+  "Il pleut, que faire aujourd'hui ?",
+  "Où manger pas cher près de mon logement ?",
+  "Comment aller au centre depuis l'aéroport ?",
+  "Un truc à faire ce soir ?",
+  "Combien prévoir par jour sur place ?",
+  "Quelles arnaques éviter ?",
+  "Comment dire bonjour dans la langue locale ?"
+];
+
+function renderChat(){
+  const log = $('#chatLog');
+  if(!log) return;
+  const h = chatHist();
+  if(!h.length){
+    log.innerHTML = `<div class="msg ai"><span class="who">Acolite</span>${
+      state.trip
+        ? `Salut ${esc(getUser()?.pseudo || '')} ! Je connais ton voyage à <strong>${esc(state.trip.nom)}</strong> — le programme, le budget, la météo, ton quartier. Demande-moi ce que tu veux, je réponds avec ton contexte.`
+        : `Salut ! Choisis d'abord un voyage dans l'onglet 2, et je pourrai te répondre avec tout le contexte (programme, budget, météo…). En attendant, tu peux quand même me poser des questions de voyage.`
+    }</div>`;
+  } else {
+    log.innerHTML = h.map(m => `<div class="msg ${m.role === 'me' ? 'me' : 'ai'}">
+      <span class="who">${m.role === 'me' ? (getUser()?.pseudo || 'Moi') : 'Acolite'}</span>${esc(m.text)}</div>`).join('');
+  }
+  log.scrollTop = log.scrollHeight;
+
+  const ctx = $('#chatCtx');
+  if(ctx){
+    const p = state.cache.plan;
+    ctx.textContent = state.trip
+      ? `${state.trip.nom}${p?.logement?.quartier ? ' · ' + p.logement.quartier : ''}${p?.budget?.total ? ' · ' + p.budget.total + ' €/pers' : ''}`
+      : 'Aucun voyage sélectionné';
+  }
+  const sg = $('#chatSugg');
+  if(sg && !sg.children.length){
+    sg.innerHTML = CHAT_SUGG.map(q => `<div class="chip chatq">${esc(q)}</div>`).join('');
+  }
+}
+
+async function chatSend(text){
+  text = String(text || '').trim().slice(0, 500);
+  if(!text) return;
+  const log = $('#chatLog');
+  chatPush('me', text);
+  renderChat();
+  $('#chatIn').value = '';
+  $('#chatIn').style.height = 'auto';
+
+  const th = document.createElement('div');
+  th.className = 'msg ai think';
+  th.innerHTML = `<span class="who">Acolite</span><span class="typing"><i></i><i></i><i></i></span>`;
+  log.appendChild(th);
+  log.scrollTop = log.scrollHeight;
+
   const p = state.prefs || {}, plan = state.cache.plan || {}, R = state.cache._real || {};
   const d = stayDates();
   const now = new Date();
   const dep = d ? new Date(d.in) : null;
   const jour = dep && now >= dep ? Math.ceil((now - dep) / 86400000) : null;
-  const depense = state.spends.reduce((a, x) => a + x.amount, 0);
+  const depense = (state.spends || []).reduce((a, x) => a + x.amount, 0);
+  /* les 6 derniers échanges pour garder le fil de la conversation */
+  const fil = chatHist().slice(-7, -1).map(m => `${m.role === 'me' ? 'Voyageur' : 'Toi'} : ${m.text}`).join('\n');
+
   try{
-    const r = await gemini(`Tu es Acolite, le copilote de voyage de ce voyageur. Il est SUR PLACE (ou s'y prépare) et te pose une question concrète. Réponds en français, court (4 phrases max), utile, actionnable. Pas de blabla, pas de liste interminable.
+    const r = await gemini(`Tu es Acolite, le copilote de voyage de ce voyageur. Tu discutes avec lui dans un chat.
+Réponds en français, de façon CONVERSATIONNELLE et courte (4 phrases max, pas de liste à rallonge sauf si on te demande une liste). Sois concret et utile, jamais creux.
 
-CONTEXTE DU VOYAGE (utilise-le vraiment) :
+${state.trip ? `CONTEXTE DU VOYAGE — sers-t'en vraiment :
 - Destination : ${state.trip.nom}, ${state.trip.pays}
-- Heure locale approximative : ${now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}, ${now.toLocaleDateString('fr-FR')}
-${jour ? `- Jour ${jour} du séjour` : d ? `- Départ prévu le ${d.in}` : ''}
+- Date et heure : ${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}
+${jour ? `- Jour ${jour} du séjour (il est SUR PLACE)` : d ? `- Départ prévu le ${d.in}` : ''}
 - Voyageurs : ${p.adults || 2} adulte(s)${p.kids ? ` + ${p.kids} enfant(s)` : ''}
-${plan.logement?.quartier ? `- Logement dans le quartier : ${plan.logement.quartier}` : ''}
+${plan.logement?.quartier ? `- Logement : ${plan.logement.type || ''} dans le quartier ${plan.logement.quartier}` : ''}
 ${plan.budget?.total ? `- Budget prévu : ${plan.budget.total} €/personne · déjà dépensé : ${depense.toFixed(0)} €` : ''}
-${plan.programme?.length ? `- Programme prévu : ${plan.programme.map(j => `J${j.jour} ${j.resume}`).join(' | ')}` : ''}
+${plan.programme?.length ? `- Programme : ${plan.programme.map(x => `J${x.jour} ${x.resume}`).join(' | ')}` : ''}
 ${R.meteo ? `- Météo réelle : ${R.meteo}` : ''}
-${R.feries ? `- Jours fériés : ${R.feries}` : ''}
+${R.feries ? `- Jours fériés pendant le séjour : ${R.feries}` : ''}
+${state.trip.langue ? `- Langue locale : ${state.trip.langue}` : ''}` : "Le voyageur n'a pas encore choisi de destination."}
 
-RÈGLES : uniquement des lieux qui EXISTENT VRAIMENT à ${state.trip.nom} (si tu doutes d'un nom, reste générique : "les trattorias de la rue X"). Donne des prix réalistes en ${(state.trip.monnaie || 'euros')}. Tiens compte de l'heure (rien de fermé).
+RÈGLES : uniquement des lieux qui EXISTENT VRAIMENT (dans le doute, reste générique). Prix réalistes. Tiens compte de l'heure (ne propose pas un musée fermé). Ne répète pas le contexte, réponds directement.
 
-QUESTION : ${q}`, false, 700, false, 0.7);
-    const txt = typeof r === 'string' ? r : (r?.texte || JSON.stringify(r));
-    z.innerHTML = `<div class="item" style="align-items:flex-start">
-      <div class="emo">🤖</div>
-      <p style="flex:1;white-space:pre-wrap;font-weight:600;font-size:.9rem">${esc(txt)}</p>
-    </div>`;
+${fil ? `CONVERSATION EN COURS :\n${fil}\n` : ''}
+NOUVEAU MESSAGE DU VOYAGEUR : ${text}`, false, 800, false, 0.75);
+
+    const txt = typeof r === 'string' ? r : (r?.texte || r?.reponse || JSON.stringify(r));
+    th.remove();
+    chatPush('ai', String(txt).trim());
+    renderChat();
   }catch(e){
-    z.innerHTML = `<p class="hint">❌ Acolite n'a pas pu répondre (${esc(e.message)}). Réessaie.</p>`;
+    th.remove();
+    chatPush('ai', `Je n'ai pas réussi à répondre (${e.message}). Réessaie dans un instant.`);
+    renderChat();
   }
 }
+
 document.addEventListener('click', e => {
-  if(e.target.id === 'btnGoBag'){ gotoStep(4, 'bag'); return; }
-  if(e.target.id === 'btnAsk'){ askAcolite($('#askIn').value); return; }
-  const c = e.target.closest('.chip.askq');
-  if(c){ $('#askIn').value = c.textContent; askAcolite(c.textContent); }
+  if(e.target.closest('#chatSend')){ chatSend($('#chatIn').value); return; }
+  const q = e.target.closest('.chip.chatq');
+  if(q){ chatSend(q.textContent); return; }
+  if(e.target.closest('#chatClear')){
+    if(!confirm('Effacer toute la conversation ?')) return;
+    const all = getChat();
+    delete all[chatKey()];
+    localStorage.setItem(LS_CHAT, JSON.stringify(all));
+    renderChat();
+  }
 });
 document.addEventListener('keydown', e => {
-  if(e.target.id === 'askIn' && e.key === 'Enter') askAcolite($('#askIn').value);
+  if(e.target.id !== 'chatIn') return;
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); chatSend(e.target.value); }
+});
+document.addEventListener('input', e => {
+  if(e.target.id !== 'chatIn') return;
+  e.target.style.height = 'auto';
+  e.target.style.height = Math.min(110, e.target.scrollHeight) + 'px';
 });
 
 /* --- PLAN B : régénère UNE seule journée (sans tout refaire) --- */
@@ -1150,6 +1265,13 @@ Réponds UNIQUEMENT en JSON : {"jour":${jour},"resume":"phrase courte","lieux":[
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-planb]');
   if(b) planB(b.dataset.planb);
+});
+
+/* --- Accordéons + boutons "changer de destination" (CSP stricte : aucun onclick inline) --- */
+document.addEventListener('click', e => {
+  const acc = e.target.closest('[data-acc]');
+  if(acc){ acc.parentElement.classList.toggle('open'); return; }
+  if(e.target.closest('[data-changedest]')) changeDest();
 });
 
 /* --- Compte à rebours + météo qui se précise --- */
@@ -1251,13 +1373,13 @@ function buildResa(){
     <div class="row">${B(gyg,'GetYourGuide',1)}${B(cvt,'Civitatis')}${B(ta,'Tripadvisor')}</div>`;
 }
 
-$('#btnOpenResa').onclick = () => {
+const _e1 = $('#btnOpenResa'); if(_e1) _e1.onclick = () => {
   if(!state.trip){ toast('Choisis d’abord un voyage 😉'); return; }
   buildResa();
   $('#ovResa').classList.add('show');
   loadHotels();
 };
-$('#btnOpenSim').onclick = () => {
+const _e2 = $('#btnOpenSim'); if(_e2) _e2.onclick = () => {
   if(!state.trip){ toast('Choisis d’abord un voyage 😉'); return; }
   $('#ovSim').classList.add('show');
   loadTransport();
@@ -1300,9 +1422,9 @@ document.addEventListener('click', e => {
 /* ============================================================
    ÉTAPE 3 — Y ALLER  (Gemini · heavy)
 ============================================================ */
-$('#tgPlane').onclick = () => setMode('plane');
-$('#tgCar').onclick   = () => setMode('car');
-$('#tgTrain').onclick = () => setMode('train');
+const _e3 = $('#tgPlane'); if(_e3) _e3.onclick = () => setMode('plane');
+const _e4 = $('#tgCar'); if(_e4) _e4.onclick   = () => setMode('car');
+const _e5 = $('#tgTrain'); if(_e5) _e5.onclick = () => setMode('train');
 function setMode(m){
   state.mode = m; state.modeManual = true; save();
   $('#tgPlane').classList.toggle('on', m==='plane');
@@ -1697,7 +1819,7 @@ document.addEventListener('click', e => {
 /* ============================================================
    ÉTAPE 3 — DORMIR  (Gemini · heavy)
 ============================================================ */
-$('#btnStayGo').onclick = () => { delete state.cache.stay; save(); loadStay(); };
+const _e6 = $('#btnStayGo'); if(_e6) _e6.onclick = () => { delete state.cache.stay; save(); loadStay(); };
 
 async function loadStay(){
   const zone = $('#zoneStay');
@@ -1831,7 +1953,7 @@ function timelineHTML(d){
   </div>`;
 }
 
-$('#btnIti').onclick = async () => {
+const _e7 = $('#btnIti'); if(_e7) _e7.onclick = async () => {
   const zone = $('#zoneIti');
   const day = $('#itiDay').value;
   zone.innerHTML = loaderHTML('Construction de ton programme…');
@@ -1854,7 +1976,7 @@ function daysFromPrefs(){
   return 7;
 }
 
-$('#btnItiAll').onclick = async () => {
+const _e8 = $('#btnItiAll'); if(_e8) _e8.onclick = async () => {
   const zone = $('#zoneItiAll');
   const t = state.trip;
   const n = Math.min(daysFromPrefs(), 10);
@@ -1885,7 +2007,7 @@ function renderFullPlan(d){
   $('#zoneItiAll').innerHTML = `<div class="divider"></div><h3 style="margin-bottom:12px">📆 Ton séjour complet</h3>` +
     (d.jours||[]).map((j,i)=>`
       <div class="acc ${i===0?'open':''}">
-        <div class="acc-head" onclick="this.parentElement.classList.toggle('open')">
+        <div class="acc-head" data-acc>
           Jour ${esc(j.jour)} — ${esc(j.titre)} <span class="arr">›</span>
         </div>
         <div class="acc-body">${timelineHTML(j)}</div>
@@ -1895,7 +2017,7 @@ function renderFullPlan(d){
 /* ============================================================
    RESTOS (Gemini · heavy — connaissance locale précise)
 ============================================================ */
-$('#btnFoodGo').onclick = () => { delete state.cache.food; save(); loadFood(); };
+const _e9 = $('#btnFoodGo'); if(_e9) _e9.onclick = () => { delete state.cache.food; save(); loadFood(); };
 
 async function loadFood(){
   const zone = $('#zoneFood');
@@ -2151,7 +2273,7 @@ function renderBudget(d){
 }
 
 /* --- dépenses réelles --- */
-$('#btnSpend').onclick = () => {
+const _e10 = $('#btnSpend'); if(_e10) _e10.onclick = () => {
   const label = $('#spLabel').value.trim() || 'Dépense';
   const amount = parseFloat($('#spAmount').value);
   if(isNaN(amount) || amount <= 0){ toast('Entre un montant valide 💶'); return; }
@@ -2255,7 +2377,7 @@ function renderInfo(d, via){
 /* ============================================================
    EXPORT .md
 ============================================================ */
-$('#btnExport').onclick = () => {
+const _e11 = $('#btnExport'); if(_e11) _e11.onclick = () => {
   if(!state.trip){ toast('Choisis d’abord une destination'); return; }
   const t = state.trip, p = state.prefs || {}, c = state.cache;
   let md = `# ✈️ Voyage Acolite — ${t.nom}, ${t.pays}\n\n`;
@@ -2474,7 +2596,7 @@ window.convCur = (rate, from) => {
 };
 
 // --- Traducteur express (light → Groq) ---
-$('#btnTr').onclick = async () => {
+const _e12 = $('#btnTr'); if(_e12) _e12.onclick = async () => {
   const q = $('#trInp').value.trim();
   if(!q) return;
   const t = state.trip;
@@ -2520,7 +2642,7 @@ function initNote(){
     noteT = setTimeout(()=>{ save(); $('#noteSaved').textContent = 'Enregistré ✓ ' + new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }, 500);
   };
 }
-$('#btnRes').onclick = () => {
+const _e13 = $('#btnRes'); if(_e13) _e13.onclick = () => {
   const ref = $('#resRef').value.trim();
   if(!ref){ toast('Ajoute au moins une référence'); return; }
   state.resas.push({ type: $('#resType').value, ref, link: $('#resLink').value.trim() });
@@ -2549,12 +2671,12 @@ document.addEventListener('click', e => {
 /* ============================================================
    UI GÉNÉRALE
 ============================================================ */
-$('#btnGo').onclick = () => { state.propAnswers = []; proposeTrips(); };
-$('#btnLucky').onclick = () => { state.propAnswers = []; proposeTrips('', true); };
+const _e14 = $('#btnGo'); if(_e14) _e14.onclick = () => { state.propAnswers = []; proposeTrips(); };
+const _e15 = $('#btnLucky'); if(_e15) _e15.onclick = () => { state.propAnswers = []; proposeTrips('', true); };
 
 
 
-$('#btnReset').onclick = () => {
+const _e16 = $('#btnReset'); if(_e16) _e16.onclick = () => {
   if(!confirm('Repartir de zéro ? (tes clés API sont conservées)')) return;
   localStorage.removeItem(LS_TRIP);
   location.reload();
@@ -2617,11 +2739,11 @@ async function sendVerifyEmail(email, code){
   return false;
 }
 
-$('#goLogin').onclick  = () => authShow('authLogin');
-$('#goSignup').onclick = () => authShow('authSignup');
-$('#vfBack').onclick   = () => { localStorage.removeItem(LS_USER); authShow('authSignup'); };
+const _e17 = $('#goLogin'); if(_e17) _e17.onclick  = () => authShow('authLogin');
+const _e18 = $('#goSignup'); if(_e18) _e18.onclick = () => authShow('authSignup');
+const _e19 = $('#vfBack'); if(_e19) _e19.onclick   = () => { localStorage.removeItem(LS_USER); authShow('authSignup'); };
 
-$('#btnSignup').onclick = async () => {
+const _e20 = $('#btnSignup'); if(_e20) _e20.onclick = async () => {
   const email = $('#auEmail').value.trim().toLowerCase();
   const pseudo = $('#auPseudo').value.trim();
   const p1 = $('#auPass').value, p2 = $('#auPass2').value;
@@ -2636,13 +2758,13 @@ $('#btnSignup').onclick = async () => {
   sendVerifyEmail(email, code);
 };
 
-$('#btnResend').onclick = async () => {
+const _e21 = $('#btnResend'); if(_e21) _e21.onclick = async () => {
   const u = getUser(); if(!u) return;
   const code = await issueCode(u);
   sendVerifyEmail(u.email, code);
 };
 
-$('#btnVerify').onclick = async () => {
+const _e22 = $('#btnVerify'); if(_e22) _e22.onclick = async () => {
   const u = getUser(); if(!u) return;
   if(u.codeAt && Date.now() - u.codeAt > 15*60*1000)
     return authErr('Code expiré (15 min) — clique sur "Renvoyer le code".');
@@ -2661,7 +2783,7 @@ $('#btnVerify').onclick = async () => {
   toast('Compte vérifié — bienvenue ! 🎉');
 };
 
-$('#btnLogin').onclick = async () => {
+const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
   const u = getUser();
   const email = $('#loEmail').value.trim().toLowerCase();
   if(!u || u.email !== email) return authErr('Aucun compte avec cet email sur cet appareil.');
@@ -2759,14 +2881,14 @@ function renderProfile(){
   $('#pfAvatar').textContent = pseudo;
   $('#pfEmail').innerHTML = `${esc(pseudo)} <span style="cursor:pointer;font-size:.9rem" id="pfEditPseudo" title="Changer de pseudo">✏️</span>`;
   $('#pfMeta').innerHTML = `${esc(u.email)} · ${u.verified ? '✅ vérifié' : '⚠️ non vérifié'} · membre depuis le ${new Date(u.created).toLocaleDateString('fr-FR')}`;
-  $('#pfEditPseudo').onclick = () => {
+  const _e24 = $('#pfEditPseudo'); if(_e24) _e24.onclick = () => {
     const np = prompt('Ton nouveau pseudo :', pseudo);
     if(np && np.trim()){ u.pseudo = np.trim().slice(0,20); setUser(u); renderProfile(); toast('Pseudo mis à jour ✔'); }
   };
 }
-$('#pfExport').onclick = () => $('#btnExport').click();
-$('#pfNewTrip').onclick = () => $('#btnReset').click();
-$('#pfLogout').onclick = () => {
+const _e25 = $('#pfExport'); if(_e25) _e25.onclick = () => $('#btnExport').click();
+const _e26 = $('#pfNewTrip'); if(_e26) _e26.onclick = () => $('#btnReset').click();
+const _e27 = $('#pfLogout'); if(_e27) _e27.onclick = () => {
   localStorage.removeItem(LS_AUTH);
   toast('À bientôt 👋');
   requireAuth();
@@ -2781,7 +2903,7 @@ function applyTheme(){
   m.content = dark ? '#0B0B10' : '#FFE600';
   document.head.appendChild(m);
 }
-$('#pfTheme').onclick = () => {
+const _e28 = $('#pfTheme'); if(_e28) _e28.onclick = () => {
   const cur = localStorage.getItem(LS_THEME) === 'dark' ? '' : 'dark';
   cur ? localStorage.setItem(LS_THEME, cur) : localStorage.removeItem(LS_THEME);
   applyTheme();
@@ -2789,7 +2911,7 @@ $('#pfTheme').onclick = () => {
 };
 applyTheme();
 
-$('#pfChangePass').onclick = async () => {
+const _e29 = $('#pfChangePass'); if(_e29) _e29.onclick = async () => {
   const u = getUser(); if(!u) return;
   const cur = prompt('Mot de passe actuel :'); if(cur === null) return;
   if(await sha(u.email + '::' + cur) !== u.hash){ toast('❌ Mot de passe actuel incorrect'); return; }
@@ -2799,7 +2921,7 @@ $('#pfChangePass').onclick = async () => {
   toast('🔑 Mot de passe changé ✔');
 };
 
-$('#pfChangeEmail').onclick = async () => {
+const _e30 = $('#pfChangeEmail'); if(_e30) _e30.onclick = async () => {
   const u = getUser(); if(!u) return;
   const ne = (prompt('Nouvelle adresse email :') || '').trim().toLowerCase();
   if(!ne) return;
@@ -2817,13 +2939,13 @@ $('#pfChangeEmail').onclick = async () => {
   toast('📧 Vérifie ta nouvelle adresse');
 };
 
-$('#pfClearCache').onclick = () => {
+const _e31 = $('#pfClearCache'); if(_e31) _e31.onclick = () => {
   if(!confirm('Vider le cache IA ? Le voyage, tes notes et tes dépenses sont conservés — seuls les contenus générés par l\'IA (plan, itinéraire, restos…) seront recalculés.')) return;
   state.cache = {}; save();
   toast('🧹 Cache IA vidé — contenus régénérés à la prochaine visite');
 };
 
-$('#pfMyData').onclick = () => {
+const _e32 = $('#pfMyData'); if(_e32) _e32.onclick = () => {
   const data = { compte: getUser(), voyage: state, exporte_le: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -2834,7 +2956,7 @@ $('#pfMyData').onclick = () => {
   toast('📄 Données téléchargées');
 };
 
-$('#pfDelete').onclick = () => {
+const _e33 = $('#pfDelete'); if(_e33) _e33.onclick = () => {
   if(!confirm('Supprimer définitivement ton compte et toutes tes données locales ?')) return;
   localStorage.removeItem(LS_USER); localStorage.removeItem(LS_AUTH); localStorage.removeItem(LS_TRIP);
   location.reload();
@@ -2854,87 +2976,112 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 /* ============================================================
-   GLOBE 3D — Three.js : arc de vol animé départ → destination
-   Chargé à la demande depuis cdnjs ; l'app marche sans.
+   CARTE DU TRAJET — 2D, lisible, néo-brutaliste (canvas maison)
+   L'ancien globe 3D était illisible : remplacé par une carte
+   du monde en projection, avec l'arc de vol animé.
 ============================================================ */
-let _three = null, _globe = null;
-function loadThree(){
-  if(_three) return _three;
-  _three = new Promise((res, rej) => {
-    if(window.THREE) return res(window.THREE);
-    const sc = document.createElement('script');
-    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js';
-    sc.onload = () => res(window.THREE);
-    sc.onerror = () => rej(new Error('THREE'));
-    document.head.appendChild(sc);
-  });
-  return _three;
-}
-const _ll2v = (T, lat, lon, r) => {
-  const la = lat * Math.PI / 180, lo = -lon * Math.PI / 180;
-  return new T.Vector3(r * Math.cos(la) * Math.cos(lo), r * Math.sin(la), r * Math.cos(la) * Math.sin(lo));
-};
+let _mapAnim = null;
 async function showGlobe(){
-  const card = $('#globeCard'), cvEl = $('#globeCv');
-  if(!card || !state.trip) return;
+  const card = $('#globeCard'), cv = $('#globeCv');
+  if(!card || !cv || !state.trip) return;
   try{
-    /* coordonnées réelles départ + destination */
     let G = state.cache._globe;
     if(!G || G.key !== state.trip.nom){
       const [a, b] = await Promise.all([ geoPlace(state.prefs?.from || 'Paris'), geoPlace(state.trip.nom) ]);
-      if(!a || !b) return;
-      G = { key: state.trip.nom, a: {lat:+a.latitude, lon:+a.longitude}, b: {lat:+b.latitude, lon:+b.longitude} };
+      if(!a || !b) { card.style.display = 'none'; return; }
+      G = { key: state.trip.nom, a:{lat:+a.latitude, lon:+a.longitude}, b:{lat:+b.latitude, lon:+b.longitude} };
       state.cache._globe = G; save();
     }
-    const T = await loadThree();
     card.style.display = 'block';
-    if(_globe){ _globe.stop(); }
-    const W = card.clientWidth || 600, H = 280;
-    const ren = new T.WebGLRenderer({ canvas: cvEl, antialias:true, alpha:true });
-    ren.setSize(W, H, false);
-    ren.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-    const scene = new T.Scene();
+    const W = card.clientWidth || 340, H = 200;
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    cv.width = W * dpr; cv.height = H * dpr;
+    cv.style.width = '100%'; cv.style.height = H + 'px';
+    const g = cv.getContext('2d');
+    if(!g){ card.style.display = 'none'; return; }
+    g.scale(dpr, dpr);
+
     const dark = document.documentElement.dataset.theme === 'dark';
-    const INK = dark ? 0xF4F3EF : 0x101010;
-    const cam = new T.PerspectiveCamera(38, W / H, 0.1, 100);
-    cam.position.set(0, 0.6, 4.4);
-    const world = new T.Group(); scene.add(world);
-    /* sphère papier + méridiens/parallèles à l'encre */
-    world.add(new T.Mesh(new T.SphereGeometry(1.5, 48, 48),
-      new T.MeshBasicMaterial({ color: dark ? 0x1B1B26 : 0xF4F3EF })));
-    const wire = new T.LineSegments(
-      new T.WireframeGeometry(new T.SphereGeometry(1.502, 18, 12)),
-      new T.LineBasicMaterial({ color: INK, transparent:true, opacity:0.35 }));
-    world.add(wire);
-    /* marqueurs départ/arrivée */
-    const va = _ll2v(T, G.a.lat, G.a.lon, 1.52), vb = _ll2v(T, G.b.lat, G.b.lon, 1.52);
-    const mk = (v, c) => { const m = new T.Mesh(new T.SphereGeometry(0.05, 12, 12), new T.MeshBasicMaterial({ color:c })); m.position.copy(v); world.add(m); return m; };
-    mk(va, INK); mk(vb, 0xFF6B00);
-    /* arc de vol : courbe surélevée, tracée progressivement */
-    const mid = va.clone().add(vb).multiplyScalar(0.5).normalize().multiplyScalar(1.5 + va.distanceTo(vb) * 0.45);
-    const curve = new T.QuadraticBezierCurve3(va, mid, vb);
-    const pts = curve.getPoints(120);
-    const geo = new T.BufferGeometry().setFromPoints(pts);
-    geo.setDrawRange(0, 0);
-    const arc = new T.Line(geo, new T.LineBasicMaterial({ color: 0xFFE600, linewidth: 3 }));
-    world.add(arc);
-    const plane = new T.Mesh(new T.SphereGeometry(0.06, 10, 10), new T.MeshBasicMaterial({ color: 0xFFE600 }));
-    world.add(plane);
-    /* orienter le globe pour montrer le trajet */
-    const center = va.clone().add(vb).multiplyScalar(0.5).normalize();
-    world.quaternion.setFromUnitVectors(center, new T.Vector3(0, 0.25, 1).normalize());
-    /* animation */
-    let f = 0, run = true;
-    _globe = { stop(){ run = false; ren.dispose(); } };
+    const INK = dark ? '#F4F3EF' : '#101010';
+    const BG  = dark ? '#16161F' : '#FFFFFF';
+    const Y   = '#FFE600';
+
+    /* on cadre sur les 2 villes, avec de la marge */
+    const pad = 0.35;
+    const latSpan = Math.max(14, Math.abs(G.a.lat - G.b.lat) * (1 + pad * 2));
+    const lonSpan = Math.max(20, Math.abs(G.a.lon - G.b.lon) * (1 + pad * 2));
+    const cLat = (G.a.lat + G.b.lat) / 2, cLon = (G.a.lon + G.b.lon) / 2;
+    const span = Math.max(latSpan, lonSpan * H / W);
+    const proj = p => ({
+      x: W/2 + (p.lon - cLon) / (span * W / H) * W,
+      y: H/2 - (p.lat - cLat) / span * H
+    });
+    const A = proj(G.a), B = proj(G.b);
+    /* arc bombé entre les deux */
+    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const CX = mx - dy / len * len * 0.28, CY = my + dx / len * len * 0.28;
+    const pt = t => ({
+      x: (1-t)*(1-t)*A.x + 2*(1-t)*t*CX + t*t*B.x,
+      y: (1-t)*(1-t)*A.y + 2*(1-t)*t*CY + t*t*B.y
+    });
+
+    if(_mapAnim) cancelAnimationFrame(_mapAnim);
+    let f = 0;
     (function tick(){
-      if(!run) return;
+      if(!cv.isConnected) return;
       f++;
-      const prog = Math.min(120, Math.floor(f * 1.4));
-      geo.setDrawRange(0, prog);
-      plane.position.copy(curve.getPoint(Math.min(1, prog / 120)));
-      world.rotation.y += 0.0016;
-      ren.render(scene, cam);
-      requestAnimationFrame(tick);
+      const prog = Math.min(1, f / 90);
+      g.fillStyle = BG; g.fillRect(0, 0, W, H);
+      /* grille de méridiens : repère discret, pas de sphère bizarre */
+      g.strokeStyle = INK; g.globalAlpha = .12; g.lineWidth = 1;
+      for(let x = 0; x < W; x += 28){ g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+      for(let y = 0; y < H; y += 28){ g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+      g.globalAlpha = 1;
+      /* arc de vol, tracé progressivement */
+      g.strokeStyle = Y; g.lineWidth = 5; g.lineCap = 'round';
+      g.beginPath();
+      for(let t = 0; t <= prog; t += 0.01){ const p = pt(t); t === 0 ? g.moveTo(p.x, p.y) : g.lineTo(p.x, p.y); }
+      g.stroke();
+      g.strokeStyle = INK; g.lineWidth = 1.5; g.setLineDash([5, 5]); g.globalAlpha = .45;
+      g.beginPath();
+      for(let t = prog; t <= 1; t += 0.01){ const p = pt(t); t === prog ? g.moveTo(p.x, p.y) : g.lineTo(p.x, p.y); }
+      g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+      /* avion sur l'arc */
+      const P = pt(prog), P2 = pt(Math.min(1, prog + 0.02));
+      g.save();
+      g.translate(P.x, P.y);
+      g.rotate(Math.atan2(P2.y - P.y, P2.x - P.x) + Math.PI / 2);
+      g.fillStyle = '#FF6B00'; g.strokeStyle = INK; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(0, -9); g.lineTo(7, 7); g.lineTo(0, 3); g.lineTo(-7, 7); g.closePath();
+      g.fill(); g.stroke();
+      g.restore();
+      /* les 2 villes : carrés durs + étiquettes */
+      const dot = (p, fill, label, align) => {
+        g.fillStyle = INK; g.fillRect(p.x - 6 + 2, p.y - 6 + 2, 12, 12);
+        g.fillStyle = fill; g.fillRect(p.x - 6, p.y - 6, 12, 12);
+        g.strokeStyle = INK; g.lineWidth = 2.5; g.strokeRect(p.x - 6, p.y - 6, 12, 12);
+        g.font = '800 11px Inter, Arial';
+        g.textAlign = align;
+        const tw = g.measureText(label).width;
+        const lx = align === 'left' ? p.x + 12 : p.x - 12;
+        g.fillStyle = BG;
+        g.fillRect(align === 'left' ? lx - 3 : lx - tw - 3, p.y - 8, tw + 6, 16);
+        g.strokeStyle = INK; g.lineWidth = 1.5;
+        g.strokeRect(align === 'left' ? lx - 3 : lx - tw - 3, p.y - 8, tw + 6, 16);
+        g.fillStyle = INK;
+        g.fillText(label, lx, p.y + 4);
+      };
+      const rightward = B.x >= A.x;
+      dot(A, BG, (state.prefs?.from || 'Départ').slice(0, 14), rightward ? 'right' : 'left');
+      dot(B, Y, (state.trip.nom || '').slice(0, 14), rightward ? 'left' : 'right');
+      /* distance réelle */
+      if(state.cache._real?.dist){
+        g.font = '900 11px Sora, Arial'; g.textAlign = 'center'; g.fillStyle = INK;
+        g.fillText(`${state.cache._real.dist} KM`, W / 2, H - 10);
+      }
+      if(prog < 1) _mapAnim = requestAnimationFrame(tick);
     })();
   }catch(e){ card.style.display = 'none'; }
 }
@@ -3020,7 +3167,7 @@ function closeScan(){
   if(_scanStream){ _scanStream.getTracks().forEach(t => t.stop()); _scanStream = null; }
   $('#ovScan').classList.remove('show');
 }
-$('#scanFile').onchange = async e => {
+const _cscanFile = $('#scanFile'); if(_cscanFile) _cscanFile.onchange = async e => {
   const f = e.target.files[0]; if(!f) return;
   try{ await loadQRRead(); }catch(err){ $('#scanMsg').textContent = '⚠️ Lecteur QR indisponible hors-ligne.'; return; }
   const img = new Image();

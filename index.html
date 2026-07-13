@@ -43,7 +43,8 @@
     <div class="step active" data-step="1"><span class="n">1</span>Questions</div>
     <div class="step locked" data-step="2"><span class="n">2</span>Les 3 choix</div>
     <div class="step locked" data-step="3"><span class="n">3</span>Ton voyage</div>
-    <div class="step locked" data-step="4"><span class="n">4</span>Sur place</div>
+    <div class="step locked" data-step="4"><span class="n">4</span>Chat IA</div>
+    <div class="step locked" data-step="5"><span class="n">5</span>Sur place</div>
   </nav>
 
   <!-- ================= VUE 1 : ENVIES ================= -->
@@ -100,13 +101,14 @@
   <section class="view hidden" id="view3">
     <div id="passSlot3"></div>
     <div class="card" id="globeCard" style="padding:0;overflow:hidden;display:none">
-      <canvas id="globeCv" style="width:100%;height:280px;display:block;touch-action:none"></canvas>
+      <canvas id="globeCv" style="width:100%;display:block"></canvas>
     </div>
     <div class="card">
       <h2>Ton voyage 🧳</h2>
+      <p class="sub">Tout est là : le transport, le logement, le budget et le programme. Puis tu réserves.</p>
       <div id="zonePlan"><div class="loader"><div class="orbit"></div>Organisation du voyage…</div></div>
       <div class="divider"></div>
-      <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réservation</button>
+      <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
       <button class="btn ghost" id="btnOpenSim" style="width:100%;justify-content:center;margin-top:10px">🛫 Simulation des vols & trains</button>
     </div>
   </section>
@@ -136,6 +138,28 @@
 
   <!-- ================= VUE 5 : SUR PLACE ================= -->
   <section class="view hidden" id="view5">
+    <div class="chat-wrap">
+      <div class="chat-head">
+        <div class="chat-ava">🤖</div>
+        <div style="flex:1;min-width:0">
+          <h2 style="margin:0;font-size:1.05rem">Acolite</h2>
+          <p class="chat-status" id="chatCtx">Prêt à t'aider</p>
+        </div>
+        <button class="icon-btn" id="chatClear" title="Effacer la conversation">🗑</button>
+      </div>
+
+      <div class="chat-log" id="chatLog"></div>
+
+      <div class="chat-sugg" id="chatSugg"></div>
+
+      <div class="chat-bar">
+        <textarea id="chatIn" rows="1" placeholder="Pose ta question à Acolite…"></textarea>
+        <button class="btn sm" id="chatSend" aria-label="Envoyer">➤</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="view hidden" id="view6">
     <div id="passSlot5"></div>
     <div class="subtabs">
       <div class="subtab on" data-t="bag">🎒 Valise <span class="cnt" id="bagCnt"></span></div>
@@ -205,22 +229,7 @@
       <div id="zoneSpec"><div class="loader"><div class="orbit"></div>Enquête gourmande…</div></div>
     </div>
 
-    <div class="card" id="askCard">
-      <h2>Demande à Acolite 💬</h2>
-      <p class="sub">Il connaît ton voyage, ton budget, ton programme et la météo. Pose-lui une vraie question de terrain.</p>
-      <div class="chips" style="margin-bottom:10px">
-        <div class="chip askq">J'ai faim, où manger pas cher près d'ici ?</div>
-        <div class="chip askq">Il pleut, que faire aujourd'hui ?</div>
-        <div class="chip askq">Comment aller au centre depuis mon logement ?</div>
-        <div class="chip askq">Un truc à faire ce soir ?</div>
-      </div>
-      <div class="row" style="margin-bottom:10px">
-        <input id="askIn" placeholder="Je suis à Trastevere, il est 19h, j'ai faim…" style="flex:1;min-width:160px">
-        <button class="btn sm" id="btnAsk">Demander</button>
-      </div>
-      <div id="zoneAsk"></div>
-    </div>
-
+    
     <div class="card" id="cdCard" style="display:none">
       <div id="zoneCountdown"></div>
     </div>
@@ -364,7 +373,7 @@
 
     <div class="card">
       <div class="acc" id="accActions">
-      <div class="acc-head" onclick="this.parentElement.classList.toggle('open')">⚙ ACTIONS <span class="arr">›</span></div>
+      <div class="acc-head" data-acc>⚙ ACTIONS <span class="arr">›</span></div>
       <div class="acc-body">
       <div class="item act">
         <div class="head"><div class="emo">⬇</div><h4>Exporter mon voyage</h4></div>
