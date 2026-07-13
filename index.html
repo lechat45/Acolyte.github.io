@@ -105,8 +105,6 @@
       <div class="divider"></div>
       <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
       <button class="btn ghost" id="btnOpenSim" style="width:100%;justify-content:center;margin-top:10px">🛫 Simulation des vols & trains</button>
-      <button class="btn ghost" id="btnOpenFly" style="width:100%;justify-content:center;margin-top:10px">✈️ Mon vol — suivi, retards, jet lag</button>
-      <button class="btn ghost" id="btnOpenLex" style="width:100%;justify-content:center;margin-top:10px">🗣 Lexique de survie (hors-ligne)</button>
       <div class="btn-duo" style="margin-top:10px">
         <button class="btn ghost sm" id="btnExport">⬇ Exporter (.md)</button>
         <button class="btn ghost sm" id="btnReset">↺ Nouveau voyage</button>
@@ -144,13 +142,6 @@
 
 
     <div class="card">
-      <div class="acc" id="accPass">
-        <div class="acc-head" data-acc>🛂 MON PASSEPORT <span class="arr">›</span></div>
-        <div class="acc-body">
-          <div id="zonePassport"></div>
-        </div>
-      </div>
-
       <div class="acc" id="accPrefs">
         <div class="acc-head" data-acc>🎛 PRÉFÉRENCES <span class="arr">›</span></div>
         <div class="acc-body">
@@ -332,46 +323,6 @@
       <input type="file" id="scanFile" accept="image/*" style="display:none">
     </label>
     <button class="modal-close" data-closescan>Fermer</button>
-  </div>
-</div>
-
-<!-- ===== Pop-up MON VOL ===== -->
-<div class="overlay" id="ovFly">
-  <div class="modal" style="max-height:88vh;overflow-y:auto">
-    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
-      <h2 style="margin:0">Mon vol ✈️</h2>
-      <button class="close-btn" data-close="ovFly" aria-label="Fermer">✕</button>
-    </div>
-
-    <h3 style="margin:10px 0 6px">🛰 Suivi en direct</h3>
-    <p class="hint" style="margin:0 0 8px">Entre ton numéro de vol : Acolite te dit où est l'avion, en vrai.</p>
-    <div class="row">
-      <input id="flyNum" placeholder="ex : AF1234, FR8291" style="flex:1;min-width:120px;text-transform:uppercase">
-      <button class="btn sm" id="btnFlyTrack">Suivre</button>
-    </div>
-    <div id="zoneFly" style="margin-top:10px"></div>
-
-    <div class="divider"></div>
-    <h3 style="margin:0 0 6px">🌩 Risque de retard météo</h3>
-    <div id="zoneMetar"></div>
-
-    <div class="divider"></div>
-    <h3 style="margin:0 0 6px">😴 Plan anti-jet lag</h3>
-    <div id="zoneJet"></div>
-
-    <button class="modal-close" data-close="ovFly">Fermer</button>
-  </div>
-</div>
-
-<!-- ===== Pop-up LEXIQUE DE SURVIE ===== -->
-<div class="overlay" id="ovLex">
-  <div class="modal" style="max-height:88vh;overflow-y:auto">
-    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
-      <h2 style="margin:0">Lexique de survie 🗣</h2>
-      <button class="close-btn" data-close="ovLex" aria-label="Fermer">✕</button>
-    </div>
-    <div id="zoneLex"></div>
-    <button class="modal-close" data-close="ovLex">Fermer</button>
   </div>
 </div>
 
