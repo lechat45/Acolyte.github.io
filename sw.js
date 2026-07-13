@@ -1,7 +1,7 @@
 /* Acolite — Service Worker : app hors-ligne (coque en cache, réseau d'abord pour le HTML) */
-const CACHE = 'acolite-v7';
+const CACHE = 'acolite-v8';
 const SHELL = [
-  './index.html', './style.css', './app.js', './config.js', './manifest.json',
+  './index.html', './style.css', './app.js', './boot-check.js', './config.js', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-192.png', './icon-maskable-512.png'
 ];
 

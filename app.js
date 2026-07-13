@@ -4,6 +4,52 @@
    ⚡ Groq   = tâches simples déléguées (valise, phrases, infos, concierge)
    Fichier unique · zéro backend · localStorage
 ============================================================ */
+
+/* ============================================================
+   ÉCRAN DE DÉMARRAGE — placé TOUT EN HAUT, sans aucune dépendance.
+   Il se retire quoi qu'il arrive : si le reste du fichier plante,
+   l'erreur s'affiche à l'écran au lieu de bloquer sur le splash.
+============================================================ */
+(function(){
+  var boot = document.getElementById('boot');
+  if(!boot) return;
+  var bar = boot.querySelector('.boot-bar i');
+  var lbl = document.getElementById('bootStep');
+  var steps = [[18,'Chargement des styles'],[42,'Réveil du copilote'],[68,'Connexion aux moteurs de prix'],[88,'Préparation de ton voyage'],[100,'Prêt au décollage ✈️']];
+  var i = 0, dead = false;
+
+  function hide(){
+    if(dead) return;
+    dead = true;
+    boot.classList.add('gone');
+    setTimeout(function(){ if(boot.parentNode) boot.parentNode.removeChild(boot); }, 500);
+  }
+  function tick(){
+    if(dead) return;
+    if(i >= steps.length){ setTimeout(hide, 250); return; }
+    var s = steps[i++];
+    if(bar) bar.style.width = s[0] + '%';
+    if(lbl) lbl.textContent = s[1];
+    setTimeout(tick, 190);
+  }
+  tick();
+
+  /* sécurité : jamais bloqué plus de 5 s */
+  setTimeout(hide, 5000);
+
+  /* si le script plante pendant le démarrage, on le DIT au lieu de rester figé */
+  window.addEventListener('error', function(e){
+    if(dead) return;
+    if(lbl){
+      lbl.style.color = '#FF6B00';
+      lbl.style.fontSize = '.62rem';
+      lbl.textContent = '⚠️ ' + (e.message || 'erreur au démarrage');
+    }
+    setTimeout(hide, 2500);
+  });
+  window.__acoliteBoot = { hide: hide };
+})();
+
 const LS_GEM   = 'acolite_gemini_key';
 const LS_GEMM  = 'acolite_gem_model';   // modèle Gemini auto-détecté
 const LS_GROQ  = 'acolite_groq_key';
@@ -3016,40 +3062,6 @@ function confetti(){
   })();
 }
 
-/* --- Écran de démarrage : progression réelle, puis disparition --- */
-const BOOT_STEPS = [
-  [15, 'Chargement des styles'],
-  [35, 'Réveil du copilote'],
-  [60, 'Connexion aux moteurs de prix'],
-  [82, 'Préparation de ton voyage'],
-  [100, 'Prêt au décollage ✈️']
-];
-function bootProgress(){
-  const bar = document.querySelector('.boot-bar i');
-  const lbl = $('#bootStep');
-  const el = $('#boot');
-  if(!bar || !el) return;
-  let i = 0;
-  const tick = () => {
-    if(i >= BOOT_STEPS.length){
-      /* on ne masque qu'une fois les polices prêtes : zéro clignotement */
-      const done = () => setTimeout(() => {
-        el.classList.add('gone');
-        setTimeout(() => el.remove(), 500);
-      }, 260);
-      (document.fonts?.ready || Promise.resolve()).then(done).catch(done);
-      return;
-    }
-    const [pct, txt] = BOOT_STEPS[i++];
-    bar.style.width = pct + '%';
-    if(lbl) lbl.textContent = txt;
-    setTimeout(tick, 190 + Math.random() * 130);
-  };
-  tick();
-  /* filet de sécurité : jamais bloqué sur le splash */
-  setTimeout(() => { el.classList.add('gone'); setTimeout(() => el.remove(), 500); }, 4500);
-}
-bootProgress();
 
 /* --- PWA : app installable + hors-ligne --- */
 if('serviceWorker' in navigator){
@@ -3106,3 +3118,6 @@ unlockSteps();
 if(state.lastProps) renderDestinations(state.lastProps);
 if(state.step > 1) gotoStep(Math.min(state.step, 3));
 requireAuth();
+
+/* app.js est arrivé au bout : le vérificateur de démarrage ne déclenchera pas d'alerte */
+if(window.__ACOLITE) window.__ACOLITE.loaded = true;
