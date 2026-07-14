@@ -61,9 +61,6 @@ const GEM_PREFERRED = ['gemini-2.5-flash','gemini-flash-latest','gemini-2.0-flas
 
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-/* Anti-XSS : toute donnée venue de l'IA ou d'une API passe ici avant affichage.
-   (Rôle équivalent à DOMPurify pour notre usage : on n'injecte JAMAIS de HTML tiers,
-   uniquement du texte échappé dans nos propres gabarits.) */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let state = {
@@ -255,29 +252,6 @@ async function ai(kind, prompt, expectJson = true, maxTok = 4096){
   return { data, via:'gemini' };
 }
 
-/* Squelettes : l'écran se remplit tout de suite, la perception de vitesse double */
-function skeletonCards(n = 3){
-  return Array.from({length: n}, () => `
-    <div class="sk-card">
-      <div class="sk sk-title"></div>
-      <div class="sk sk-line"></div>
-      <div class="sk sk-line short"></div>
-      <div class="sk-grid">
-        <div class="sk sk-box"></div><div class="sk sk-box"></div>
-        <div class="sk sk-box"></div><div class="sk sk-box"></div>
-      </div>
-      <div class="sk sk-btn"></div>
-    </div>`).join('');
-}
-function skeletonPlan(){
-  return `<div class="sk-grid" style="margin-bottom:14px">
-      <div class="sk sk-box tall"></div><div class="sk sk-box tall"></div>
-      <div class="sk sk-box tall"></div><div class="sk sk-box tall"></div>
-    </div>
-    <div class="sk sk-title"></div>
-    <div class="sk sk-line"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div>`;
-}
-
 function loaderHTML(msg){ return `<div class="loader"><div class="orbit"></div>${esc(msg)}</div>`; }
 function errHTML(msg){ return `<div class="err">⚠️ ${esc(msg)}</div>`; }
 function badge(via){ return via === 'groq' ? '<span class="ai-badge groq">⚡ Groq</span>' : '<span class="ai-badge gemini">✦ Gemini</span>'; }
@@ -322,7 +296,7 @@ async function proposeTrips(extra = '', lucky = false){
   const prefs = readPrefs(extra);
   state.prefs = prefs; save();
   const zone = $('#zoneResults');
-  zone.innerHTML = skeletonCards(3);   /* l'écran se remplit tout de suite */
+  zone.innerHTML = `<div class="card">${loaderHTML(lucky ? "Roulette mondiale en cours… 🎲" : "Acolite explore le monde pour toi…")}</div>`;
   searchBar(true, lucky ? 'Roulette mondiale en cours… 🎲' : 'Acolite explore le monde…');
   $('#btnGo').disabled = true; $('#btnLucky').disabled = true;
 
@@ -451,8 +425,6 @@ function pushHistory(t){
 function chooseTrip(i){
   state.trip = state.destinations[i];
   pushHistory(state.trip);
-  applyVibe();
-  buzz('big');
   state.cache = {}; state.checklist = {}; state.spends = []; state.chatLog = []; state.notes = ''; state.resas = [];
   state._geo = null; state.planAnswers = []; state._qsDone = false; _onSiteDone = false;
   save();
@@ -534,16 +506,6 @@ function openSub(t){
   Object.entries(TAB_PANELS).forEach(([k, sel]) => $(sel)?.classList.toggle('hidden', k !== t));
 }
 function gotoStep(n, sub){
-  /* Transitions natives quand le navigateur sait le faire (Chrome/Safari récents) */
-  if(document.startViewTransition && SET?.motion !== false && !_inTransition){
-    _inTransition = true;
-    document.startViewTransition(() => { _inTransition = false; _gotoStep(n, sub); });
-    return;
-  }
-  _gotoStep(n, sub);
-}
-let _inTransition = false;
-function _gotoStep(n, sub){
   n = Math.min(n, 3);
   if(n === 2 && !(state.destinations||[]).length){ toast('Remplis d’abord le questionnaire 😉'); return; }
   if(n === 3 && !state.trip){ toast('Choisis d’abord un des 3 voyages 😉'); return; }
@@ -684,10 +646,7 @@ async function realData(){
     state.cache._real = R; save();
   }
   const L = [];
-  if(R.dist){
-    L.push(`Distance ${state.prefs?.from || 'départ'} → ${t.nom} : environ ${R.dist} km à vol d'oiseau (calcul réel)`);
-    state.cache[`dist_${t.nom}`] = R.dist; save();   /* alimente le passeport */
-  }
+  if(R.dist) L.push(`Distance ${state.prefs?.from || 'départ'} → ${t.nom} : environ ${R.dist} km à vol d'oiseau (calcul réel)`);
   if(R.meteo) L.push(`Météo réelle à ${t.nom} en ce moment : ${R.meteo}`);
   if(state.cache.realPrice) L.push(`Prix de vol réel constaté par nos moteurs : ${state.cache.realPrice}`);
   if(R.train) L.push(`Trajet en TRAIN réel ${state.prefs?.from || 'départ'} → ${t.nom} : ${R.train}`);
@@ -722,7 +681,7 @@ Réponds en JSON : {"ok":true} si tout est cohérent, sinon {"ok":false,"problem
 async function loadPlan(force = false){
   const zone = $('#zonePlan');
   if(state.cache.plan && !force){ renderPlan(state.cache.plan); syncModeFromPlan(state.cache.plan); return; }
-  zone.innerHTML = skeletonPlan();
+  zone.innerHTML = loaderHTML('Acolite organise ton voyage de A à Z…');
   const t = state.trip;
   const answers = (state.planAnswers||[]).join(' · ');
   const realCtx = await realData();
@@ -2588,7 +2547,7 @@ const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
   toast('Re-bonjour ' + email.split('@')[0] + ' 👋');
 };
 
-function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); renderPassport(); }
+function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); }
 function requireAuth(){
   const u = getUser();
   if(u && u.verified && localStorage.getItem(LS_AUTH) === '1'){ enterApp(); return; }
@@ -2608,69 +2567,9 @@ function switchCat(cat){
   $('#catProfile').classList.toggle('hidden', cat !== 'profile');
   window.scrollTo({top:0});
   if(cat === 'map') buildProjectMap();
-  if(cat === 'profile'){ renderProfile(); renderSettings(); renderPassport(); }
+  if(cat === 'profile'){ renderProfile(); renderSettings(); }
 }
 $$('.catnav button').forEach(b => b.onclick = () => switchCat(b.dataset.cat));
-
-/* ============================================================
-   MONÉTISATION — structure prête, MASQUÉE (rien ne s'affiche)
-   ------------------------------------------------------------
-   Le jour où tu ouvres l'abonnement : passe FLAGS.billing à true.
-   Tant que c'est false, AUCUN élément payant n'apparaît et
-   AUCUNE fonction n'est bloquée. Le code est prêt, c'est tout.
-============================================================ */
-const FLAGS = {
-  billing: false,        /* ← passe à true pour activer l'abonnement */
-  showUpsell: false,     /* bannières "Passer à Plus" */
-  enforceLimits: false   /* appliquer réellement les quotas gratuits */
-};
-
-const PLANS = {
-  free: {
-    id:'free', nom:'Acolite', prix:0,
-    limites: { voyagesParMois: 5, modelesAvances: false, horsLigne: false, exports: 3 }
-  },
-  plus: {
-    id:'plus', nom:'Acolite Plus', prix:4.99, periode:'mois',
-    limites: { voyagesParMois: Infinity, modelesAvances: true, horsLigne: true, exports: Infinity }
-  },
-  family: {
-    id:'family', nom:'Acolite Family', prix:9.99, periode:'mois',
-    limites: { voyagesParMois: Infinity, modelesAvances: true, horsLigne: true, exports: Infinity, membres: 6 }
-  },
-  explorer: {
-    id:'explorer', nom:'Acolite Explorer', prix:39, periode:'an',
-    limites: { voyagesParMois: Infinity, modelesAvances: true, horsLigne: true, exports: Infinity, cashback: true }
-  }
-};
-
-const LS_PLAN = 'acolite_plan';
-function currentPlan(){
-  if(!FLAGS.billing) return PLANS.plus;          /* facturation off → tout est ouvert */
-  try{ return PLANS[localStorage.getItem(LS_PLAN) || 'free'] || PLANS.free; }catch(e){ return PLANS.free; }
-}
-function can(feature){
-  if(!FLAGS.enforceLimits) return true;          /* aucun blocage tant que ce n'est pas activé */
-  return !!currentPlan().limites[feature];
-}
-function quotaLeft(key){
-  if(!FLAGS.enforceLimits) return Infinity;
-  const lim = currentPlan().limites[key];
-  if(lim === Infinity) return Infinity;
-  const mois = new Date().toISOString().slice(0, 7);
-  let u;
-  try{ u = JSON.parse(localStorage.getItem('acolite_usage')) || {}; }catch(e){ u = {}; }
-  return Math.max(0, lim - ((u[mois] || {})[key] || 0));
-}
-function useQuota(key){
-  if(!FLAGS.enforceLimits) return;
-  const mois = new Date().toISOString().slice(0, 7);
-  let u;
-  try{ u = JSON.parse(localStorage.getItem('acolite_usage')) || {}; }catch(e){ u = {}; }
-  u[mois] = u[mois] || {};
-  u[mois][key] = (u[mois][key] || 0) + 1;
-  try{ localStorage.setItem('acolite_usage', JSON.stringify(u)); }catch(e){}
-}
 
 /* ============================================================
    PRÉFÉRENCES — pilotent l'IA ET l'interface
@@ -2681,43 +2580,26 @@ const SET_DEF = {
   rythme: 'equilibre',
   food: 'aucun',
   acces: 'non',
-  eco: 'non',
+  eviter: [],           /* modes de transport à éviter */
   model: 'auto',
   detail: 'normal',
   verif: true,          /* relecture croisée par une 2e IA */
   reels: true,          /* données réelles (météo, trains, fériés…) */
   font: 100,
-  motion: true,         /* animations */
-  haptic: true,         /* vibrations */
-  oled: false,          /* noir absolu (économie de batterie sur OLED) */
-  vibe: true            /* couleur d'accent selon la destination */
+  motion: true          /* animations */
 };
 let SET = { ...SET_DEF };
-/* Les préférences sont rattachées AU COMPTE : si deux personnes utilisent
-   le même appareil, chacune retrouve les siennes. */
-function setKey(){
-  let u = null;
-  try{ u = JSON.parse(localStorage.getItem('acolite_user')); }catch(e){}
-  return LS_SET + (u?.email ? ':' + u.email : '');
-}
 function loadSettings(){
-  try{
-    const perso = JSON.parse(localStorage.getItem(setKey()) || 'null');
-    const global = JSON.parse(localStorage.getItem(LS_SET) || 'null');   /* migration douce */
-    SET = { ...SET_DEF, ...(perso || global || {}) };
-  }catch(e){ SET = { ...SET_DEF }; }
+  try{ SET = { ...SET_DEF, ...(JSON.parse(localStorage.getItem(LS_SET)) || {}) }; }catch(e){ SET = { ...SET_DEF }; }
   applySettings();
 }
 function saveSettings(){
-  try{ localStorage.setItem(setKey(), JSON.stringify(SET)); }catch(e){}
+  try{ localStorage.setItem(LS_SET, JSON.stringify(SET)); }catch(e){}
   applySettings();
 }
 function applySettings(){
-  const r = document.documentElement;
-  r.style.fontSize = (SET.font || 100) + '%';
-  r.classList.toggle('no-motion', !SET.motion);
-  r.classList.toggle('oled', !!SET.oled);
-  applyVibe();
+  document.documentElement.style.fontSize = (SET.font || 100) + '%';
+  document.documentElement.classList.toggle('no-motion', !SET.motion);
 }
 
 /* Ce bloc part dans TOUS les prompts : l'IA connaît enfin tes goûts */
@@ -2731,7 +2613,11 @@ function prefsBlock(){
   const F = { vege:'végétarien', vegan:'végan', halal:'halal', casher:'casher', sansgluten:'sans gluten' };
   if(F[SET.food]) L.push(`Alimentation ${F[SET.food]} : les restaurants et adresses proposés DOIVENT proposer cette option`);
   if(SET.acces === 'oui') L.push("ACCESSIBILITÉ : le voyageur est à mobilité réduite — privilégie les lieux accessibles, évite les escaliers, sentiers escarpés et longues marches, et signale-le");
-  if(SET.eco === 'oui') L.push("ÉCOLOGIE : le voyageur veut ÉVITER L'AVION quand c'est raisonnable — privilégie le train ou le bus si le trajet reste faisable, et explique le compromis");
+  if(SET.eviter?.length){
+    const M = { avion:"l'AVION", train:'le TRAIN', voiture:'la VOITURE' };
+    const noms = SET.eviter.map(x => M[x]).filter(Boolean);
+    L.push(`TRANSPORTS À ÉVITER : le voyageur ne veut PAS prendre ${noms.join(' ni ')}. Propose autre chose (${['avion','train','voiture','bus','ferry'].filter(x => !SET.eviter.includes(x)).join(', ')}). Si vraiment aucune alternative n'existe, dis-le clairement et explique pourquoi.`);
+  }
   const D = { court:'Sois CONCIS : phrases courtes, va à l\'essentiel.',
               normal:'', long:'Sois DÉTAILLÉ : explique tes choix, donne des astuces concrètes et des alternatives.' };
   if(D[SET.detail]) L.push(D[SET.detail]);
@@ -2744,9 +2630,9 @@ const OPT = {
   stRythme: { key:'rythme', items:[['doux','🐢 Doux'],['equilibre','⚖️ Équilibré'],['intense','⚡ Intense']] },
   stFood:   { key:'food',   items:[['aucun','Aucune contrainte'],['vege','🥗 Végétarien'],['vegan','🌱 Végan'],['halal','☪️ Halal'],['casher','✡️ Casher'],['sansgluten','🌾 Sans gluten']] },
   stAcces:  { key:'acces',  items:[['non','Aucun besoin'],['oui','♿ Mobilité réduite']] },
-  stEco:    { key:'eco',    items:[['non','Peu importe'],['oui','🌱 Éviter l\'avion si possible']] },
+  stEco:    { key:'eviter', multi:true, items:[['avion','✈️ Éviter l\'avion'],['train','🚆 Éviter le train'],['voiture','🚗 Éviter la voiture']] },
   stIA:     { key:null,     toggles:[['verif','🔍 Relecture par une 2e IA'],['reels','📡 Données réelles (météo, trains, fériés)']] },
-  stUI:     { key:null,     toggles:[['motion','✨ Animations'],['haptic','📳 Vibrations'],['oled','🌑 Noir absolu (OLED)'],['vibe','🎨 Couleur selon la destination']] }
+  stUI:     { key:null,     toggles:[['motion','✨ Animations']] }
 };
 function renderSettings(){
   Object.entries(OPT).forEach(([id, cfg]) => {
@@ -2804,297 +2690,149 @@ document.addEventListener('input', e => {
 });
 
 /* ============================================================
-   PASSEPORT DE VOYAGE — tes voyages, tes pays, tes kilomètres
-   100 % local, gratuit, calculé depuis ton historique.
+   DIAGNOSTIC (temporaire) — teste TOUT ce qui est branché
+   À retirer avant l'ouverture au public.
 ============================================================ */
-function renderPassport(){
-  const zone = $('#zonePassport');
-  if(!zone) return;
-  const h = getHistory();
-  if(!h.length){
-    zone.innerHTML = `<p class="hint">Ton passeport est vierge. Choisis un premier voyage et il se remplira tout seul. ✈️</p>`;
-    return;
-  }
-  const pays = [...new Set(h.map(x => x.pays).filter(Boolean))];
-  const villes = [...new Set(h.map(x => x.nom).filter(Boolean))];
-  /* kilomètres réellement parcourus (distances mises en cache) */
-  let km = 0;
-  h.forEach(x => {
-    const d = state.cache[`dist_${x.nom}`];
-    if(d) km += d * 2;   /* aller-retour */
-  });
-  const drapeaux = h.map(x => x.drapeau).filter(Boolean);
-  const tours = km ? (km / 40075) : 0;
-  zone.innerHTML = `
-    <div class="plan-grid" style="margin-bottom:12px">
-      <div class="plan-stat"><div class="k">Voyages</div><div class="v">${h.length}</div><div class="s">depuis le début</div></div>
-      <div class="plan-stat"><div class="k">Pays</div><div class="v">${pays.length}</div><div class="s">${pays.length > 1 ? 'visités' : 'visité'}</div></div>
-      ${km ? `<div class="plan-stat"><div class="k">Distance</div><div class="v">${Math.round(km).toLocaleString('fr-FR')}</div><div class="s">km parcourus</div></div>` : ''}
-      ${tours >= 0.05 ? `<div class="plan-stat"><div class="k">Tour du monde</div><div class="v">${tours.toFixed(2)}×</div><div class="s">soit ${Math.round(tours * 100)} % du globe</div></div>` : ''}
-    </div>
-    ${drapeaux.length ? `<div style="font-size:1.7rem;line-height:1.5;letter-spacing:4px;margin-bottom:12px">${drapeaux.join(' ')}</div>` : ''}
-    <h3 style="margin:0 0 8px">📖 Tes tampons</h3>
-    ${h.slice().reverse().map(x => `
-      <div class="item">
-        <div class="emo">${esc(x.drapeau || '📍')}</div>
-        <div style="flex:1;min-width:0">
-          <h4>${esc(x.nom)}</h4>
-          <p>${esc(x.pays || '')}</p>
-        </div>
-        <div class="side"><span class="tag">${new Date(x.quand).toLocaleDateString('fr-FR', {month:'short', year:'numeric'})}</span></div>
-      </div>`).join('')}
-    <p class="hint" style="margin-top:10px">Tout est calculé sur ton appareil, rien n'est envoyé nulle part.</p>`;
-}
+const DIAG = [
+  /* --- Clés & backend --- */
+  { grp:'Configuration', nom:'Clé Gemini', run: () => gemKey() ? ok('présente (' + gemKey().slice(0,6) + '…)') : ko('absente de config.js') },
+  { grp:'Configuration', nom:'Clé Groq', run: () => groqKey() ? ok('présente') : ko('absente — la 2e IA (relecture) est désactivée') },
+  { grp:'Configuration', nom:'Clé Travelpayouts', run: () => tpKey() ? ok('présente') : ko('absente — pas de prix d\'hôtels') },
+  { grp:'Configuration', nom:'Backend Cloudflare', run: () => useBackend() ? ok(API()) : warn('non configuré — les clés sont exposées publiquement') },
+  { grp:'Configuration', nom:'EmailJS', run: () => (CFG.emailjs?.publicKey ? ok('configuré : vrais e-mails') : warn('mode démo : le code s\'affiche à l\'écran')) },
 
-/* ============================================================
-   MON VOL — inspiré de Flighty, avec des sources 100 % GRATUITES
-   • Suivi live : OpenSky (ADS-B). Position réelle de l'avion.
-   • Risque de retard : METAR de la NOAA (vent, visibilité, orages).
-   • Jet lag : calcul du décalage horaire.
-   ⚠️ Pas de portes ni de tapis à bagages : ces données sont payantes.
-============================================================ */
-async function trackFlight(){
-  const zone = $('#zoneFly');
-  const cs = ($('#flyNum').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  if(!cs){ toast('Entre un numéro de vol 😉'); return; }
-  const fr24 = `https://www.flightradar24.com/${encodeURIComponent(cs)}`;
-  if(!useBackend()){
-    zone.innerHTML = `<p class="hint">Le suivi en direct passe par ton relais Cloudflare (fichier <code>worker.js</code>, secrets <code>OPENSKY_ID</code> / <code>OPENSKY_SECRET</code> — compte gratuit sur opensky-network.org).<br>
-      En attendant : <a class="tl-loc" href="${esc(fr24)}" target="_blank" rel="noopener" style="margin-top:8px">🔎 Suivre ${esc(cs)} sur Flightradar24</a></p>`;
-    return;
-  }
-  zone.innerHTML = skeletonCards(1);
-  try{
-    const r = await fetch(`${API()}/flight?callsign=${encodeURIComponent(cs)}`);
-    const d = await r.json();
-    if(!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
-    if(!d.found){
-      zone.innerHTML = `<div class="item"><div class="emo">🛬</div><div style="flex:1">
-        <h4>Avion non détecté</h4>
-        <p>${esc(d.message || '')}</p>
-        <p class="hint" style="margin-top:4px">Le suivi ne fonctionne que quand l'avion est <strong>en vol</strong> et couvert par le réseau (très bon en Europe et aux USA).</p>
-        <a class="tl-loc" href="${esc(fr24)}" target="_blank" rel="noopener" style="margin-top:8px">🔎 Vérifier sur Flightradar24</a>
-      </div></div>`;
-      return;
-    }
-    const alt = d.altitude_m ? Math.round(d.altitude_m) : null;
-    zone.innerHTML = `
-      <div class="item" style="background:var(--primary)">
-        <div class="emo">✈️</div>
-        <div style="flex:1;min-width:0">
-          <h4 style="color:#101010">${esc(d.callsign)} — ${d.au_sol ? 'au sol' : 'EN VOL'}</h4>
-          <p style="color:#101010">
-            ${alt ? `Altitude <strong>${alt.toLocaleString('fr-FR')} m</strong>` : ''}
-            ${d.vitesse_kmh ? ` · <strong>${d.vitesse_kmh} km/h</strong>` : ''}
-            ${d.montee_ms > 1 ? ' · en montée ↗' : d.montee_ms < -1 ? ' · en descente ↘' : ''}
-          </p>
-          <p class="hint" style="color:#101010;opacity:.7;margin-top:3px">
-            Survole ${esc(d.pays || '?')}${d.vu_il_y_a_s != null ? ` · position d'il y a ${d.vu_il_y_a_s} s` : ''}
-          </p>
-        </div>
-      </div>
-      <iframe src="https://www.openstreetmap.org/export/embed.html?bbox=${d.lon-1.6},${d.lat-1},${d.lon+1.6},${d.lat+1}&layer=mapnik&marker=${d.lat},${d.lon}"
-        style="width:100%;height:200px;border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);margin-top:10px" loading="lazy"></iframe>
-      <p class="hint" style="margin-top:8px">Position réelle issue du réseau OpenSky (ADS-B). <a href="${esc(fr24)}" target="_blank" rel="noopener" style="color:var(--accent-orange);font-weight:900">Vue détaillée ↗</a></p>`;
-  }catch(e){
-    zone.innerHTML = `<p class="hint">❌ ${esc(e.message)} — <a href="${esc(fr24)}" target="_blank" rel="noopener" style="color:var(--accent-orange);font-weight:900">suivre sur Flightradar24 ↗</a></p>`;
-  }
-}
+  /* --- APIs IA --- */
+  { grp:'Intelligence artificielle', nom:'Gemini (génération)', run: async () => {
+      if(!gemKey() && !useBackend()) return ko('pas de clé');
+      const t = await gemini('Réponds exactement : OK', false, 20, false, 0);
+      return String(t).toUpperCase().includes('OK') ? ok('répond') : warn('réponse inattendue : ' + String(t).slice(0,30));
+    }},
+  { grp:'Intelligence artificielle', nom:'Modèle utilisé', run: () => {
+      const m = SET.model !== 'auto' ? SET.model : (localStorage.getItem(LS_GEMM) || 'auto-détection');
+      return ok(m);
+    }},
+  { grp:'Intelligence artificielle', nom:'Groq (relecture)', run: async () => {
+      if(!hasGroq()) return ko('pas de clé');
+      const r = await groq('Réponds {"ok":true}', true, 30);
+      return r?.ok ? ok('répond') : warn('réponse inattendue');
+    }},
 
-/* --- Risque de retard, calculé depuis la météo aéronautique réelle (NOAA) --- */
-async function loadMetar(){
-  const zone = $('#zoneMetar');
-  const t = state.trip;
-  if(!zone || !t) return;
-  const dep = (state.prefs?.fromIata || '').toUpperCase();
-  const arr = (t.iata || '').toUpperCase();
-  if(!arr){ zone.innerHTML = `<p class="hint">Aéroport inconnu pour cette destination.</p>`; return; }
-  if(!useBackend()){
-    zone.innerHTML = `<p class="hint">Le bulletin météo des aéroports passe par ton relais Cloudflare (route <code>/metar</code>, gratuite et sans clé). Déploie <code>worker.js</code> pour l'activer.</p>`;
-    return;
-  }
-  zone.innerHTML = skeletonCards(1);
-  try{
-    const ids = [dep, arr].filter(Boolean).join(',');
-    const r = await fetch(`${API()}/metar?ids=${encodeURIComponent(ids)}`);
-    const rows = await r.json();
-    if(!Array.isArray(rows) || !rows.length) throw new Error('aucun bulletin');
-    zone.innerHTML = rows.map(m => {
-      const vent = m.wspd || 0, rafale = m.wgst || 0, vis = m.visib;
-      const orage = /TS|SQ/.test(m.rawOb || '');
-      const neige = /SN|FZ/.test(m.rawOb || '');
-      const brouillard = typeof vis === 'number' && vis < 1.5;
-      let score = 0;
-      if(vent > 25) score += 2; else if(vent > 15) score += 1;
-      if(rafale > 35) score += 2;
-      if(orage) score += 3;
-      if(neige) score += 3;
-      if(brouillard) score += 2;
-      const niveau = score >= 4 ? ['🔴','Risque ÉLEVÉ de retard','var(--danger)']
-                   : score >= 2 ? ['🟠','Risque modéré','var(--accent-orange)']
-                   : ['🟢','Conditions normales','var(--ok)'];
-      const causes = [
-        orage && 'orages',
-        neige && 'neige / givre',
-        brouillard && 'visibilité réduite',
-        vent > 15 && `vent ${Math.round(vent)} kt`,
-        rafale > 25 && `rafales ${Math.round(rafale)} kt`
-      ].filter(Boolean);
-      return `<div class="item">
-        <div class="emo">${niveau[0]}</div>
-        <div style="flex:1;min-width:0">
-          <h4 style="color:${niveau[2]}">${esc(m.icaoId || '')} — ${niveau[1]}</h4>
-          <p>${causes.length ? esc(causes.join(' · ')) : 'Ciel dégagé, vent faible'}</p>
-          <p class="hint" style="margin-top:3px">${esc(String(m.rawOb || '').slice(0, 70))}</p>
-        </div>
-      </div>`;
-    }).join('') + `<p class="hint" style="margin-top:8px">Estimation calculée à partir du bulletin METAR officiel (NOAA). Ce n'est pas une prévision de la compagnie : les vrais retards ne sont pas publics gratuitement.</p>`;
-  }catch(e){
-    zone.innerHTML = `<p class="hint">Bulletin indisponible (${esc(e.message)}).</p>`;
-  }
-}
+  /* --- Données réelles --- */
+  { grp:'Données réelles', nom:'Géocodage (Open-Meteo)', run: async () => {
+      const r = await geoPlace('Rome');
+      return r ? ok(`Rome → ${(+r.latitude).toFixed(1)}, ${(+r.longitude).toFixed(1)}`) : ko('aucune réponse');
+    }},
+  { grp:'Données réelles', nom:'Météo (Open-Meteo)', run: async () => {
+      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=41.9&longitude=12.5&daily=temperature_2m_max&forecast_days=1&timezone=auto').then(x=>x.json());
+      return r?.daily?.temperature_2m_max?.length ? ok(r.daily.temperature_2m_max[0] + '°C à Rome') : ko('aucune donnée');
+    }},
+  { grp:'Données réelles', nom:'Wikipédia', run: async () => {
+      const r = await fetch('https://fr.wikipedia.org/api/rest_v1/page/summary/Rome').then(x=>x.ok?x.json():null);
+      return r?.extract ? ok('accessible') : ko('inaccessible');
+    }},
+  { grp:'Données réelles', nom:'Jours fériés (Nager.Date)', run: async () => {
+      const r = await fetch('https://date.nager.at/api/v3/PublicHolidays/2026/IT').then(x=>x.ok?x.json():null);
+      return Array.isArray(r) && r.length ? ok(r.length + ' jours fériés trouvés') : ko('inaccessible');
+    }},
+  { grp:'Données réelles', nom:'Taux de change (Frankfurter)', run: async () => {
+      const r = await fetch('https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD').then(x=>x.ok?x.json():null);
+      return r?.rates?.USD ? ok('1 € = ' + r.rates.USD + ' $') : ko('inaccessible');
+    }},
+  { grp:'Données réelles', nom:'Trains (Deutsche Bahn)', run: async () => {
+      const r = await fetch('https://v6.db.transport.rest/locations?query=Paris&results=1').then(x=>x.ok?x.json():null);
+      return Array.isArray(r) && r.length ? ok('accessible') : ko('inaccessible');
+    }},
+  { grp:'Données réelles', nom:'Pays (REST Countries)', run: async () => {
+      const r = await fetch('https://restcountries.com/v3.1/alpha/IT?fields=currencies').then(x=>x.ok?x.json():null);
+      return r?.currencies ? ok('accessible') : ko('inaccessible');
+    }},
 
-/* --- Plan anti-jet lag (pur calcul, gratuit) --- */
-function renderJetlag(){
-  const zone = $('#zoneJet');
-  const t = state.trip;
-  if(!zone || !t) return;
-  const tz = state.cache._facts?.fuseau;
-  const dist = state.cache._real?.dist || 0;
-  /* décalage estimé depuis la longitude (précis à 1 h près) */
-  const g = state.cache._globe;
-  let h = null;
-  if(g) h = Math.round((g.b.lon - g.a.lon) / 15);
-  if(h === null || !Math.abs(h)){
-    zone.innerHTML = `<p class="hint">Pas de décalage horaire notable : ton corps ne sentira rien. 👍</p>`;
-    return;
-  }
-  const est = h > 0;
-  const jours = Math.ceil(Math.abs(h) / 1.5);
-  zone.innerHTML = `
-    <div class="item">
-      <div class="emo">${est ? '🌅' : '🌇'}</div>
-      <div style="flex:1">
-        <h4>${Math.abs(h)} h de décalage vers l'${est ? 'est' : 'ouest'}</h4>
-        <p>${est
-          ? "Vers l'est : c'est le plus dur. Tu devras t'endormir plus tôt que ton corps ne le veut."
-          : "Vers l'ouest : plus facile. Tu devras tenir éveillé plus longtemps."}</p>
-        <p class="hint" style="margin-top:4px">Compte environ <strong>${jours} jour(s)</strong> pour t'adapter.</p>
-      </div>
-    </div>
-    <div class="item"><div class="emo">💡</div><div style="flex:1"><h4>Les 3 jours avant</h4>
-      <p>Décale ton coucher de <strong>1 h ${est ? 'plus tôt' : 'plus tard'}</strong> chaque soir.</p></div></div>
-    <div class="item"><div class="emo">☀️</div><div style="flex:1"><h4>À l'arrivée</h4>
-      <p>${est
-        ? "Cherche la lumière du MATIN, évite le soleil de fin de journée. Ne fais pas de sieste après 15 h."
-        : "Cherche la lumière du SOIR, tiens jusqu'à 22 h locales. Pas de sieste."}</p></div></div>
-    <div class="item"><div class="emo">✈️</div><div style="flex:1"><h4>Dans l'avion</h4>
-      <p>Règle ta montre sur l'heure d'arrivée dès le décollage. Bois de l'eau, évite l'alcool et le café.</p></div></div>`;
-}
+  /* --- Prix réels --- */
+  { grp:'Prix réels', nom:'Vols Ryanair', run: async () => {
+      const r = await fetch('https://services-api.ryanair.com/farfnd/v4/oneWayFares?departureAirportIataCode=BVA&outboundDepartureDateFrom=2026-09-01&outboundDepartureDateTo=2026-09-10&market=fr-fr&limit=1').then(x=>x.ok?x.json():null);
+      return r ? ok('accessible') : ko('bloqué ou indisponible');
+    }},
+  { grp:'Prix réels', nom:'Hôtels (Hotellook)', run: async () => {
+      if(!tpKey() && !useBackend()) return ko('pas de token');
+      const d = stayDates() || { in:'2026-09-01', out:'2026-09-05' };
+      try{
+        const url = useBackend()
+          ? `${API()}/hotels?location=Rome&checkIn=${d.in}&checkOut=${d.out}&adults=2&currency=eur&limit=3`
+          : `https://engine.hotellook.com/api/v2/cache.json?location=Rome&checkIn=${d.in}&checkOut=${d.out}&adults=2&currency=eur&limit=3&token=${tpKey()}`;
+        const r = await fetch(url);
+        const rows = await r.json();
+        return Array.isArray(rows) && rows.length ? ok(rows.length + ' hôtels trouvés') : warn('répond, mais aucun tarif');
+      }catch(e){
+        return ko('bloqué par le navigateur (CORS) — déploie worker.js');
+      }
+    }},
 
-document.addEventListener('click', e => {
-  if(e.target.closest('#btnOpenFly')){
-    if(!state.trip){ toast('Choisis d’abord un voyage 😉'); return; }
-    $('#ovFly').classList.add('show');
-    loadMetar();
-    renderJetlag();
-    return;
-  }
-  if(e.target.closest('#btnFlyTrack')) trackFlight();
-});
-document.addEventListener('keydown', e => {
-  if(e.target.id === 'flyNum' && e.key === 'Enter') trackFlight();
-});
+  /* --- Navigateur & PWA --- */
+  { grp:'Appareil', nom:'Service Worker (hors-ligne)', run: async () => {
+      if(!('serviceWorker' in navigator)) return ko('non supporté');
+      const rs = await navigator.serviceWorker.getRegistrations();
+      return rs.length ? ok('actif') : warn('non enregistré (HTTPS requis)');
+    }},
+  { grp:'Appareil', nom:'Application installable', run: () => matchMedia('(display-mode: standalone)').matches ? ok('déjà installée') : warn('pas encore installée') },
+  { grp:'Appareil', nom:'Connexion', run: () => navigator.onLine ? ok('en ligne') : ko('hors-ligne') },
+  { grp:'Appareil', nom:'Stockage local', run: () => {
+      try{
+        const n = Object.keys(localStorage).filter(k => k.startsWith('acolite_')).length;
+        const ko_ = Math.round(JSON.stringify(localStorage).length / 1024);
+        return ok(`${n} clés · ${ko_} Ko utilisés`);
+      }catch(e){ return ko('inaccessible'); }
+    }},
+  { grp:'Appareil', nom:'Caméra (scanner de ticket)', run: () => navigator.mediaDevices?.getUserMedia ? ok('disponible') : ko('non supportée') },
 
-/* ============================================================
-   LEXIQUE DE SURVIE — phrases clés, générées 1 fois, DISPO HORS-LIGNE
-============================================================ */
-async function loadLexique(force = false){
-  const zone = $('#zoneLex');
-  if(!zone || !state.trip) return;
-  const ck = 'lex_' + state.trip.nom;
-  if(state.cache[ck] && !force){ renderLexique(state.cache[ck]); return; }
-  if(!navigator.onLine){
-    zone.innerHTML = `<p class="hint">📴 Hors-ligne : ouvre le lexique une fois connecté, il restera ensuite disponible sans réseau.</p>`;
-    return;
-  }
-  zone.innerHTML = skeletonCards(1);
-  try{
-    const d = await ai('light', `Destination : ${state.trip.nom} (${state.trip.pays}), langue locale : ${state.trip.langue || 'langue du pays'}.
-Donne les 14 phrases INDISPENSABLES à un voyageur français, dans la langue locale, avec une prononciation SIMPLE écrite à la française.
-Inclus obligatoirement : bonjour, merci, s'il vous plaît, excusez-moi, oui/non, combien ça coûte, où sont les toilettes, je ne comprends pas, parlez-vous anglais, l'addition, aidez-moi, appelez un médecin, je suis allergique, au revoir.
-Si la langue locale est le français, donne plutôt les expressions locales typiques.
-Réponds UNIQUEMENT en JSON : {"phrases":[{"fr":"...","local":"...","prononciation":"..."}]}`, true, 1800);
-    const rows = (d.data?.phrases || d.phrases || []).filter(x => x && x.fr);
-    if(!rows.length) throw new Error('vide');
-    state.cache[ck] = rows; save();
-    renderLexique(rows);
-  }catch(e){
-    zone.innerHTML = `<p class="hint">❌ Lexique indisponible (${esc(e.message)}). <a href="#" id="lexRetry" style="color:var(--accent-orange);font-weight:900">Réessayer</a></p>`;
-  }
-}
-function renderLexique(rows){
-  $('#zoneLex').innerHTML = `<p class="hint" style="margin-bottom:10px">💾 Enregistré sur ton téléphone — consultable <strong>sans réseau</strong>, même en avion.</p>`
-    + rows.map(p => `
-      <div class="lex">
-        <div class="lex-fr">${esc(p.fr)}</div>
-        <div class="lex-loc">${esc(p.local)}</div>
-        <div class="lex-pro">🔊 ${esc(p.prononciation || '')}</div>
-      </div>`).join('');
-}
-document.addEventListener('click', e => {
-  if(e.target.id === 'lexRetry'){ e.preventDefault(); loadLexique(true); return; }
-  if(e.target.closest('#btnOpenLex')){
-    if(!state.trip){ toast('Choisis d’abord un voyage 😉'); return; }
-    $('#ovLex').classList.add('show');
-    loadLexique();
-  }
-});
-
-/* --- Barre de progression de lecture (longs itinéraires) --- */
-function initScrollBar(){
-  const bar = document.createElement('div');
-  bar.id = 'readBar';
-  document.body.appendChild(bar);
-  const upd = () => {
-    const h = document.documentElement.scrollHeight - innerHeight;
-    bar.style.width = h > 240 ? Math.min(100, (scrollY / h) * 100) + '%' : '0%';
-  };
-  addEventListener('scroll', upd, { passive:true });
-  addEventListener('resize', upd);
-  upd();
-}
-initScrollBar();
-
-/* --- Thème contextuel : la couleur d'accent s'adapte à la destination --- */
-const VIBES = [
-  { k:['plage','mer','île','iles','maldives','bali','grèce','sicile','corse','caraïbes','cuba','martinique'], c:'#00D9C0', n:'océan' },
-  { k:['montagne','alpes','ski','neige','islande','norvège','laponie','suisse'],                              c:'#7BB6FF', n:'altitude' },
-  { k:['désert','maroc','sahara','égypte','jordanie','dubaï','emirats'],                                      c:'#FF8A3D', n:'désert' },
-  { k:['jungle','amazonie','costa rica','vietnam','thaïlande','brésil','indonésie'],                          c:'#3FD07A', n:'tropiques' },
-  { k:['tokyo','japon','séoul','corée','new york','hong kong','singapour','shanghai'],                        c:'#FF4D8D', n:'métropole' },
-  { k:['rome','florence','venise','paris','vienne','prague','lisbonne','séville','athènes'],                  c:'#C084FC', n:'patrimoine' }
+  /* --- État de l'app --- */
+  { grp:'Ton voyage', nom:'Compte', run: () => { const u = getUser(); return u ? ok(`${u.pseudo} · ${u.email}${u.verified ? ' · vérifié' : ' · NON vérifié'}`) : ko('aucun compte'); } },
+  { grp:'Ton voyage', nom:'Voyage en cours', run: () => state.trip ? ok(`${state.trip.nom}, ${state.trip.pays}`) : warn('aucun') },
+  { grp:'Ton voyage', nom:'Plan généré', run: () => state.cache.plan ? ok(`${state.cache.plan.programme?.length || 0} journée(s)`) : warn('pas encore') },
+  { grp:'Ton voyage', nom:'Préférences IA', run: () => {
+      const l = [];
+      if(SET.style?.length) l.push(SET.style.join('+'));
+      if(SET.rythme) l.push('rythme ' + SET.rythme);
+      if(SET.food && SET.food !== 'aucun') l.push(SET.food);
+      if(SET.acces === 'oui') l.push('accessibilité');
+      if(SET.eviter?.length) l.push('évite ' + SET.eviter.join('/'));
+      return l.length ? ok(l.join(' · ')) : warn('aucune préférence définie');
+    }},
 ];
-function applyVibe(){
-  const t = state.trip;
-  const root = document.documentElement;
-  if(!t || SET?.vibe === false){ root.style.removeProperty('--accent-cyan'); return; }
-  const hay = `${t.nom} ${t.pays} ${(t.points_forts || []).join(' ')}`.toLowerCase();
-  const v = VIBES.find(x => x.k.some(k => hay.includes(k)));
-  if(v) root.style.setProperty('--accent-cyan', v.c);
-  else root.style.removeProperty('--accent-cyan');
-}
+const ok   = m => ({ s:'ok',   m });
+const ko   = m => ({ s:'ko',   m });
+const warn = m => ({ s:'warn', m });
 
-/* --- Retour haptique : une petite vibration aux moments clés --- */
-const HAPTIC = { tap: 10, ok: [15, 40, 25], err: [40, 60, 40], big: [10, 30, 10, 30, 60] };
-function buzz(kind = 'tap'){
-  if(!SET?.haptic) return;
-  if(!navigator.vibrate) return;
-  try{ navigator.vibrate(HAPTIC[kind] || HAPTIC.tap); }catch(e){}
+async function runDiag(){
+  const zone = $('#zoneDiag');
+  const btn = $('#btnDiag');
+  if(!zone) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Test en cours…';
+  const groupes = [...new Set(DIAG.map(d => d.grp))];
+  zone.innerHTML = groupes.map(g =>
+    `<h3 style="margin:14px 0 8px">${esc(g)}</h3><div id="dg_${g.replace(/\W/g,'')}"></div>`).join('');
+
+  let nOk = 0, nKo = 0, nWarn = 0;
+  for(const d of DIAG){
+    const box = $('#dg_' + d.grp.replace(/\W/g, ''));
+    const row = document.createElement('div');
+    row.className = 'diag';
+    row.innerHTML = `<span class="dot wait">⏳</span><div style="flex:1;min-width:0"><b>${esc(d.nom)}</b><p>test en cours…</p></div>`;
+    box.appendChild(row);
+    let r;
+    try{ r = await d.run(); }catch(e){ r = ko(e.message || 'erreur'); }
+    if(r.s === 'ok') nOk++; else if(r.s === 'ko') nKo++; else nWarn++;
+    const ico = r.s === 'ok' ? '✅' : r.s === 'ko' ? '❌' : '⚠️';
+    row.innerHTML = `<span class="dot ${r.s}">${ico}</span><div style="flex:1;min-width:0"><b>${esc(d.nom)}</b><p>${esc(r.m)}</p></div>`;
+  }
+  zone.insertAdjacentHTML('afterbegin',
+    `<div class="diag-sum"><span class="tag" style="background:var(--ok)">✅ ${nOk} OK</span>
+     <span class="tag" style="background:var(--accent-orange)">⚠️ ${nWarn}</span>
+     <span class="tag" style="background:var(--danger);color:#fff">❌ ${nKo}</span></div>`);
+  btn.disabled = false;
+  btn.textContent = '↻ Relancer le diagnostic';
 }
-document.addEventListener('click', e => {
-  if(e.target.closest('button, .chip, .dest, .step, .catnav button')) buzz('tap');
-}, true);
+document.addEventListener('click', e => { if(e.target.id === 'btnDiag') runDiag(); });
 
 /* --- Barre "l'IA cherche" : remplace la nav du bas pendant la réflexion --- */
 const SB_MSG = [
@@ -3128,23 +2866,47 @@ function searchBar(on, first){
 async function projRoute(route){
   const frame = $('#projMap');
   if(!frame) return;
-  /* On centre la carte sur le point clé du trajet (OpenStreetMap : intégration libre,
-     Google refuse l'affichage en iframe sans clé payante). */
-  const cible = route.stops[route.stops.length - 1] || route.saddr;
-  const key = 'geo_' + cible;
-  let g = state.cache[key];
-  if(!g){
-    const r = await geoPlace(cible);
-    if(r){ g = { lat:+r.latitude, lon:+r.longitude }; state.cache[key] = g; save(); }
+  const t = state.trip || {};
+  const q = state.cache.plan?.logement?.quartier;
+
+  /* Le géocodeur ne connaît que les villes/quartiers, pas les monuments.
+     On tente donc, dans l'ordre : le quartier → la ville → le pays. */
+  const essais = route.walk
+    ? [q ? `${q}` : null, t.nom, t.pays]
+    : [t.nom, t.pays];
+  let g = null;
+  for(const nom of essais.filter(Boolean)){
+    const ck = 'geo_' + nom;
+    if(state.cache[ck]){ g = state.cache[ck]; break; }
+    const r = await geoPlace(nom);
+    if(r){
+      g = { lat:+r.latitude, lon:+r.longitude };
+      state.cache[ck] = g; save();
+      break;
+    }
   }
   if(!g){
     frame.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-10,35,30,60&layer=mapnik';
+    $('#zoneStops').innerHTML = '';
     return;
   }
-  const dx = route.walk ? 0.012 : 0.06, dy = route.walk ? 0.008 : 0.04;
+  const d = route.walk ? 0.014 : 0.06;
   frame.src = `https://www.openstreetmap.org/export/embed.html`
-    + `?bbox=${g.lon - dx},${g.lat - dy},${g.lon + dx},${g.lat + dy}`
+    + `?bbox=${g.lon - d * 1.6},${g.lat - d},${g.lon + d * 1.6},${g.lat + d}`
     + `&layer=mapnik&marker=${g.lat},${g.lon}`;
+
+  /* Les étapes du jour, cliquables : chacune ouvre le lieu dans Maps */
+  const stops = $('#zoneStops');
+  if(!stops) return;
+  if(!route.walk || !route.stops.length){
+    stops.innerHTML = '';
+    return;
+  }
+  stops.innerHTML = route.stops.map((s, i) => {
+    const nom = s.split(',')[0];
+    const url = `https://www.google.com/maps/search/${encodeURIComponent(s)}`;
+    return `<a class="stop" href="${esc(url)}" target="_blank" rel="noopener"><b>${i + 1}</b> ${esc(nom)}</a>`;
+  }).join('');
 }
 
 function buildProjectMap(){
@@ -3282,22 +3044,30 @@ const _e32 = $('#pfMyData'); if(_e32) _e32.onclick = () => {
   toast('📄 Données téléchargées');
 };
 
-/* Suppression de compte : double confirmation (impossible par accident) */
+/* Suppression de compte : confirmation DANS l'app.
+   (confirm()/prompt() sont bloqués dans les PWA installées : le bouton
+   semblait ne rien faire — c'était ça, le bug.) */
 const _e33 = $('#pfDelete'); if(_e33) _e33.onclick = () => {
   const u = getUser();
-  const attendu = (u?.pseudo || 'SUPPRIMER');
-  if(!confirm('⚠️ Dernière chance.\n\nTon compte, tes voyages, tes notes et tes souvenirs seront DÉFINITIVEMENT effacés de cet appareil.\n\nContinuer ?')) return;
-  const saisi = prompt(`Pour confirmer, écris ton pseudo exactement :\n\n${attendu}`);
-  if(saisi === null) return;
-  if(saisi.trim() !== attendu){
-    toast('❌ Pseudo incorrect — suppression annulée');
-    return;
-  }
-  ['acolite_user','acolite_logged','acolite_trip_v2','acolite_settings','acolite_history',
-   'acolite_theme','acolite_prices','acolite_docs','acolite_journal','acolite_chat','acolite_relay'
-  ].forEach(k => localStorage.removeItem(k));
-  location.reload();
+  $('#delPseudo').textContent = u?.pseudo || 'SUPPRIMER';
+  $('#delConfirm').value = '';
+  $('#delGo').disabled = true;
+  $('#ovDel').classList.add('show');
 };
+document.addEventListener('input', e => {
+  if(e.target.id !== 'delConfirm') return;
+  const attendu = ($('#delPseudo').textContent || '').trim();
+  $('#delGo').disabled = e.target.value.trim() !== attendu;
+});
+document.addEventListener('click', e => {
+  if(e.target.id !== 'delGo') return;
+  const attendu = ($('#delPseudo').textContent || '').trim();
+  if(($('#delConfirm').value || '').trim() !== attendu){ toast('❌ Pseudo incorrect'); return; }
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('acolite_'))
+    .forEach(k => localStorage.removeItem(k));
+  location.reload();
+});
 
 /* --- Filet de sécurité global : une erreur JS ne meurt plus en silence --- */
 let _lastErrToast = 0;
@@ -3730,10 +3500,6 @@ document.addEventListener('click', async e => {
 });
 
 /* ---------- Boot ---------- */
-/* aucune date de départ dans le passé */
-const _fd = document.getElementById('fDepart');
-if(_fd) _fd.min = new Date().toISOString().slice(0, 10);
-
 loadSettings();
 load();
 checkImportHash();

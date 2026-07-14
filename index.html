@@ -124,6 +124,7 @@
       <select id="mapDay" aria-label="Choisir le trajet à afficher"></select>
       <a class="rt" id="projOpen" href="#" target="_blank" rel="noopener">↗ Maps</a>
     </div>
+    <div class="mapstops" id="zoneStops"></div>
     <iframe id="projMap" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
   </section>
 
@@ -159,7 +160,8 @@
           <h3 style="margin:16px 0 6px">♿ Accessibilité</h3>
           <div class="chips" id="stAcces"></div>
 
-          <h3 style="margin:16px 0 6px">🌱 Transport</h3>
+          <h3 style="margin:16px 0 6px">🚫 Transports à éviter</h3>
+          <p class="hint" style="margin:0 0 8px">L'IA ne te proposera pas ces modes de transport (sauf s'il n'existe aucune alternative).</p>
           <div class="chips" id="stEco"></div>
 
           <div class="divider"></div>
@@ -247,6 +249,15 @@
       </div><!-- /acc -->
     </div>
 
+    <div class="acc" id="accAdmin">
+      <div class="acc-head" data-acc>🛠 DIAGNOSTIC (temporaire) <span class="arr">›</span></div>
+      <div class="acc-body">
+        <p class="hint" style="margin:0 0 10px">Ce panneau teste tout ce qui est branché et te dit ce qui marche ou pas. À retirer avant la mise en ligne publique.</p>
+        <button class="btn sm" id="btnDiag" style="width:100%;justify-content:center">▶ Lancer le diagnostic complet</button>
+        <div id="zoneDiag" style="margin-top:12px"></div>
+      </div>
+    </div>
+
     <div class="danger-zone">
       <h3>⚠️ Zone sensible</h3>
       <p>La suppression est <strong>définitive</strong> : compte, voyages, notes et souvenirs seront perdus. Aucun retour possible.</p>
@@ -323,6 +334,23 @@
       <input type="file" id="scanFile" accept="image/*" style="display:none">
     </label>
     <button class="modal-close" data-closescan>Fermer</button>
+  </div>
+</div>
+
+<!-- ===== Pop-up SUPPRESSION DE COMPTE ===== -->
+<div class="overlay" id="ovDel">
+  <div class="modal">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0;color:var(--danger)">⚠️ Supprimer le compte</h2>
+      <button class="close-btn" data-close="ovDel" aria-label="Fermer">✕</button>
+    </div>
+    <p class="sub">Compte, voyages, notes et préférences seront <strong>définitivement effacés</strong> de cet appareil. Aucun retour possible.</p>
+    <div class="field" style="margin-top:12px">
+      <label for="delConfirm">Pour confirmer, écris <strong id="delPseudo">ton pseudo</strong></label>
+      <input id="delConfirm" placeholder="…" autocomplete="off">
+    </div>
+    <button class="btn danger" id="delGo" style="width:100%;justify-content:center;margin-top:14px" disabled>🗑 Supprimer définitivement</button>
+    <button class="btn ghost sm" data-close="ovDel" style="width:100%;justify-content:center;margin-top:8px">Annuler</button>
   </div>
 </div>
 
