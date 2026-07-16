@@ -22,7 +22,7 @@ window.ACOLITE_KEYS = {
 
   /* ▸ MODE TEST uniquement : à VIDER dès que le proxy est en place */
   gemini: 'AQ.Ab8RN6LIYqqkAoeMd-Ox6VSfX1S9ZBKMpGHebvmNysr-hUONRw',
-  groq: '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',
+  groq: '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',
   travelpayouts: '208c6b60d7782634d9fb3fc244b81143',
 
   /* Envoi réel du mail de vérification (gratuit, 200 mails/mois) :
@@ -33,8 +33,8 @@ window.ACOLITE_KEYS = {
      Tant que c'est vide → mode démo : le code s'affiche à l'écran.
      (La clé publique EmailJS est conçue pour être exposée : pas de risque.) */
   emailjs: {
-    publicKey: '',
-    serviceId: '',
-    templateId: ''
+    publicKey: 'iZ2Y1SA61PxmXDCT5CzeV',
+    serviceId: 'service_wiq1wzj',
+    templateId: 'template_szov0of'
   }
 };

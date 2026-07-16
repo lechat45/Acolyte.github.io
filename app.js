@@ -159,6 +159,10 @@ async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, 
     contents: [{ role:'user', parts:[{ text: prompt }] }],
     generationConfig: { temperature: temp, maxOutputTokens: maxTok }
   };
+  /* Gemini 2.5 Flash "réfléchit" avant de répondre et ces tokens de réflexion
+     comptent dans maxOutputTokens : sans budget à 0, la réponse revient vide
+     (finishReason MAX_TOKENS, aucun texte) → erreur EMPTY. */
+  if(/2\.5-flash|flash-latest/.test(model)) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
   if(expectJson) body.generationConfig.responseMimeType = 'application/json';
   const r = useBackend()
     ? await fetch(`${API()}/gemini`, {
@@ -2741,10 +2745,6 @@ const DIAG = [
   { grp:'Données réelles', nom:'Trains (Deutsche Bahn)', run: async () => {
       const r = await fetch('https://v6.db.transport.rest/locations?query=Paris&results=1').then(x=>x.ok?x.json():null);
       return Array.isArray(r) && r.length ? ok('accessible') : ko('inaccessible');
-    }},
-  { grp:'Données réelles', nom:'Pays (REST Countries)', run: async () => {
-      const r = await fetch('https://restcountries.com/v3.1/alpha/IT?fields=currencies').then(x=>x.ok?x.json():null);
-      return r?.currencies ? ok('accessible') : ko('inaccessible');
     }},
 
   /* --- Prix réels --- */
