@@ -17,13 +17,14 @@
 ============================================================ */
 window.ACOLITE_KEYS = {
 
-  /* ▸ MODE SÉCURISÉ : colle ici l'URL de ton Worker Cloudflare */
-  proxy: '',
+  /* ▸ MODE SÉCURISÉ : backend Val Town — les clés sont dans ses
+     variables d'environnement (val.town → Env vars), jamais ici */
+  proxy: 'https://lechat45--367075ba811e11f1afca1607ee4eb77e.web.val.run',
 
   /* ▸ MODE TEST uniquement : à VIDER dès que le proxy est en place */
-  gemini: 'AQ.Ab8RN6LIYqqkAoeMd-Ox6VSfX1S9ZBKMpGHebvmNysr-hUONRw',
-  groq: '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',
-  travelpayouts: '208c6b60d7782634d9fb3fc244b81143',
+  gemini: '',
+  groq: '',
+  travelpayouts: '',
 
   /* Envoi réel du mail de vérification (gratuit, 200 mails/mois) :
      1. Crée un compte sur https://www.emailjs.com
