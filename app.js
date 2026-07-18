@@ -51,13 +51,15 @@
 })();
 
 const LS_GEM   = 'acolite_gemini_key';
-const LS_GEMM  = 'acolite_gem_model';   // modèle Gemini auto-détecté
+const LS_GEMM  = 'acolite_gem_model_v2';   // modèle Gemini auto-détecté (v2 : re-détection après passage à la génération 3.x)
 const LS_GROQ  = 'acolite_groq_key';
 const LS_GROQM = 'acolite_groq_model';
 const LS_TP    = 'acolite_tp_token';
 const LS_TRIP  = 'acolite_trip_v2';
 /* Ordre de préférence — le premier dispo sur la clé sera utilisé */
-const GEM_PREFERRED = ['gemini-2.5-flash','gemini-flash-latest','gemini-2.0-flash','gemini-2.5-flash-lite','gemini-2.5-pro','gemini-pro-latest'];
+/* Du meilleur au plus prudent — la bascule automatique descend cette liste
+   quand un modèle est saturé (503) ou hors quota (429). */
+const GEM_PREFERRED = ['gemini-3.5-flash','gemini-3-flash-preview','gemini-2.5-flash','gemini-flash-latest','gemini-2.0-flash','gemini-2.5-flash-lite','gemini-2.5-pro','gemini-pro-latest'];
 
 const $  = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -100,12 +102,23 @@ const API = () => (CFG.proxy || '').replace(/\/+$/, '');
 const useBackend = () => !!API();
 const gemKey  = () => CFG.gemini || localStorage.getItem(LS_GEM)  || '';
 const groqKey = () => CFG.groq || localStorage.getItem(LS_GROQ) || '';
-const groqModel = () => localStorage.getItem(LS_GROQM) || 'llama-3.3-70b-versatile';
+/* Du meilleur au plus prudent — bascule automatique si Groq retire un modèle */
+const GROQ_PREFERRED = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'openai/gpt-oss-20b'];
+const groqModel = () => localStorage.getItem(LS_GROQM) || GROQ_PREFERRED[0];
 const tpKey   = () => CFG.travelpayouts || localStorage.getItem(LS_TP) || '';
 const hasGroq = () => useBackend() || !!groqKey();
 
+/* fetch avec délai maximal : sans ça, un appel IA qui reste bloqué fait tourner
+   le loader à l'infini. Au-delà de `ms`, on annule et l'appelant affiche l'erreur. */
+function fetchT(url, opts = {}, ms = 45000){
+  const ac = new AbortController();
+  const id = setTimeout(() => ac.abort(), ms);
+  return fetch(url, { ...opts, signal: ac.signal }).finally(() => clearTimeout(id));
+}
+
 /* --- Découverte automatique du modèle Gemini disponible sur la clé --- */
 async function resolveGemModel(key, force = false){
+  if(GEM_OVERRIDE) return GEM_OVERRIDE; /* bascule anti-saturation en cours */
   /* Réglage "Modèle" du panneau Préférences */
   if(SET?.model && SET.model !== 'auto') return SET.model;
   if(!force){
@@ -128,7 +141,19 @@ async function resolveGemModel(key, force = false){
     || names[0];
   if(!pick) throw new Error('LIST:Aucun modèle compatible sur cette clé.');
   localStorage.setItem(LS_GEMM, pick);
+  localStorage.setItem('acolite_gem_names', JSON.stringify(names)); /* pour la bascule auto */
   return pick;
+}
+
+/* Bascule automatique : quand un modèle est saturé (503) ou hors quota (429),
+   on prend le suivant de GEM_PREFERRED disponible sur la clé. */
+let GEM_OVERRIDE = ''; /* prioritaire le temps de la session, remis à zéro au rechargement */
+function nextGemModel(current){
+  let names = [];
+  try{ names = JSON.parse(localStorage.getItem('acolite_gem_names')) || []; }catch(e){}
+  const chain = GEM_PREFERRED.filter(m => !names.length || names.includes(m));
+  const i = chain.indexOf(current);
+  return chain[i + 1] || (i === -1 ? chain[0] : null);
 }
 
 /* --- Message d'erreur lisible depuis la réponse Google --- */
@@ -144,7 +169,7 @@ async function gemErrMsg(r){
   return `Erreur ${r.status}${apiMsg ? ' — ' + apiMsg.slice(0,120) : ''}`;
 }
 
-async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, temp = 0.85){
+async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, temp = 0.85, _hops = 0){
   const key = gemKey();
   if(!key && !useBackend()){ toast('⚠️ Clé Gemini absente de config.js'); throw new Error('NO_KEY'); }
   let model;
@@ -159,30 +184,53 @@ async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, 
     contents: [{ role:'user', parts:[{ text: prompt }] }],
     generationConfig: { temperature: temp, maxOutputTokens: maxTok }
   };
-  /* Gemini 2.5 Flash "réfléchit" avant de répondre et ces tokens de réflexion
-     comptent dans maxOutputTokens : sans budget à 0, la réponse revient vide
-     (finishReason MAX_TOKENS, aucun texte) → erreur EMPTY. */
-  if(/2\.5-flash|flash-latest/.test(model)) body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
-  if(expectJson) body.generationConfig.responseMimeType = 'application/json';
+  /* Réflexion des modèles récents : leurs tokens de "pensée" comptent dans
+     maxOutputTokens (réponse vide sinon → EMPTY).
+     - appels courts : réflexion coupée → réponse immédiate, jamais vide
+     - appels lourds (propositions, plan…) : réflexion ACTIVÉE pour la qualité,
+       avec de la place réservée EN PLUS du budget de réponse */
+  const gc = body.generationConfig, isPro = /pro/.test(model);
+  if(/2\.5-flash/.test(model)){
+    gc.thinkingConfig = { thinkingBudget: maxTok < 2048 ? 0 : 2048 };
+    if(maxTok >= 2048) gc.maxOutputTokens = maxTok + 2048;
+  }else if(/gemini-3|flash-latest/.test(model) && !isPro){
+    if(maxTok < 2048) gc.thinkingConfig = { thinkingBudget: 0 };
+    else gc.maxOutputTokens = maxTok + 4096;          /* réflexion dynamique */
+  }else if(isPro && /2\.5|gemini-3|latest/.test(model)){
+    gc.maxOutputTokens = maxTok + 4096;               /* Pro : réflexion non désactivable */
+  }
+  /* plafond de sortie du modèle : 8192 pour la génération 2.0, 32768 au-delà */
+  gc.maxOutputTokens = Math.min(gc.maxOutputTokens, /2\.0/.test(model) ? 8192 : 32768);
+  if(expectJson) gc.responseMimeType = 'application/json';
   const r = useBackend()
-    ? await fetch(`${API()}/gemini`, {
+    ? await fetchT(`${API()}/gemini`, {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify({ model, body })      /* aucune clé ne quitte le navigateur */
       })
-    : await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{
+    : await fetchT(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
   });
   if(r.status === 404 && !_retry){
     /* modèle mis en cache devenu obsolète → re-détection puis retry */
     localStorage.removeItem(LS_GEMM);
+    GEM_OVERRIDE = '';
     await resolveGemModel(key, true);
-    return gemini(prompt, expectJson, maxTok, true);
+    return gemini(prompt, expectJson, maxTok, true, temp, _hops);
   }
   if((r.status === 429 || r.status === 503) && !_retry){
     /* surcharge passagère → une seule nouvelle tentative après 1,6 s */
     await new Promise(res => setTimeout(res, 1600));
-    return gemini(prompt, expectJson, maxTok, true, temp);
+    return gemini(prompt, expectJson, maxTok, true, temp, _hops);
+  }
+  if((r.status === 429 || r.status === 503) && _hops < 3){
+    /* toujours saturé (503) ou hors quota (429) → modèle suivant de la liste */
+    const next = nextGemModel(model);
+    if(next && next !== model){
+      GEM_OVERRIDE = next;
+      localStorage.setItem(LS_GEMM, next);
+      return gemini(prompt, expectJson, maxTok, false, temp, _hops + 1);
+    }
   }
   if(!r.ok){
     const msg = await gemErrMsg(r);
@@ -192,36 +240,50 @@ async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, 
   }
   const d = await r.json();
   let txt = (d.candidates?.[0]?.content?.parts || []).map(p=>p.text||'').join('');
-  if(!txt) { toast('⚠️ Réponse vide de Gemini, réessaie'); throw new Error('EMPTY'); }
+  if(!txt){
+    /* réponse vide (réflexion trop longue ?) → une relance avec le double de place */
+    if(!_retry) return gemini(prompt, expectJson, maxTok * 2, true, temp, _hops);
+    toast('⚠️ Réponse vide de Gemini, réessaie'); throw new Error('EMPTY');
+  }
   if(!expectJson) return txt;
   txt = txt.replace(/```json|```/g,'').trim();
   return parseAI(txt);
 }
 
-async function groq(prompt, expectJson = true, maxTok = 2048){
+async function groq(prompt, expectJson = true, maxTok = 2048, _retryModel = false){
   const body = {
     model: groqModel(),
     messages: [{ role:'user', content: prompt + (expectJson ? '\nRéponds UNIQUEMENT avec un objet JSON valide, rien d\'autre.' : '') }],
     temperature: 0.7,
     max_tokens: maxTok
   };
+  /* gpt-oss "réfléchit" avant de répondre : effort bas = réponse rapide qui ne
+     mange pas le budget de tokens. (llama refuse ce paramètre → conditionnel) */
+  if(/gpt-oss/.test(body.model)) body.reasoning_effort = 'low';
   if(expectJson) body.response_format = { type:'json_object' };
   const r = useBackend()
-    ? await fetch(`${API()}/groq`, {
+    ? await fetchT(`${API()}/groq`, {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify({ body })             /* la clé Groq reste sur le serveur */
       })
-    : await fetch('https://api.groq.com/openai/v1/chat/completions',{
+    : await fetchT('https://api.groq.com/openai/v1/chat/completions',{
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + groqKey() },
         body: JSON.stringify(body)
       });
   if(r.status === 401){ toast('Clé Groq invalide — vérifie dans ⚙'); throw new Error('BAD_GROQ'); }
   if(r.status === 429){ throw new Error('GROQ_RATE'); }
+  if(r.status === 404 && !_retryModel){
+    /* modèle retiré par Groq → on passe au suivant de la liste et on mémorise */
+    const cur = groqModel();
+    const next = GROQ_PREFERRED[GROQ_PREFERRED.indexOf(cur) + 1] || GROQ_PREFERRED.find(m => m !== cur);
+    if(next && next !== cur){ localStorage.setItem(LS_GROQM, next); return groq(prompt, expectJson, maxTok, true); }
+  }
   if(!r.ok) throw new Error('GROQ_HTTP ' + r.status);
   const d = await r.json();
   let txt = d.choices?.[0]?.message?.content || '';
+  if(!txt) throw new Error('GROQ_EMPTY'); /* contenu vide → ai() bascule sur Gemini */
   if(!expectJson) return txt;
   txt = txt.replace(/```json|```/g,'').trim();
   return parseAI(txt, false);
@@ -229,13 +291,23 @@ async function groq(prompt, expectJson = true, maxTok = 2048){
 
 /* --- Auto-réparation JSON : récupère les réponses IA mal formées --- */
 async function parseAI(txt, allowRepair = true){
-  try{ return JSON.parse(txt); }catch(e){}
-  const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
-  if(a > -1 && b > a){ try{ return JSON.parse(txt.slice(a, b + 1)); }catch(e){} }
+  const tryP = s => { try{ return JSON.parse(s); }catch(e){ return undefined; } };
+  /* nettoie ce qui casse le plus souvent le JSON des LLM : fences + virgules traînantes */
+  const clean = s => s.replace(/```json|```/gi, '').replace(/,\s*([}\]])/g, '$1').trim();
+  let v = tryP(txt);            if(v !== undefined) return v;
+  v = tryP(clean(txt));         if(v !== undefined) return v;
+  /* isole le plus grand objet {...} OU tableau [...] présent dans la réponse */
+  const slice = (open, close) => {
+    const a = txt.indexOf(open), b = txt.lastIndexOf(close);
+    return (a > -1 && b > a) ? clean(txt.slice(a, b + 1)) : null;
+  };
+  for(const cand of [slice('{', '}'), slice('[', ']')]){
+    if(cand){ v = tryP(cand); if(v !== undefined) return v; }
+  }
   if(allowRepair && hasGroq()){
     try{
       const fixed = await groq('Ce JSON est invalide. Corrige-le sans changer son contenu. Réponds UNIQUEMENT avec le JSON corrigé, rien d\'autre :\n' + txt.slice(0, 6000), false, 4096);
-      return JSON.parse(fixed.replace(/```json|```/g,'').trim());
+      v = tryP(clean(fixed)); if(v !== undefined) return v;
     }catch(e){}
   }
   throw new Error('BAD_JSON');
@@ -256,9 +328,42 @@ async function ai(kind, prompt, expectJson = true, maxTok = 4096){
   return { data, via:'gemini' };
 }
 
-function loaderHTML(msg){ return `<div class="loader"><div class="orbit"></div>${esc(msg)}</div>`; }
-function errHTML(msg){ return `<div class="err">⚠️ ${esc(msg)}</div>`; }
+function loaderHTML(msg){ return `<div class="loader"><div class="orbit"></div><span class="loader-msg">${esc(msg)}</span></div>`; }
+/* errHTML(msg, retryId?) : si un retryId est fourni ET enregistré dans _retryFns,
+   un bouton « Réessayer » relance l'action fautive. */
+const _retryFns = {};
+function errHTML(msg, retryId){
+  return `<div class="err">⚠️ ${esc(msg)}${retryId ? `<button class="btn sm ghost err-retry" data-retry="${esc(retryId)}">↻ Réessayer</button>` : ''}</div>`;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-retry]');
+  if(b && typeof _retryFns[b.dataset.retry] === 'function') _retryFns[b.dataset.retry]();
+});
 function badge(via){ return via === 'groq' ? '<span class="ai-badge groq">⚡ Groq</span>' : '<span class="ai-badge gemini">✦ Gemini</span>'; }
+
+/* --- Skeletons : silhouettes de chargement (perçu plus rapide qu'un spinner) --- */
+function skelCards(n = 3){
+  const one = `<div class="skel-card"><div class="skel skel-line lg"></div><div class="skel skel-line"></div><div class="skel skel-line sm"></div><div class="skel-row"><span class="skel skel-pill"></span><span class="skel skel-pill"></span><span class="skel skel-pill"></span></div></div>`;
+  return `<div class="dest-grid">${one.repeat(n)}</div>`;
+}
+function skelPlan(){
+  return `<div class="skel-plan">
+    <div class="skel-row" style="gap:10px">${'<span class="skel skel-stat"></span>'.repeat(3)}</div>
+    <div class="skel skel-line lg" style="margin-top:16px"></div>
+    <div class="skel skel-line"></div><div class="skel skel-line sm"></div>
+    <div class="skel skel-line" style="margin-top:14px"></div><div class="skel skel-line sm"></div>
+  </div>`;
+}
+/* --- Progression « vivante » : fait défiler des messages pendant une génération longue.
+   Retourne une fonction stop() à appeler quand c'est fini. --- */
+function progress(el, msgs){
+  if(!el) return () => {};
+  let i = 0;
+  el.innerHTML = `<div class="card">${loaderHTML(msgs[0])}</div>`;
+  const set = () => { const m = el.querySelector('.loader-msg'); if(m) m.textContent = msgs[i % msgs.length]; };
+  const id = setInterval(() => { i++; set(); }, 2600);
+  return () => clearInterval(id);
+}
 
 /* ---------- Contexte voyage ---------- */
 function ctx(){
@@ -274,9 +379,14 @@ CONTEXTE VOYAGEUR :
 - Destination choisie : ${t.nom || '?'}, ${t.pays || ''}
 - Durée : ${p.days || '?'} · Période : ${p.when || 'flexible'}
 - Budget/pers : ${p.budget || '?'} · Voyageurs : ${p.adults||2} adulte(s)${p.kids ? ' + ' + p.kids + ' enfant(s)' : ''}
-- Destination souhaitée : ${p.dest || 'libre, à proposer'}
+- Destination souhaitée : ${p.dest || 'libre, à proposer'}${p.vibe ? `\n- Ambiance recherchée : ${p.vibe}` : ''}${p.withWho ? `\n- Voyage ${p.withWho}` : ''}${p.stay ? `\n- Style d'hébergement préféré : ${p.stay}` : ''}
 - Limites & conditions : ${p.free || 'aucune'}
-${prefsBlock()}`;
+${prefsBlock()}
+RÈGLES DE QUALITÉ (toujours valables) :
+- Uniquement des lieux, quartiers, établissements et transports RÉELS et vérifiables — au moindre doute, préfère l'option la plus connue plutôt que d'inventer.
+- Prix en euros, réalistes pour la saison et l'année indiquées ; donne des fourchettes plutôt que des chiffres trop précis.
+- Respecte STRICTEMENT le budget et les limites du voyageur.
+- TUTOIE toujours le voyageur (jamais de vouvoiement), ton chaleureux et naturel.${p.kids ? '\n- Des ENFANTS voyagent : adapte chaque conseil (rythme, distances, activités, restaurants) à leur présence.' : ''}`;
 }
 
 /* ============================================================
@@ -292,24 +402,39 @@ function readPrefs(extra){
     adults:+$('#fAdults').value || 2,
     kids:  +$('#fKids').value || 0,
     depart:$('#fDepart').value,
+    vibe:  $('#fVibe')?.value || '',
+    withWho:$('#fWith')?.value || '',
+    stay:  $('#fStay')?.value || '',
     free:  $('#fFree').value.trim().slice(0,600) + (extra ? ' | Affinage : ' + String(extra).slice(0,600) : '')
   };
 }
 
-async function proposeTrips(extra = '', lucky = false){
+let _genBusy = false;   /* garde anti double-appel des générations IA */
+async function proposeTrips(extra = '', lucky = false, country = ''){
+  if(_genBusy) return;
+  _genBusy = true;
+  _retryFns.propose = () => proposeTrips(extra, lucky, country);
   const prefs = readPrefs(extra);
   state.prefs = prefs; save();
   const zone = $('#zoneResults');
-  zone.innerHTML = `<div class="card">${loaderHTML(lucky ? "Roulette mondiale en cours… 🎲" : "Acolite explore le monde pour toi…")}</div>`;
+  const msgs = country
+    ? [`Acolite cherche LE bon coin en/au ${country}… 🎯`, 'Il compare les villes et les ambiances…', 'Vérification budget, saison & accès…', 'Presque prêt…']
+    : lucky
+    ? ['Roulette mondiale en cours… 🎲', 'Tirage de destinations inattendues…', 'Vérification budget & saison…', 'Presque prêt…']
+    : ['Acolite explore le monde pour toi… 🌍', 'Analyse de tes envies & ton budget…', 'Sélection de destinations réelles…', 'Transport & quartier pour chacune…', 'Presque prêt…'];
+  zone.innerHTML = `<div class="card">${loaderHTML(msgs[0])}</div>` + skelCards(3);
+  let mi = 0;
+  const msgTimer = setInterval(() => { mi++; const m = zone.querySelector('.loader-msg'); if(m) m.textContent = msgs[mi % msgs.length]; }, 2600);
   searchBar(true, lucky ? 'Roulette mondiale en cours… 🎲' : 'Acolite explore le monde…');
-  $('#btnGo').disabled = true; $('#btnLucky').disabled = true;
+  $('#btnGo').disabled = true; $('#btnLucky').disabled = true; if($('#btnCountry')) $('#btnCountry').disabled = true;
 
   const prompt = `Tu es Acolite, un expert voyage français, chaleureux et concret.
 ${ctx()}
 ${lucky ? 'MODE SURPRISE : propose des destinations inattendues, originales, auxquelles le voyageur ne penserait jamais, mais qui collent quand même au budget et à la période.' : ''}
+${country ? `MODE « SURPRISE DANS UN PAYS » : le voyageur veut absolument voyager en/au ${country}, mais il te laisse CHOISIR l'endroit précis. Propose UNE SEULE destination : une ville, une région ou un lieu PRÉCIS et RÉEL de ${country} — de préférence pas le plus évident/touristique — parfaitement adapté à son budget, sa période et ses envies. Dans "resume", explique clairement POURQUOI c'est LE bon choix surprise dans ce pays. Ignore la règle du nombre de propositions ci-dessous : ici, exactement UNE.` : ''}
 TOUT DOIT ÊTRE TROUVÉ DÈS MAINTENANT : pour CHAQUE proposition, tu donnes déjà le transport (mode, prix A/R, durée) ET le logement (type, quartier réel, prix/nuit). Le voyageur doit pouvoir comparer sans rien avoir à deviner. Uniquement des quartiers qui EXISTENT VRAIMENT.
 
-QUESTIONS DE PRÉCISION : si des infos te manquent pour viser juste (rythme, ambiance, priorités, contraintes), pose 2 ou 3 questions courtes dans "questions", chacune avec 2 à 4 options cliquables. Si le voyageur a déjà tout précisé, renvoie "questions":[].
+QUESTIONS DE PRÉCISION : si des infos te manquent pour viser juste (rythme, ambiance, priorités, contraintes), pose 2 ou 3 questions courtes dans "questions", chacune avec un nombre PAIR d'options cliquables (exactement 2 ou 4, jamais 3). Si le voyageur a déjà tout précisé, renvoie "questions":[].
 
 ${(state.seen||[]).length && !prefs.dest ? 'DÉJÀ PROPOSÉ à ce voyageur (ne PAS reproposer sauf s\'il le demande) : ' + state.seen.join(', ') + '.' : ''}
 ${(getHistory()||[]).length ? 'VOYAGES DÉJÀ CHOISIS par ce voyageur par le passé : ' + getHistory().map(h=>h.nom).join(', ') + ' — ne les repropose pas, mais inspire-toi de ses goûts.' : ''}
@@ -349,13 +474,14 @@ Réponds UNIQUEMENT en JSON valide, structure exacte. Commence OBLIGATOIREMENT p
    }
  ],
  "questions":[
-   {"texte":"question courte et UTILE pour préciser le voyage","options":["3-4 réponses courtes"]}
+   {"texte":"question courte et UTILE pour préciser le voyage","options":["2 ou 4 réponses courtes — toujours un nombre PAIR"]}
  ]
 }
 "questions" : 1 à 3 questions qui aideraient VRAIMENT à préciser le voyage (dates exactes ? quartier ambiance ? priorité visites/repos ? contrainte transport ?). Jamais de question dont la réponse est déjà dans le contexte.`;
 
   try{
-    const d = await gemini(prompt, true, 8192);
+    let d = await gemini(prompt, true, 8192);
+    if(SET?.verif !== false && !lucky) d = await reviewProps(d, prompt);
     state.destinations = d.destinations || [];
     state.seen = [...new Set([...(state.seen||[]), ...state.destinations.map(x=>x.nom)])].slice(-15);
     state.lastProps = d; save();
@@ -366,11 +492,16 @@ Réponds UNIQUEMENT en JSON valide, structure exacte. Commence OBLIGATOIREMENT p
     if(qs.length && !state._qsDone) openQsPopup(qs);
     else { $('#ovQs').classList.remove('show'); $('#zoneQs').innerHTML = ''; }
   }catch(e){
-    if(e.message !== 'NO_KEY') zone.innerHTML = `<div class="card">${errHTML("Impossible de contacter Gemini. Vérifie ta clé ou ta connexion.")}</div>`;
+    const msg = e.message === 'RATE' ? 'Quota IA atteint — réessaie dans 1 min ou passe sur Groq ⚡.'
+      : (e.name === 'AbortError' ? 'Délai dépassé — le serveur IA n’a pas répondu.' : 'Impossible de contacter Gemini. Vérifie ta clé ou ta connexion.');
+    if(e.message !== 'NO_KEY') zone.innerHTML = `<div class="card">${errHTML(msg, 'propose')}</div>`;
     else zone.innerHTML = '';
+  }finally{
+    clearInterval(msgTimer);
+    _genBusy = false;
   }
   searchBar(false);
-  $('#btnGo').disabled = false; $('#btnLucky').disabled = false;
+  $('#btnGo').disabled = false; $('#btnLucky').disabled = false; if($('#btnCountry')) $('#btnCountry').disabled = false;
 }
 
 /* "Hôtel familial ou appart-hôtel" → "Hôtel familial" ; "180-250€ par nuit" → "180-250€" */
@@ -380,7 +511,7 @@ const cleanPrix = s => String(s || '').replace(/\s*(par|\/)\s*nuit/gi, '').trim(
 function renderDestinations(d){
   const zone = $('#zoneResults');
   const n = (d.destinations||[]).length;
-  let html = `<div class="card"><h2>${n > 1 ? 'Compare tes ' + n + ' voyages' : 'Ton voyage sur mesure'} 🎒 <span class="ai-badge gemini">✦ Gemini</span></h2>
+  let html = `<div class="card"><h2>${n > 1 ? 'Compare tes voyages' : 'Ton voyage sur mesure'} 🎒 <span class="ai-badge gemini">✦ Gemini</span></h2>
   <p class="sub">${n > 1 ? 'Des propositions volontairement différentes. Compare-les point par point et clique sur celle qui te fait vibrer.' : 'Acolite a concentré ses efforts sur la formule idéale pour ta destination. Clique dessus pour lancer l\'organisation.'}</p>
   <div class="dest-grid">`;
   (d.destinations||[]).forEach((x,i)=>{
@@ -405,9 +536,51 @@ function renderDestinations(d){
   html += `</div>`;
   /* Les questions ne s'affichent QUE dans la pop-up — jamais dans la page. */
   html += `</div>`;
+
+  /* Comparatif côte à côte — tout aligné, point par point (uniquement si plusieurs propositions) */
+  if(n > 1){
+    const D = d.destinations;
+    const rows = [
+      ['💶 Budget',    D.map(x => esc(x.budget_estime || '—'))],
+      ['✈️ Transport', D.map(x => `${esc(x.transport_conseille || 'avion')} · ${esc(x.transport_prix || '—')}`)],
+      ['🏨 Logement',  D.map(x => `${esc(shortType(x.logement_type))}${x.logement_quartier ? ' · ' + esc(x.logement_quartier) : ''}`)],
+      ['☀️ Météo',     D.map(x => esc(x.meteo_periode || '—'))],
+      ['⏱ Durée',      D.map(x => esc(x.duree_ideale || '—'))],
+      ['🗣️ Langue',    D.map(x => esc(x.langue || '—'))]
+    ];
+    html += `<div class="card"><h3 style="margin:0 0 4px">📊 Comparatif</h3>
+      <p class="sub" style="margin:0 0 10px">Tout est aligné — compare point par point, puis choisis ta colonne.</p>
+      <div class="cmp-wrap"><table class="cmp">
+        <thead><tr><th></th>${D.map((x, i) => `<th data-i="${i}"><span class="cmp-flag">${esc(x.drapeau || '📍')}</span><br>${esc(x.nom)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr><th scope="row">${r[0]}</th>${r[1].map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}
+          <tr class="cmp-actions"><td></td>${D.map((x, i) => `<td><button class="btn sm cmp-choose" data-i="${i}">Choisir →</button></td>`).join('')}</tr>
+        </tbody>
+      </table></div></div>`;
+  }
+  /* Affinage en langage libre : « pas tout à fait ça… » → relance en tenant compte du feedback */
+  html += `<div class="card">
+    <h3 style="margin:0 0 4px">✍️ Pas tout à fait ça ?</h3>
+    <p class="sub" style="margin:0 0 10px">Dis à Acolite ce qui cloche, il repropose en en tenant compte.</p>
+    <div class="refine-bar">
+      <input id="refineInp" class="refine-inp" type="text" placeholder="ex : plus près de la mer, moins cher, plus animé…" aria-label="Ce qui ne va pas dans les propositions">
+      <button class="btn sm" id="refineGo">Reproposer →</button>
+    </div>
+  </div>`;
   zone.innerHTML = html;
 
   $$('.dest').forEach(el => el.onclick = () => chooseTrip(+el.dataset.i));
+  $$('.cmp-choose, .cmp th[data-i]').forEach(el => el.onclick = () => chooseTrip(+el.dataset.i));
+  const doRefine = () => {
+    const inp = $('#refineInp'); const v = (inp?.value || '').trim();
+    if(!v) return;
+    state.propAnswers = [...(state.propAnswers || []), 'Précision : ' + v].slice(-12);
+    save();
+    toast('🎯 Acolite réajuste ses propositions…');
+    proposeTrips(state.propAnswers.join(' · '));
+  };
+  const rgo = $('#refineGo'); if(rgo) rgo.onclick = doRefine;
+  const rinp = $('#refineInp'); if(rinp) rinp.addEventListener('keydown', e => { if(e.key === 'Enter') doRefine(); });
   $$('.chip.refine').forEach(el => el.onclick = () => {
     state.propAnswers = state.propAnswers || [];
     state.propAnswers.push(`${el.dataset.q || 'Affinage'} → ${el.dataset.r}`.slice(0,200));
@@ -422,9 +595,50 @@ const LS_HIST = 'acolite_history';
 function getHistory(){ try{ return JSON.parse(localStorage.getItem(LS_HIST)) || []; }catch(e){ return []; } }
 function pushHistory(t){
   const h = getHistory().filter(x => x.nom !== t.nom);
-  h.push({ nom: t.nom, pays: t.pays, quand: Date.now() });
-  localStorage.setItem(LS_HIST, JSON.stringify(h.slice(-10)));
+  /* on garde le voyage COMPLET + un instantané des préférences → permet de le rouvrir */
+  h.push({ nom: t.nom, pays: t.pays, drapeau: t.drapeau, budget_estime: t.budget_estime,
+           quand: Date.now(), trip: t, prefs: state.prefs || null });
+  try{ localStorage.setItem(LS_HIST, JSON.stringify(h.slice(-10))); }
+  catch(e){ /* quota → on retombe sur une version légère */
+    try{ localStorage.setItem(LS_HIST, JSON.stringify(h.slice(-10).map(x => ({ nom:x.nom, pays:x.pays, drapeau:x.drapeau, budget_estime:x.budget_estime, quand:x.quand, trip:x.trip })))); }catch(_){}
+  }
+  renderGallery();
 }
+
+/* --- Galerie « Mes voyages » : reprendre un voyage déjà exploré --- */
+function renderGallery(){
+  const box = $('#galleryList'), card = $('#tripGallery');
+  if(!box || !card) return;
+  const h = getHistory().slice().reverse();
+  if(!h.length){ card.hidden = true; box.innerHTML = ''; return; }
+  card.hidden = false;
+  box.innerHTML = h.map((x, i) => `
+    <div class="gal">
+      <div class="gal-flag">${esc(x.drapeau || '📍')}</div>
+      <div class="gal-info">
+        <b>${esc(x.nom)}</b>
+        <span>${esc(x.pays || '')}${x.budget_estime ? ' · ' + esc(x.budget_estime) : ''}</span>
+      </div>
+      <button class="btn sm ghost gal-open" data-gi="${i}">${x.trip ? 'Rouvrir →' : 'Reproposer'}</button>
+    </div>`).join('');
+}
+function reopenTrip(i){
+  const x = getHistory().slice().reverse()[i];
+  if(!x) return;
+  if(!x.trip){ const f = $('#fDest'); if(f) f.value = x.nom; gotoStep(1); toast('Destination pré-remplie 👍'); return; }
+  state.trip = x.trip;
+  if(x.prefs) state.prefs = x.prefs;
+  state.cache = {}; state.checklist = {}; state.spends = []; state.chatLog = []; state.notes = ''; state.resas = [];
+  state._geo = null; state.planAnswers = []; state._qsDone = false; _onSiteDone = false;
+  save();
+  unlockSteps();
+  toast(`On repart pour ${x.trip.nom} ! ✈️`);
+  gotoStep(3);
+}
+document.addEventListener('click', e => {
+  const g = e.target.closest('.gal-open');
+  if(g){ reopenTrip(+g.dataset.gi); }
+});
 
 function chooseTrip(i){
   state.trip = state.destinations[i];
@@ -466,7 +680,7 @@ function passHTML(){
         <span class="dash"></span>
         <span class="iata">${esc(to)}</span>
       </div>
-      <button class="pass-change" data-changedest title="Changer de destination">↩</button>
+      <button class="pass-change" data-changedest title="Changer de destination" aria-label="Changer de destination">↩</button>
     </div>
 
     <div class="pass-info">
@@ -477,9 +691,9 @@ function passHTML(){
     </div>
 
     <div class="pass-tear">
-      <div class="barcode">${'<i></i>'.repeat(26)}</div>
       <div class="pass-acts">
         <button class="pact" data-passpng title="Télécharger le ticket avec son QR code">📷<span>Ticket</span></button>
+        <button class="pact" data-postcard title="Créer une carte postale à partager">🖼️<span>Postcard</span></button>
         <button class="pact" data-sharelink title="Partager un lien qui importe ce voyage">🔗<span>Lien</span></button>
         <button class="pact" data-ics title="Ajouter le programme à ton agenda">📅<span>Agenda</span></button>
       </div>
@@ -541,12 +755,23 @@ function syncModeFromPlan(d){
    DONNÉES RÉELLES GRATUITES — ancrent l'IA dans le concret
    (Open-Meteo géocodage+météo, Wikipédia, prix de vols captés)
 ============================================================ */
-async function geoPlace(name){
+async function geoPlace(name, cc){
   try{
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=fr&format=json`);
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=5&language=fr&format=json`);
     const d = await r.json();
-    return d.results?.[0] || null;
+    const res = d.results || [];
+    if(!res.length) return null;
+    /* si on connaît le pays attendu, on privilégie le résultat qui y correspond
+       (évite p.ex. « Shenandoah » qui tombe au Kansas au lieu de la Virginie) */
+    if(cc){ const m = res.find(x => (x.country_code || '').toUpperCase() === cc); if(m) return m; }
+    return res[0];
   }catch(e){ return null; }
+}
+/* code pays ISO à partir du nom FR du pays (pour biaiser le géocodage) */
+function ccFor(pays){ return COUNTRY_CC[String(pays || '').trim().toLowerCase()] || ''; }
+/* nettoie un libellé de lieu pour le géocodeur : « Washington D.C. (Dulles) » → « Washington » */
+function cleanPlace(s){
+  return String(s || '').split(/[(,/]/)[0].replace(/\b[A-Z]\.?[A-Z]\.?\b/g, '').replace(/\./g, '').replace(/\s+/g, ' ').trim();
 }
 function havKm(a, b){
   const R = 6371, rad = x => x * Math.PI / 180;
@@ -566,7 +791,7 @@ async function realData(){
   if(!R || R.key !== key){
     R = { key };
     try{
-      const [g1, g2] = await Promise.all([ geoPlace(state.prefs?.from || 'Paris'), geoPlace(t.nom) ]);
+      const [g1, g2] = await Promise.all([ geoPlace(cleanPlace(state.prefs?.from || 'Paris')), geocode() ]);
       if(g1 && g2) R.dist = Math.round(havKm(g1, g2));
       if(g2){
         const depDate = state.prefs?.depart ? new Date(state.prefs.depart) : null;
@@ -682,11 +907,39 @@ Réponds en JSON : {"ok":true} si tout est cohérent, sinon {"ok":false,"problem
   }catch(e){ return d; }
 }
 
+/* Relecture croisée des PROPOSITIONS (étape 1) : Groq vérifie, Gemini corrige si besoin.
+   Réglable via SET.verif ; jamais en mode surprise (on y veut de la liberté). */
+async function reviewProps(d, basePrompt){
+  if(!hasGroq() || !(d.destinations||[]).length) return d;
+  try{
+    const v = await groq(`Tu es un vérificateur voyage strict. ${ctx()}
+PROPOSITIONS À VÉRIFIER (JSON) : ${JSON.stringify(d.destinations).slice(0, 4500)}
+Contrôle UNIQUEMENT :
+1. "budget_estime" respecte-t-il le budget/personne demandé ?
+2. "meteo_periode" est-elle cohérente avec la saison RÉELLE du voyage (mois indiqué) ?
+3. Les villes et quartiers sont-ils RÉELS et vraiment DIFFÉRENTS entre les propositions (pas de doublons déguisés) ?
+4. "transport_prix" est-il réaliste depuis le point de départ ?
+Réponds en JSON : {"ok":true} si tout est bon, sinon {"ok":false,"problemes":["max 3 incohérences, courtes et factuelles"]}`, true, 650);
+    if(v?.ok !== false || !(v.problemes||[]).length) return d;
+    const d2 = await gemini(basePrompt + `\n\nATTENTION — une relecture indépendante a détecté ces problèmes dans une première version. Corrige-les IMPÉRATIVEMENT en gardant EXACTEMENT la même structure JSON :\n- ${v.problemes.join('\n- ')}`, true, 8192);
+    return d2;
+  }catch(e){ return d; }
+}
+
 async function loadPlan(force = false){
   const zone = $('#zonePlan');
   if(state.cache.plan && !force){ renderPlan(state.cache.plan); syncModeFromPlan(state.cache.plan); return; }
-  zone.innerHTML = loaderHTML('Acolite organise ton voyage de A à Z…');
   const t = state.trip;
+  if(!t){ zone.innerHTML = errHTML('Choisis d’abord un voyage.'); return; }
+  if(_genBusy) return;
+  _genBusy = true;
+  _retryFns.plan = () => loadPlan(true);
+  const p = state.prefs || {};   /* prefs peut être null (voyage rouvert sans préférences) */
+  const msgs = ['Acolite organise ton voyage de A à Z… 🧭', 'Comparaison des transports (prix / durée)…', 'Choix du quartier idéal…', 'Programme jour par jour…',
+    ...(SET?.verif !== false ? ['Relecture par une 2ᵉ IA…'] : []), 'Presque prêt…'];
+  zone.innerHTML = `<div class="card">${loaderHTML(msgs[0])}</div>` + skelPlan();
+  let mi = 0;
+  const msgTimer = setInterval(() => { mi++; const m = zone.querySelector('.loader-msg'); if(m) m.textContent = msgs[mi % msgs.length]; }, 2600);
   const answers = (state.planAnswers||[]).join(' · ');
   const realCtx = await realData();
   /* Le transport et le logement ont DÉJÀ été trouvés à l'étape 2 : on les garde et on approfondit */
@@ -703,7 +956,7 @@ RÈGLE ABSOLUE : ne cite que des quartiers, lieux et établissements RÉELS et v
 Si les données réelles incluent un trajet en train ou un taux de change, appuie ton choix de transport et tes conversions de budget DESSUS.
 ${answers ? 'RÉPONSES du voyageur à tes questions précédentes (à intégrer au plan) : ' + answers : ''}
 
-MISSION : organise TOUT le voyage. C'est TOI qui décides du transport (avion, train ou voiture) en fonction du budget, de la distance depuis ${state.prefs.from} et des limites du voyageur — justifie ton choix. Trouve le meilleur type de logement et le quartier. Structure le séjour. Reste STRICTEMENT dans le budget.
+MISSION : organise TOUT le voyage. C'est TOI qui décides du transport (avion, train ou voiture) en fonction du budget, de la distance depuis ${p.from || 'le point de départ'} et des limites du voyageur — justifie ton choix. Trouve le meilleur type de logement et le quartier. Structure le séjour. Reste STRICTEMENT dans le budget.
 INTERDIT de poser des questions : renvoie "questions":[]. Le voyageur a déjà tout précisé, construis le voyage complet directement.
 
 Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (raisonnement interne, jamais montré) AVANT le reste :
@@ -724,9 +977,9 @@ Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (ra
  "programme":[{"jour":1,"resume":"le thème du jour en 1 ligne","lieux":["2-4 lieux RÉELS visités ce jour (monuments, quartiers, sites précis)"]}],
  "budget":{"total":nombre entier en euros par personne,"repartition":"1 phrase : transport X€ + logement Y€ + vie sur place Z€"},
  "conseil_cle":"LE conseil le plus important pour ce voyage",
- "questions":[{"texte":"question courte","options":["3-4 réponses courtes"]}]
+ "questions":[{"texte":"question courte","options":["2 ou 4 réponses courtes — nombre PAIR"]}]
 }
-Le programme couvre toute la durée (${state.prefs.days}), 1 ligne par jour.`;
+Le programme couvre toute la durée (${p.days || 'du séjour'}), 1 ligne par jour.`;
   try{
     const tok = { court: 4096, normal: 8192, long: 12288 }[SET?.detail || 'normal'];
     let d = await gemini(prompt, true, tok, false, 0.45);
@@ -735,9 +988,84 @@ Le programme couvre toute la durée (${state.prefs.days}), 1 ligne par jour.`;
     renderPlan(d);
     syncModeFromPlan(d);
   }catch(e){
-    if(e.message!=='NO_KEY') zone.innerHTML = errHTML('Organisation impossible pour le moment, réessaie.');
+    const msg = e.name === 'AbortError' ? 'Délai dépassé — le serveur IA n’a pas répondu.' : 'Organisation impossible pour le moment.';
+    if(e.message!=='NO_KEY') zone.innerHTML = errHTML(msg, 'plan');
+  }finally{
+    clearInterval(msgTimer);
+    _genBusy = false;
   }
 }
+
+/* --- Concierge : remet les cartes Événements / Fiche pratique à l'état bouton
+   (appelé à chaque rendu de plan → pas de contenu périmé d'un autre voyage) --- */
+function resetConcierge(){
+  const ev = $('#zoneEvents'); if(ev) ev.innerHTML = '<button class="btn sm ghost" id="btnEvents">Voir les événements</button>';
+  const inf = $('#zoneInfo'); if(inf) inf.innerHTML = '<button class="btn sm ghost" id="btnInfo">Afficher la fiche pratique</button>';
+}
+
+/* --- Événements & festivals aux dates du voyage (light → Groq) --- */
+async function loadEvents(){
+  const zone = $('#zoneEvents'), t = state.trip;
+  if(!zone || !t) return;
+  const d = stayDates();
+  const ck = `events_${t.nom}_${d ? d.in : 'flex'}`;
+  if(state.cache[ck]){ renderEvents(state.cache[ck]); return; }
+  _retryFns.events = loadEvents;
+  zone.innerHTML = loaderHTML('Recherche des événements…');
+  const when = d ? `entre le ${d.in} et le ${d.out}` : (state.prefs?.when || 'à la période prévue');
+  const prompt = `Tu es Acolite, connaisseur de ${t.nom} (${t.pays}). ${ctx()}
+Liste les ÉVÉNEMENTS marquants à ${t.nom} pendant le séjour (${when}) : festivals, fêtes locales, grands marchés, matchs importants, expositions, ET jours fériés (musées/commerces fermés).
+N'indique QUE des événements plausibles et récurrents à cette période. Si tu n'es pas certain d'une date, reste vague sur la date plutôt que d'inventer. Maximum 6.
+Réponds UNIQUEMENT en JSON : {"events":[{"nom":"...","quand":"date ou période","type":"festival|fête|marché|sport|expo|férié","note":"1 phrase : intérêt ou impact pratique"}]}`;
+  try{
+    const { data } = await ai('light', prompt);
+    state.cache[ck] = data; save();
+    renderEvents(data);
+  }catch(e){ if(e.message !== 'NO_KEY') zone.innerHTML = errHTML('Événements indisponibles pour le moment.', 'events'); }
+}
+function renderEvents(data){
+  const zone = $('#zoneEvents'); if(!zone) return;
+  const ev = (data?.events || []).filter(e => e && e.nom);
+  const ico = { festival:'🎪', 'fête':'🎉', fete:'🎉', marché:'🛍️', marche:'🛍️', sport:'⚽', expo:'🖼️', 'férié':'📛', ferie:'📛' };
+  if(!ev.length){ zone.innerHTML = `<p class="hint" style="margin:0">Rien de notable repéré à ces dates — tu auras la ville pour toi 😉</p>`; return; }
+  zone.innerHTML = ev.map(e => `<div class="item" style="align-items:flex-start">
+    <div class="emo">${ico[String(e.type||'').toLowerCase()] || '📅'}</div>
+    <div style="flex:1;min-width:0"><h4>${esc(e.nom)} ${e.quand ? `<span class="tag cyan" style="font-size:.66rem">${esc(e.quand)}</span>` : ''}</h4>
+    <p class="hint" style="margin:2px 0 0">${esc(e.note || '')}</p></div></div>`).join('');
+}
+
+/* --- Fiche pratique pays (light → Groq) --- */
+async function loadCountryInfo(){
+  const zone = $('#zoneInfo'), t = state.trip;
+  if(!zone || !t) return;
+  const ck = `cinfo_${t.pays || t.nom}`;
+  if(state.cache[ck]){ renderCountryInfo(state.cache[ck]); return; }
+  _retryFns.info = loadCountryInfo;
+  zone.innerHTML = loaderHTML('Préparation de la fiche pratique…');
+  const from = state.prefs?.from || 'France';
+  const prompt = `Tu es Acolite. Fiche pratique concise et FIABLE pour un voyageur partant de ${from} vers ${t.nom} (${t.pays}). ${ctx()}
+Réponds UNIQUEMENT en JSON, chaque valeur = 1 phrase courte et concrète (n'invente rien ; si incertain, conseille de vérifier) :
+{"visa":"formalités d'entrée pour un voyageur français","prise":"type de prise + voltage, adaptateur nécessaire ?","urgence":"numéros d'urgence locaux","pourboire":"usage du pourboire","eau":"eau du robinet potable ?","decalage":"décalage horaire vs France","sante":"vaccin/précaution santé notable ou 'aucune particulière'","astuce":"1 astuce locale utile"}`;
+  try{
+    const { data } = await ai('light', prompt);
+    state.cache[ck] = data; save();
+    renderCountryInfo(data);
+  }catch(e){ if(e.message !== 'NO_KEY') zone.innerHTML = errHTML('Fiche indisponible pour le moment.', 'info'); }
+}
+function renderCountryInfo(d){
+  const zone = $('#zoneInfo'); if(!zone || !d) return;
+  const rows = [
+    ['🛂 Formalités', d.visa], ['🔌 Prises', d.prise], ['🚨 Urgences', d.urgence],
+    ['💶 Pourboire', d.pourboire], ['🚰 Eau', d.eau], ['🕐 Décalage', d.decalage],
+    ['💉 Santé', d.sante], ['💡 Astuce', d.astuce]
+  ].filter(r => r[1]);
+  zone.innerHTML = rows.map(r => `<div class="item" style="padding:9px 12px">
+    <div style="flex:1;min-width:0"><h4 style="margin:0">${r[0]}</h4><p class="hint" style="margin:2px 0 0">${esc(String(r[1]))}</p></div></div>`).join('');
+}
+document.addEventListener('click', e => {
+  if(e.target.id === 'btnEvents') loadEvents();
+  if(e.target.id === 'btnInfo') loadCountryInfo();
+});
 
 /* ============================================================
    HOTELLOOK (Travelpayouts) — vrais prix d'hôtels dans l'app
@@ -817,7 +1145,7 @@ async function loadHotels(force = false){
     }
   }
   localStorage.removeItem('acolite_relay');
-  zone.innerHTML = `<p class="hint">Prix en direct indisponibles. Les comparateurs ci-dessous sont déjà pré-remplis — ou <strong>déploie ton relais gratuit</strong> (fichier <code>worker.js</code>, 2 min sur Cloudflare) et colle son URL dans <code>config.js</code> → <code>proxy</code>.
+  zone.innerHTML = `<p class="hint">Prix en direct indisponibles (le service Hotellook a été arrêté par son éditeur). Pas de panique : les comparateurs ci-dessous sont <strong>déjà pré-remplis</strong> avec ta destination et tes dates.
     <a href="#" id="hotRetry" style="color:var(--accent-orange);font-weight:900">Réessayer</a></p>
     <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Détail technique</summary>
       <p class="hint" style="margin-top:4px">${errs.map(esc).join('<br>')}</p></details>`;
@@ -881,8 +1209,11 @@ function stayLinks(place){
 function renderPlan(d){
   const icons = {avion:'✈️', train:'🚆', voiture:'🚗'};
   const tr = d.transport||{}, lg = d.logement||{}, bd = d.budget||{};
-  const qs = (d.questions||[]).filter(q=>q && q.texte);
+  /* même règle que les propositions : nombre de choix toujours pair (2 ou 4) */
+  const qs = (d.questions||[]).filter(q=>q && q.texte).map(q=>({...q, options: evenOptions(q.options)})).filter(q=>q.options.length>=2);
   const A = (state.prefs?.adults||1) + (state.prefs?.kids||0);
+  /* budget total en nombre (l'IA renvoie parfois « 1 300 » ou « 1200-1500 ») → évite NaN */
+  const btNum = parseInt((String(bd.total).replace(/\s/g,'').match(/\d+/)||[])[0], 10) || 0;
   const dts = stayDates();
   const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : null;
 
@@ -893,7 +1224,7 @@ function renderPlan(d){
     <div class="plan-grid">
       <div class="plan-stat"><div class="k">Comment y aller</div><div class="v">${icons[tr.mode]||'✈️'} ${esc(tr.mode||'?')}</div><div class="s">${esc(tr.prix_estime||'')}</div></div>
       <div class="plan-stat"><div class="k">Où dormir</div><div class="v">🏨 ${esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${esc(lg.quartier||'')}${lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : ''}</div></div>
-      <div class="plan-stat"><div class="k">Ce que ça coûte</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">par personne${A > 1 && bd.total ? ` · ${bd.total * A} € au total` : ''}</div></div>
+      <div class="plan-stat"><div class="k">Ce que ça coûte</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">par personne${A > 1 && btNum ? ` · ${btNum * A} € au total` : ''}</div></div>
       ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Le temps qu'il fera</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
     </div>
 
@@ -927,7 +1258,7 @@ function renderPlan(d){
       <p class="hint" style="margin:0 0 10px">Réponds et Acolite adapte le voyage.</p>`;
     qs.forEach(q=>{
       html += `<h4 style="margin:10px 0 6px;font-family:'Sora'">${esc(q.texte)}</h4>
-      <div class="chips">${(q.options||[]).map(o=>`<div class="chip planq" data-q="${esc(q.texte)}" data-a="${esc(o)}">${esc(o)}</div>`).join('')}</div>`;
+      <div class="chips even">${q.options.map(o=>`<div class="chip planq" data-q="${esc(q.texte)}" data-a="${esc(o)}">${esc(o)}</div>`).join('')}</div>`;
     });
   }
 
@@ -936,7 +1267,7 @@ function renderPlan(d){
     <h3 style="margin:0 0 4px">👉 Et maintenant ?</h3>
     <p class="hint" style="margin:0 0 4px"><strong>Réservation</strong> : tous les liens (billets, hôtels avec prix réels, activités), déjà pré-remplis.<br>
     <strong>Simulation</strong> : les vrais prix des vols et des trains, jour par jour, pour choisir le bon moment.</p>
-    <div class="row" style="margin-top:14px">
+    <div class="btn-duo" style="margin-top:14px">
       <button class="btn sm ghost" id="btnPlanRedo">🔄 Tout réorganiser</button>
       <button class="btn sm ghost" data-changedest>↩ Changer de destination</button>
     </div>`;
@@ -945,6 +1276,7 @@ function renderPlan(d){
   fitStats();
   refreshPasses();
   startWx();
+  resetConcierge();   /* cartes Événements / Fiche pratique à l'état bouton pour ce voyage */
 }
 addEventListener('resize', () => { if($('#zonePlan')?.querySelector('.plan-stat')) fitStats(); });
 
@@ -1060,13 +1392,22 @@ document.addEventListener('click', e => {
 
 /* --- Pop-up Questions : réponses obligatoires avant le voyage final --- */
 let _qsList = [];
+/* Garantit un nombre PAIR de choix par question (2 ou 4) : on retire le dernier si le compte est impair */
+function evenOptions(opts){
+  const o = (opts || []).filter(x => x != null && String(x).trim() !== '').slice(0, 4);
+  if(o.length % 2 === 1) o.pop();          /* 3 → 2, 1 → 0 */
+  return o;
+}
 function openQsPopup(qs){
-  _qsList = qs.slice(0, 3);
+  _qsList = qs.map(q => ({ ...q, options: evenOptions(q.options) }))
+             .filter(q => q.options.length >= 2)   /* une question sans au moins 2 choix pairs n'a pas de sens */
+             .slice(0, 3);
+  if(!_qsList.length){ $('#ovQs').classList.remove('show'); $('#zoneQs').innerHTML = ''; return; }
   const pg = $('#qsProg');
   if(pg) pg.innerHTML = _qsList.map(() => '<i></i>').join('');
   $('#zoneQs').innerHTML = _qsList.map((q, i) => `
     <h4 style="margin:14px 0 6px;font-family:'Sora'">${i+1}. ${esc(q.texte)}</h4>
-    <div class="chips" data-qi="${i}">${(q.options||[]).map(o=>`<div class="chip qsopt" data-qi="${i}" data-a="${esc(o)}">${esc(o)}</div>`).join('')}</div>`).join('');
+    <div class="chips even" data-qi="${i}">${q.options.map(o=>`<div class="chip qsopt" data-qi="${i}" data-a="${esc(o)}">${esc(o)}</div>`).join('')}</div>`).join('');
   $('#btnQsGo').disabled = true;
   $('#ovQs').classList.add('show');
 }
@@ -2018,7 +2359,7 @@ function renderBudget(d){
       <div><div class="hint" style="margin:0">ESTIMATION TOTALE / PERSONNE <span class="ai-badge gemini">✦ Gemini</span></div>
       <div class="spend-total">${total} €</div></div>
     </div>
-    <div class="bud-bar">${(d.postes||[]).map((p,i)=>`<i style="width:${(+p.montant/sum*100).toFixed(1)}%;background:${BUD_COLORS[i%BUD_COLORS.length]}"></i>`).join('')}</div>
+    <div class="bud-bar">${(d.postes||[]).map((p,i)=>`<i style="width:${((+p.montant||0)/sum*100).toFixed(1)}%;background:${BUD_COLORS[i%BUD_COLORS.length]}"></i>`).join('')}</div>
     <div class="legend">${(d.postes||[]).map((p,i)=>`<span><span class="sw" style="background:${BUD_COLORS[i%BUD_COLORS.length]}"></span>${esc(p.nom)} <b>${esc(p.montant)}€</b></span>`).join('')}</div>
     ${(d.postes||[]).map((p,i)=>`<div class="item"><div class="emo" style="font-size:1.1rem;color:${BUD_COLORS[i%BUD_COLORS.length]}">■</div><div style="flex:1"><h4>${esc(p.nom)}</h4><p>${esc(p.detail)}</p></div><div class="side"><span class="tag money">${esc(p.montant)} €</span></div></div>`).join('')}
     <h3 style="margin:14px 0 8px">Réduire la note 📉</h3>
@@ -2041,7 +2382,8 @@ function renderSpends(){
   const total = state.spends.reduce((a, s) => a + s.amount, 0);
   /* budget de référence : celui du plan IA en priorité, sinon l'estimation détaillée */
   const A = (state.prefs?.adults || 1) + (state.prefs?.kids || 0);
-  const est = (state.cache.plan?.budget?.total || 0) * A || state.cache.bud?.total_estime || 0;
+  const btPlan = parseInt((String(state.cache.plan?.budget?.total || '').replace(/\s/g,'').match(/\d+/)||[])[0], 10) || 0;
+  const est = btPlan * A || state.cache.bud?.total_estime || 0;
   const d = stayDates();
   let bar = '';
   if(est){
@@ -2194,6 +2536,43 @@ const _e11 = $('#btnExport'); if(_e11) _e11.onclick = () => {
   toast('Voyage exporté 📄');
 };
 
+/* --- Sauvegarde / restauration du voyage complet (fichier .json) ---
+   Sécurise les données contre un vidage du localStorage / changement d'appareil. */
+function backupTrip(){
+  try{
+    const data = { _acolite: 'trip-backup', v: 1, when: Date.now(), state };
+    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `acolite-voyage-${String(state.trip?.nom || 'brouillon').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('💾 Voyage sauvegardé dans un fichier');
+  }catch(e){ toast('Sauvegarde impossible'); }
+}
+function restoreTrip(file){
+  const rd = new FileReader();
+  rd.onload = () => {
+    try{
+      const data = JSON.parse(rd.result);
+      const s = (data && data.state) ? data.state : data;   /* tolère un state brut */
+      const looksAcolite = data?._acolite === 'trip-backup' || (s && ['trip','prefs','cache','destinations'].some(k => k in s));
+      if(!s || typeof s !== 'object' || Array.isArray(s) || !looksAcolite) throw new Error('bad');
+      state = { ...state, ...s };
+      save();
+      _pcPhotos = null;   /* invalide les photos de la carte postale */
+      toast('📂 Voyage importé ✔');
+      renderGallery();
+      if(state.trip){ unlockSteps(); gotoStep(Math.min(3, state.step || 3)); }
+      else gotoStep(1);
+    }catch(e){ toast('Fichier invalide — ce n’est pas une sauvegarde Acolite'); }
+  };
+  rd.onerror = () => toast('Lecture du fichier impossible');
+  rd.readAsText(file);
+}
+const _eBk = $('#btnBackup'); if(_eBk) _eBk.onclick = backupTrip;
+const _eRs = $('#btnRestore'); if(_eRs) _eRs.onclick = () => $('#restoreFile')?.click();
+const _eRf = $('#restoreFile'); if(_eRf) _eRf.onchange = (e) => { const f = e.target.files?.[0]; if(f) restoreTrip(f); e.target.value = ''; };
+
 /* ============================================================
    ACTIVITÉS & EXPÉRIENCES (Gemini · heavy)
 ============================================================ */
@@ -2253,12 +2632,12 @@ async function loadTools(){
 async function geocode(){
   if(state._geo) return state._geo;
   const t = state.trip;
-  try{
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(t.nom)}&count=1&language=fr`);
-    const d = await r.json();
-    const g = d.results?.[0];
+  if(!t) return null;
+  const cc = ccFor(t.pays);
+  for(const nom of [...new Set([t.ville_aeroport, t.nom, t.pays].map(cleanPlace).filter(Boolean))]){
+    const g = await geoPlace(nom, cc);
     if(g){ state._geo = g; return g; }
-  }catch(e){}
+  }
   return null;
 }
 
@@ -2374,6 +2753,7 @@ function startCountdown(){
   if(!dep){ zone.innerHTML = `<div class="emo">🎉</div><p style="margin-top:4px">Renseigne ta date de départ à l'étape 1 pour lancer le compte à rebours.</p>`; return; }
   const target = new Date(dep + 'T00:00:00');
   const tick = () => {
+    if(!state.trip){ clearInterval(countT); return; }   /* voyage changé entre-temps → on arrête */
     const diff = target - new Date();
     if(diff <= 0){ zone.innerHTML = `<div class="emo">🏖️</div><p style="margin-top:4px"><strong>C'est parti — bon voyage à ${esc(state.trip.nom)} !</strong></p>`; clearInterval(countT); return; }
     const j = Math.floor(diff/864e5), h = Math.floor(diff%864e5/36e5), m = Math.floor(diff%36e5/6e4);
@@ -2426,6 +2806,12 @@ document.addEventListener('click', e => {
 ============================================================ */
 const _e14 = $('#btnGo'); if(_e14) _e14.onclick = () => { state.propAnswers = []; state._qsDone = false; proposeTrips(); };
 const _e15 = $('#btnLucky'); if(_e15) _e15.onclick = () => { state.propAnswers = []; state._qsDone = false; proposeTrips('', true); };
+const _e15b = $('#btnCountry'); if(_e15b) _e15b.onclick = () => {
+  const c = $('#fDest').value.trim();
+  if(!c){ toast('Écris un pays dans « Destination souhaitée » 😉'); $('#fDest').focus(); return; }
+  state.propAnswers = []; state._qsDone = false;
+  proposeTrips('', false, c);
+};
 
 
 
@@ -2551,7 +2937,34 @@ const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
   toast('Re-bonjour ' + email.split('@')[0] + ' 👋');
 };
 
-function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); }
+function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); renderGallery(); showOnboard(); }
+
+/* --- Onboarding première visite (3 slides, mémorisé) --- */
+const ONB_KEY = 'acolite_onboarded';
+const ONB_STEPS = [
+  { emoji:'🌍', title:'Décris tes envies', text:'Ton budget, tes dates, ton ambiance. Acolite imagine des destinations sur mesure — jamais une liste générique.' },
+  { emoji:'🧭', title:'Compare & choisis', text:'Des propositions volontairement différentes, alignées point par point. Tu choisis celle qui te fait vibrer.' },
+  { emoji:'🎒', title:'Ton voyage clé en main', text:'Programme jour par jour, budget, hôtels et vols réels, ticket d’embarquement… et tout reste accessible hors-ligne.' }
+];
+let _onbI = 0;
+function renderOnboard(){
+  const s = ONB_STEPS[_onbI];
+  $('#onboardEmoji').textContent = s.emoji;
+  $('#onboardTitle').textContent = s.title;
+  $('#onboardText').textContent = s.text;
+  $('#onboardDots').innerHTML = ONB_STEPS.map((_, i) => `<i class="${i === _onbI ? 'on' : ''}"></i>`).join('');
+  $('#onboardNext').textContent = _onbI === ONB_STEPS.length - 1 ? "C'est parti ! 🚀" : 'Suivant →';
+}
+function showOnboard(){
+  if(localStorage.getItem(ONB_KEY)) return;
+  const ov = $('#onboard'); if(!ov) return;
+  _onbI = 0; renderOnboard(); ov.hidden = false;
+}
+function closeOnboard(){ try{ localStorage.setItem(ONB_KEY, '1'); }catch(e){} const ov = $('#onboard'); if(ov) ov.hidden = true; }
+{
+  const nx = $('#onboardNext'); if(nx) nx.onclick = () => { if(_onbI < ONB_STEPS.length - 1){ _onbI++; renderOnboard(); } else closeOnboard(); };
+  const sk = $('#onboardSkip'); if(sk) sk.onclick = closeOnboard;
+}
 function requireAuth(){
   const u = getUser();
   if(u && u.verified && localStorage.getItem(LS_AUTH) === '1'){ enterApp(); return; }
@@ -2572,8 +2985,39 @@ function switchCat(cat){
   window.scrollTo({top:0});
   if(cat === 'map') buildProjectMap();
   if(cat === 'profile'){ renderProfile(); renderSettings(); }
+  /* états vides : pas de voyage → invitations plutôt qu'écrans vides */
+  const noTrip = !state.trip;
+  $('#catMap')?.classList.toggle('empty', noTrip);
+  const me = $('#mapEmpty'); if(me) me.hidden = !noTrip;
+  const pe = $('#profileEmpty'); if(pe) pe.hidden = !noTrip;
 }
 $$('.catnav button').forEach(b => b.onclick = () => switchCat(b.dataset.cat));
+document.addEventListener('click', e => {
+  if(e.target.id === 'mapEmptyGo' || e.target.id === 'profileEmptyGo'){ switchCat('trip'); gotoStep(1); }
+});
+
+/* ============================================================
+   ACCESSIBILITÉ — puces (.chip) activables au clavier partout
+============================================================ */
+function a11yEnhanceChips(root){
+  (root || document).querySelectorAll('.chip:not([data-a11y])').forEach(c => {
+    c.setAttribute('tabindex', '0');
+    c.setAttribute('role', 'button');
+    c.setAttribute('data-a11y', '1');
+  });
+}
+new MutationObserver(muts => {
+  for(const m of muts) for(const n of m.addedNodes){
+    if(n.nodeType !== 1) continue;
+    if(n.matches?.('.chip:not([data-a11y])')){ n.setAttribute('tabindex','0'); n.setAttribute('role','button'); n.setAttribute('data-a11y','1'); }
+    if(n.querySelector?.('.chip:not([data-a11y])')) a11yEnhanceChips(n);
+  }
+}).observe(document.body, { childList:true, subtree:true });
+document.addEventListener('keydown', e => {
+  const c = e.target.closest?.('.chip[role="button"]');
+  if(c && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); c.click(); }
+});
+a11yEnhanceChips(document);
 
 /* ============================================================
    PRÉFÉRENCES — pilotent l'IA ET l'interface
@@ -2632,8 +3076,8 @@ function prefsBlock(){
 const OPT = {
   stStyle:  { key:'style',  multi:true,  items:[['detente','🏖 Détente'],['culture','🏛 Culture'],['aventure','🥾 Aventure'],['fete','🎉 Fête'],['nature','🌿 Nature'],['gastro','🍽 Gastronomie'],['famille','👨‍👩‍👧 Famille'],['romantique','💘 Romantique']] },
   stRythme: { key:'rythme', items:[['doux','🐢 Doux'],['equilibre','⚖️ Équilibré'],['intense','⚡ Intense']] },
-  stFood:   { key:'food',   items:[['aucun','Aucune contrainte'],['vege','🥗 Végétarien'],['vegan','🌱 Végan'],['halal','☪️ Halal'],['casher','✡️ Casher'],['sansgluten','🌾 Sans gluten']] },
-  stAcces:  { key:'acces',  items:[['non','Aucun besoin'],['oui','♿ Mobilité réduite']] },
+  stFood:   { key:'food',   items:[['aucun','🍽️ Aucune contrainte'],['vege','🥗 Végétarien'],['vegan','🌱 Végan'],['halal','☪️ Halal'],['casher','✡️ Casher'],['sansgluten','🌾 Sans gluten']] },
+  stAcces:  { key:'acces',  items:[['non','✅ Aucun besoin'],['oui','♿ Mobilité réduite']] },
   stEco:    { key:'eviter', multi:true, items:[['avion','✈️ Éviter l\'avion'],['train','🚆 Éviter le train'],['voiture','🚗 Éviter la voiture']] },
   stIA:     { key:null,     toggles:[['verif','🔍 Relecture par une 2e IA'],['reels','📡 Données réelles (météo, trains, fériés)']] },
   stUI:     { key:null,     toggles:[['motion','✨ Animations']] }
@@ -2693,147 +3137,6 @@ document.addEventListener('input', e => {
   saveSettings();
 });
 
-/* ============================================================
-   DIAGNOSTIC (temporaire) — teste TOUT ce qui est branché
-   À retirer avant l'ouverture au public.
-============================================================ */
-const DIAG = [
-  /* --- Clés & backend --- */
-  { grp:'Configuration', nom:'Clé Gemini', run: () => gemKey() ? ok('présente (' + gemKey().slice(0,6) + '…)') : ko('absente de config.js') },
-  { grp:'Configuration', nom:'Clé Groq', run: () => groqKey() ? ok('présente') : ko('absente — la 2e IA (relecture) est désactivée') },
-  { grp:'Configuration', nom:'Clé Travelpayouts', run: () => tpKey() ? ok('présente') : ko('absente — pas de prix d\'hôtels') },
-  { grp:'Configuration', nom:'Backend Cloudflare', run: () => useBackend() ? ok(API()) : warn('non configuré — les clés sont exposées publiquement') },
-  { grp:'Configuration', nom:'EmailJS', run: () => (CFG.emailjs?.publicKey ? ok('configuré : vrais e-mails') : warn('mode démo : le code s\'affiche à l\'écran')) },
-
-  /* --- APIs IA --- */
-  { grp:'Intelligence artificielle', nom:'Gemini (génération)', run: async () => {
-      if(!gemKey() && !useBackend()) return ko('pas de clé');
-      const t = await gemini('Réponds exactement : OK', false, 20, false, 0);
-      return String(t).toUpperCase().includes('OK') ? ok('répond') : warn('réponse inattendue : ' + String(t).slice(0,30));
-    }},
-  { grp:'Intelligence artificielle', nom:'Modèle utilisé', run: () => {
-      const m = SET.model !== 'auto' ? SET.model : (localStorage.getItem(LS_GEMM) || 'auto-détection');
-      return ok(m);
-    }},
-  { grp:'Intelligence artificielle', nom:'Groq (relecture)', run: async () => {
-      if(!hasGroq()) return ko('pas de clé');
-      const r = await groq('Réponds {"ok":true}', true, 30);
-      return r?.ok ? ok('répond') : warn('réponse inattendue');
-    }},
-
-  /* --- Données réelles --- */
-  { grp:'Données réelles', nom:'Géocodage (Open-Meteo)', run: async () => {
-      const r = await geoPlace('Rome');
-      return r ? ok(`Rome → ${(+r.latitude).toFixed(1)}, ${(+r.longitude).toFixed(1)}`) : ko('aucune réponse');
-    }},
-  { grp:'Données réelles', nom:'Météo (Open-Meteo)', run: async () => {
-      const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=41.9&longitude=12.5&daily=temperature_2m_max&forecast_days=1&timezone=auto').then(x=>x.json());
-      return r?.daily?.temperature_2m_max?.length ? ok(r.daily.temperature_2m_max[0] + '°C à Rome') : ko('aucune donnée');
-    }},
-  { grp:'Données réelles', nom:'Wikipédia', run: async () => {
-      const r = await fetch('https://fr.wikipedia.org/api/rest_v1/page/summary/Rome').then(x=>x.ok?x.json():null);
-      return r?.extract ? ok('accessible') : ko('inaccessible');
-    }},
-  { grp:'Données réelles', nom:'Jours fériés (Nager.Date)', run: async () => {
-      const r = await fetch('https://date.nager.at/api/v3/PublicHolidays/2026/IT').then(x=>x.ok?x.json():null);
-      return Array.isArray(r) && r.length ? ok(r.length + ' jours fériés trouvés') : ko('inaccessible');
-    }},
-  { grp:'Données réelles', nom:'Taux de change (Frankfurter)', run: async () => {
-      const r = await fetch('https://api.frankfurter.dev/v1/latest?base=EUR&symbols=USD').then(x=>x.ok?x.json():null);
-      return r?.rates?.USD ? ok('1 € = ' + r.rates.USD + ' $') : ko('inaccessible');
-    }},
-  { grp:'Données réelles', nom:'Trains (Deutsche Bahn)', run: async () => {
-      const r = await fetch('https://v6.db.transport.rest/locations?query=Paris&results=1').then(x=>x.ok?x.json():null);
-      return Array.isArray(r) && r.length ? ok('accessible') : ko('inaccessible');
-    }},
-
-  /* --- Prix réels --- */
-  { grp:'Prix réels', nom:'Vols Ryanair', run: async () => {
-      const r = await fetch('https://services-api.ryanair.com/farfnd/v4/oneWayFares?departureAirportIataCode=BVA&outboundDepartureDateFrom=2026-09-01&outboundDepartureDateTo=2026-09-10&market=fr-fr&limit=1').then(x=>x.ok?x.json():null);
-      return r ? ok('accessible') : ko('bloqué ou indisponible');
-    }},
-  { grp:'Prix réels', nom:'Hôtels (Hotellook)', run: async () => {
-      if(!tpKey() && !useBackend()) return ko('pas de token');
-      const d = stayDates() || { in:'2026-09-01', out:'2026-09-05' };
-      try{
-        const url = useBackend()
-          ? `${API()}/hotels?location=Rome&checkIn=${d.in}&checkOut=${d.out}&adults=2&currency=eur&limit=3`
-          : `https://engine.hotellook.com/api/v2/cache.json?location=Rome&checkIn=${d.in}&checkOut=${d.out}&adults=2&currency=eur&limit=3&token=${tpKey()}`;
-        const r = await fetch(url);
-        const rows = await r.json();
-        return Array.isArray(rows) && rows.length ? ok(rows.length + ' hôtels trouvés') : warn('répond, mais aucun tarif');
-      }catch(e){
-        return ko('bloqué par le navigateur (CORS) — déploie worker.js');
-      }
-    }},
-
-  /* --- Navigateur & PWA --- */
-  { grp:'Appareil', nom:'Service Worker (hors-ligne)', run: async () => {
-      if(!('serviceWorker' in navigator)) return ko('non supporté');
-      const rs = await navigator.serviceWorker.getRegistrations();
-      return rs.length ? ok('actif') : warn('non enregistré (HTTPS requis)');
-    }},
-  { grp:'Appareil', nom:'Application installable', run: () => matchMedia('(display-mode: standalone)').matches ? ok('déjà installée') : warn('pas encore installée') },
-  { grp:'Appareil', nom:'Connexion', run: () => navigator.onLine ? ok('en ligne') : ko('hors-ligne') },
-  { grp:'Appareil', nom:'Stockage local', run: () => {
-      try{
-        const n = Object.keys(localStorage).filter(k => k.startsWith('acolite_')).length;
-        const ko_ = Math.round(JSON.stringify(localStorage).length / 1024);
-        return ok(`${n} clés · ${ko_} Ko utilisés`);
-      }catch(e){ return ko('inaccessible'); }
-    }},
-  { grp:'Appareil', nom:'Caméra (scanner de ticket)', run: () => navigator.mediaDevices?.getUserMedia ? ok('disponible') : ko('non supportée') },
-
-  /* --- État de l'app --- */
-  { grp:'Ton voyage', nom:'Compte', run: () => { const u = getUser(); return u ? ok(`${u.pseudo} · ${u.email}${u.verified ? ' · vérifié' : ' · NON vérifié'}`) : ko('aucun compte'); } },
-  { grp:'Ton voyage', nom:'Voyage en cours', run: () => state.trip ? ok(`${state.trip.nom}, ${state.trip.pays}`) : warn('aucun') },
-  { grp:'Ton voyage', nom:'Plan généré', run: () => state.cache.plan ? ok(`${state.cache.plan.programme?.length || 0} journée(s)`) : warn('pas encore') },
-  { grp:'Ton voyage', nom:'Préférences IA', run: () => {
-      const l = [];
-      if(SET.style?.length) l.push(SET.style.join('+'));
-      if(SET.rythme) l.push('rythme ' + SET.rythme);
-      if(SET.food && SET.food !== 'aucun') l.push(SET.food);
-      if(SET.acces === 'oui') l.push('accessibilité');
-      if(SET.eviter?.length) l.push('évite ' + SET.eviter.join('/'));
-      return l.length ? ok(l.join(' · ')) : warn('aucune préférence définie');
-    }},
-];
-const ok   = m => ({ s:'ok',   m });
-const ko   = m => ({ s:'ko',   m });
-const warn = m => ({ s:'warn', m });
-
-async function runDiag(){
-  const zone = $('#zoneDiag');
-  const btn = $('#btnDiag');
-  if(!zone) return;
-  btn.disabled = true;
-  btn.textContent = '⏳ Test en cours…';
-  const groupes = [...new Set(DIAG.map(d => d.grp))];
-  zone.innerHTML = groupes.map(g =>
-    `<h3 style="margin:14px 0 8px">${esc(g)}</h3><div id="dg_${g.replace(/\W/g,'')}"></div>`).join('');
-
-  let nOk = 0, nKo = 0, nWarn = 0;
-  for(const d of DIAG){
-    const box = $('#dg_' + d.grp.replace(/\W/g, ''));
-    const row = document.createElement('div');
-    row.className = 'diag';
-    row.innerHTML = `<span class="dot wait">⏳</span><div style="flex:1;min-width:0"><b>${esc(d.nom)}</b><p>test en cours…</p></div>`;
-    box.appendChild(row);
-    let r;
-    try{ r = await d.run(); }catch(e){ r = ko(e.message || 'erreur'); }
-    if(r.s === 'ok') nOk++; else if(r.s === 'ko') nKo++; else nWarn++;
-    const ico = r.s === 'ok' ? '✅' : r.s === 'ko' ? '❌' : '⚠️';
-    row.innerHTML = `<span class="dot ${r.s}">${ico}</span><div style="flex:1;min-width:0"><b>${esc(d.nom)}</b><p>${esc(r.m)}</p></div>`;
-  }
-  zone.insertAdjacentHTML('afterbegin',
-    `<div class="diag-sum"><span class="tag" style="background:var(--ok)">✅ ${nOk} OK</span>
-     <span class="tag" style="background:var(--accent-orange)">⚠️ ${nWarn}</span>
-     <span class="tag" style="background:var(--danger);color:#fff">❌ ${nKo}</span></div>`);
-  btn.disabled = false;
-  btn.textContent = '↻ Relancer le diagnostic';
-}
-document.addEventListener('click', e => { if(e.target.id === 'btnDiag') runDiag(); });
-
 /* --- Barre "l'IA cherche" : remplace la nav du bas pendant la réflexion --- */
 const SB_MSG = [
   'Acolite explore le monde…',
@@ -2871,14 +3174,18 @@ async function projRoute(route){
 
   /* Le géocodeur ne connaît que les villes/quartiers, pas les monuments.
      On tente donc, dans l'ordre : le quartier → la ville → le pays. */
-  const essais = route.walk
-    ? [q ? `${q}` : null, t.nom, t.pays]
-    : [t.nom, t.pays];
+  /* On tente, dans l'ordre : le quartier → la ville de l'aéroport → la ville → le pays.
+     La ville de l'aéroport est plus fiable que le nom (souvent un site/monument). */
+  const raw = route.walk
+    ? [q, t.ville_aeroport, t.nom, t.pays]
+    : [t.ville_aeroport, t.nom, t.pays];
+  const essais = [...new Set(raw.map(cleanPlace).filter(Boolean))];
+  const cc = ccFor(t.pays);
   let g = null;
   for(const nom of essais.filter(Boolean)){
-    const ck = 'geo_' + nom;
+    const ck = 'geo_' + cc + '_' + nom;
     if(state.cache[ck]){ g = state.cache[ck]; break; }
-    const r = await geoPlace(nom);
+    const r = await geoPlace(nom, cc);
     if(r){
       g = { lat:+r.latitude, lon:+r.longitude };
       state.cache[ck] = g; save();
@@ -3252,98 +3559,163 @@ async function passPNG(){
   const plan = state.cache.plan || {}, d = stayDates(), u = getUser();
   const CW = W - M * 2, CH = H - M * 2 - 12;        /* carte */
   const STUB = 300;                                  /* largeur du talon */
+  /* la police du site, si elle est déjà chargée sur la page */
+  try{ await document.fonts.load('900 76px Sora'); await document.fonts.load('800 15px Sora'); }catch(e){}
   const fit = (txt, size, max, weight = '700', fam = 'Inter, Arial') => {
     let px = size;
     do { g.font = `${weight} ${px}px ${fam}`; px -= 1; } while(g.measureText(txt).width > max && px > 9);
     return g.font;
   };
-  /* fond + ombre dure */
+  /* fond papier + trame de points (comme le site) */
   g.fillStyle = P; g.fillRect(0, 0, W, H);
-  g.fillStyle = K; g.fillRect(M + 12, M + 12, CW, CH);
-  /* corps jaune + talon blanc */
+  g.fillStyle = 'rgba(0,0,0,0.10)';
+  for(let dy = 8; dy < H; dy += 22) for(let dx = 8; dx < W; dx += 22){ g.beginPath(); g.arc(dx, dy, 1.6, 0, 7); g.fill(); }
+  /* ombre dure sur le bas et la droite — SANS trou dans les coins (bas-gauche / haut-droit) */
+  const SH = 12, ov = 4;                     /* ov : couvre le débord du trait de bord (7px) */
+  g.fillStyle = K;
+  g.fillRect(M - ov, M + CH, CW + SH + ov, SH);   /* bande basse : part du coin bas-gauche */
+  g.fillRect(M + CW, M - ov, SH, CH + SH + ov);   /* bande droite : part du coin haut-droit */
   g.fillStyle = Y; g.fillRect(M, M, CW - STUB, CH);
   g.fillStyle = WH; g.fillRect(M + CW - STUB, M, STUB, CH);
-  g.strokeStyle = K; g.lineWidth = 7; g.strokeRect(M, M, CW, CH);
-  /* perforation entre corps et talon */
-  const px0 = M + CW - STUB;
-  g.setLineDash([12, 9]); g.lineWidth = 4;
-  g.beginPath(); g.moveTo(px0, M + 26); g.lineTo(px0, M + CH - 26); g.stroke();
-  g.setLineDash([]);
-  g.fillStyle = P;
-  [M, M + CH].forEach(cy => { g.beginPath(); g.arc(px0, cy, 15, 0, 7); g.fill(); g.lineWidth = 5; g.strokeStyle = K; g.stroke(); });
 
   /* ---- CORPS ---- */
+  /* logo : carré noir + A jaune, comme l'écran de démarrage */
+  g.fillStyle = K; g.fillRect(M + 34, M + 26, 46, 46);
+  g.fillStyle = Y; g.textAlign = 'center';
+  g.font = '900 30px Sora, Arial';
+  g.fillText('A', M + 57, M + 60);
+  g.textAlign = 'left';
   g.fillStyle = K;
   g.font = '900 26px Sora, Arial';
-  g.fillText('ACOLITE · BOARDING PASS', M + 34, M + 54);
-  g.fillRect(M + 34, M + 66, 420, 5);
-  /* route */
+  g.fillText('ACOLITE · BOARDING PASS', M + 96, M + 58);
+  g.fillRect(M + 96, M + 68, 372, 5);
+  /* route : départ à gauche, arrivée alignée à droite, avion au centre */
   const from = (p.from || 'PAR').slice(0, 3).toUpperCase();
   const to = (t.iata || t.nom.slice(0, 3)).toUpperCase();
-  g.font = '900 82px Sora, Arial';
-  g.fillText(from, M + 34, M + 158);
-  const wFrom = g.measureText(from).width;
-  const toX = M + 34 + wFrom + 190;
-  g.fillText(to, toX, M + 158);
-  /* trait pointillé + avion */
+  const bodyR = M + CW - STUB - 34;                  /* bord droit interne du corps */
+  g.font = '900 76px Sora, Arial';
+  /* espacement entre lettres : sinon le Y colle au O et le code devient illisible */
+  const LS = 9;
+  const spacedW = s => { let w = 0; for(const ch of s) w += g.measureText(ch).width + LS; return Math.max(0, w - LS); };
+  const drawSpaced = (s, x, y) => { let cx = x; for(const ch of s){ g.fillText(ch, cx, y); cx += g.measureText(ch).width + LS; } };
+  const wFrom = spacedW(from);
+  const wTo = spacedW(to);
+  drawSpaced(from, M + 34, M + 168);
+  drawSpaced(to, bodyR - wTo, M + 168);
   g.setLineDash([13, 9]); g.lineWidth = 5;
-  g.beginPath(); g.moveTo(M + 48 + wFrom, M + 132); g.lineTo(toX - 20, M + 132); g.stroke();
+  g.beginPath(); g.moveTo(M + 52 + wFrom, M + 142); g.lineTo(bodyR - wTo - 18, M + 142); g.stroke();
   g.setLineDash([]);
-  g.font = '900 44px Arial';
-  g.fillText('✈', M + 48 + wFrom + (toX - 20 - (M + 48 + wFrom)) / 2 - 22, M + 146);
-  /* infos, chacune redimensionnée pour ne jamais déborder */
-  const infoW = CW - STUB - 68;
-  const rows = [
-    ['PASSAGER', `${(u?.pseudo || 'VOYAGEUR').toUpperCase()} · ${p.adults || 2} ADULTE(S)${p.kids ? ` + ${p.kids} ENFANT(S)` : ''}`],
-    ['DESTINATION', `${t.nom}, ${t.pays}`.toUpperCase()],
-    ['DATES', d ? `${d.in} → ${d.out}` : (p.days || p.when || 'FLEXIBLES').toUpperCase()],
-    ['SÉJOUR', [plan.transport?.mode, plan.logement ? String(plan.logement.type || '').split('(')[0].trim() : '', plan.logement?.quartier].filter(Boolean).join(' · ').toUpperCase() || (p.days || '').toUpperCase()],
-    ['BUDGET', plan.budget?.total ? `${plan.budget.total} € / PERSONNE` : (t.budget_estime || '—').toUpperCase()]
+  const midX = (M + 52 + wFrom + bodyR - wTo - 18) / 2;
+  g.fillStyle = Y; g.beginPath(); g.arc(midX, M + 140, 30, 0, 7); g.fill();
+  g.strokeStyle = K; g.lineWidth = 4; g.stroke();
+  g.fillStyle = K; g.textAlign = 'center';
+  g.font = '900 32px Arial';
+  g.fillText('✈', midX, M + 152);
+  g.textAlign = 'left';
+  /* graine déterministe → siège/porte/vol stables pour un même voyage (déco souvenir) */
+  const seed = [...(from + to + (d ? d.in : '') + (t.nom || ''))].reduce((a, ch) => a + ch.charCodeAt(0), 7);
+  const seat = `${1 + seed % 42}${'ABCDEF'[seed % 6]}`;
+  const gate = `${'ABCDE'[seed % 5]}${1 + seed % 45}`;
+  const flight = `ACO ${1000 + seed % 8999}`;
+  /* infos : 9 cases sur 3 rangées, étiquette au-dessus de la valeur */
+  const cells = [
+    ['PASSAGER', (u?.pseudo || 'Voyageur').toUpperCase()],
+    ['DESTINATION', `${t.nom}`.toUpperCase() + (t.drapeau ? ' ' + t.drapeau : '')],
+    ['DATES', d ? `${d.in.split('-').reverse().slice(0,2).join('/')} → ${d.out.split('-').reverse().slice(0,2).join('/')}` : (p.when || 'FLEXIBLES').toUpperCase()],
+    ['VOYAGEURS', `${p.adults || 2} ADULTE(S)${p.kids ? ` + ${p.kids} ENFANT(S)` : ''}`],
+    ['SÉJOUR', [plan.transport?.mode, plan.logement ? String(plan.logement.type || '').split(/[( ]|ou /)[0].trim() : '', plan.logement?.quartier].filter(Boolean).join(' · ').toUpperCase() || (p.days || '—').toUpperCase()],
+    ['BUDGET', plan.budget?.total ? `${plan.budget.total} € / PERS.` : (t.budget_estime || '—').toUpperCase()],
+    ['SIÈGE', seat],
+    ['PORTE', gate],
+    ['VOL', flight]
   ];
-  rows.forEach((r, i) => {
-    const y = M + 212 + i * 46;
-    g.font = '800 15px Sora, Arial';
-    g.fillText(r[0], M + 34, y);
-    g.font = fit(r[1], 24, infoW - 130, '700');
-    g.fillText(r[1], M + 164, y);
+  const colW = 258;
+  cells.forEach((c, i) => {
+    const x = M + 34 + (i % 3) * colW;
+    const y = M + 232 + Math.floor(i / 3) * 74;
+    g.fillStyle = 'rgba(16,16,16,0.62)';
+    g.font = '800 14px Sora, Arial';
+    g.fillText(c[0], x, y);
+    g.fillStyle = K;
+    g.font = fit(c[1], 25, colW - 24, '800');
+    /* si même à la taille mini le texte déborde (nom de destination très long) → coupe avec … */
+    let val = c[1];
+    if(g.measureText(val).width > colW - 24){
+      while(val.length > 1 && g.measureText(val + '…').width > colW - 24) val = val.slice(0, -1);
+      val = val.replace(/\s+$/, '') + '…';
+    }
+    g.fillText(val, x, y + 30);
   });
-  /* mentions bas de carte */
-  g.font = '600 14px Inter, Arial';
-  g.fillText("Ticket souvenir généré par Acolite — ne permet PAS d'embarquer ni de voyager.", M + 34, M + CH - 38);
-  g.fillText("Le QR sert uniquement à importer ce voyage dans l'application Acolite.", M + 34, M + CH - 18);
+  /* bandeau noir de mentions, en bas du corps */
+  g.fillStyle = K;
+  g.fillRect(M, M + CH - 58, CW - STUB, 58);
+  g.fillStyle = Y;
+  g.font = '800 13px Inter, Arial';
+  g.fillText("TICKET SOUVENIR — NE PERMET PAS D'EMBARQUER NI DE VOYAGER.", M + 34, M + CH - 34);
+  g.fillStyle = WH;
+  g.font = '600 13px Inter, Arial';
+  g.fillText("Le QR sert uniquement à importer ce voyage dans l'application Acolite.", M + 34, M + CH - 14);
 
-  /* ---- TALON : QR ---- */
+  /* bord du ticket */
+  g.strokeStyle = K; g.lineWidth = 7; g.strokeRect(M, M, CW, CH);
+  const px0 = M + CW - STUB;
+  /* ligne de déchirure (perforation) entre corps et talon : pointillés nets, pleine hauteur.
+     Pointillés BLANCS sur la partie basse (bande noire des mentions) pour rester visibles. */
+  g.lineCap = 'round';
+  g.setLineDash([4, 12]); g.lineWidth = 6;
+  const bandTop = M + CH - 58;
+  g.strokeStyle = K; g.beginPath(); g.moveTo(px0, M + 12); g.lineTo(px0, bandTop); g.stroke();
+  g.strokeStyle = WH; g.beginPath(); g.moveTo(px0, bandTop); g.lineTo(px0, M + CH - 12); g.stroke();
+  g.setLineDash([]); g.lineCap = 'butt';
+
+  /* ---- TALON : QR encadré avec ombre dure ---- */
   const sx = px0 + STUB / 2;
   let qrOK = false;
   try{
     await loadQRGen();
     const tmp = document.createElement('div');
-    new QRCode(tmp, { text: tripPayload(), width: 180, height: 180, correctLevel: QRCode.CorrectLevel.M });
+    new QRCode(tmp, { text: tripPayload(), width: 170, height: 170, correctLevel: QRCode.CorrectLevel.M });
     await new Promise(r => setTimeout(r, 80));
     const q = tmp.querySelector('canvas') || tmp.querySelector('img');
     if(q){
-      g.drawImage(q, sx - 90, M + 76, 180, 180);
-      g.strokeStyle = K; g.lineWidth = 4;
-      g.strokeRect(sx - 96, M + 70, 192, 192);
+      g.fillStyle = K; g.fillRect(sx - 92 + 7, M + 60 + 7, 190, 190);   /* ombre dure */
+      g.fillStyle = WH; g.fillRect(sx - 92, M + 60, 190, 190);
+      g.strokeStyle = K; g.lineWidth = 4; g.strokeRect(sx - 92, M + 60, 190, 190);
+      g.drawImage(q, sx - 85, M + 70, 170, 170);
       qrOK = true;
     }
   }catch(e){}
-  if(!qrOK){
-    g.fillStyle = K;
-    let x = sx - 90; while(x < sx + 90){ const w2 = 4 + Math.floor(Math.random() * 9); g.fillRect(x, M + 90, w2, 150); x += w2 + 6; }
-  }
   g.fillStyle = K;
   g.textAlign = 'center';
-  g.font = '900 15px Sora, Arial';
-  g.fillText('SCANNE-MOI', sx, M + 292);
-  g.font = '800 12px Inter, Arial';
-  g.fillText('dans l\'application Acolite', sx, M + 312);
-  g.fillText('pour importer ce voyage', sx, M + 330);
-  /* route + code-barres décoratif sur le talon */
-  g.font = fit(`${from} ✈ ${to}`, 30, STUB - 50, '900', 'Sora, Arial');
-  g.fillText(`${from} ✈ ${to}`, sx, M + 380);
-  let bx = sx - 100;
-  while(bx < sx + 100){ const w2 = 3 + Math.floor(Math.random() * 7); g.fillRect(bx, M + 400, w2, 46); bx += w2 + 5; }
+  if(!qrOK){
+    g.font = '900 17px Sora, Arial';
+    g.fillText('QR INDISPONIBLE', sx, M + 150);
+    g.font = '600 12px Inter, Arial';
+    g.fillText('hors-ligne — regénère le ticket', sx, M + 172);
+  }
+  g.font = '900 16px Sora, Arial';
+  g.fillText('SCANNE-MOI', sx, M + 296);
+  g.font = '600 12px Inter, Arial';
+  g.fillText('dans l\'application Acolite', sx, M + 316);
+  g.fillText('pour importer ce voyage', sx, M + 334);
+  /* séparateur pointillé + route + numéro de ticket */
+  g.setLineDash([10, 8]); g.lineWidth = 3;
+  g.beginPath(); g.moveTo(sx - 105, M + 358); g.lineTo(sx + 105, M + 358); g.stroke();
+  g.setLineDash([]);
+  g.font = fit(`${from} ✈ ${to}`, 30, STUB - 60, '900', 'Sora, Arial');
+  g.fillText(`${from} ✈ ${to}`, sx, M + 402);
+  g.font = '800 13px Inter, Arial';
+  g.fillStyle = 'rgba(16,16,16,0.62)';
+  g.fillText(`N° ACO-${from}${to}-${new Date().getFullYear()}`, sx, M + 424);
+  /* faux code-barres (déco souvenir, non scannable) */
+  const bcW = STUB - 96, bcX = sx - bcW / 2, bcY = M + 444, bcH = 30;
+  g.fillStyle = K; let bx = bcX, si = seed || 7;
+  while(bx < bcX + bcW - 1){
+    si = (si * 16807) % 2147483647; const w = 1 + (si % 5);
+    if(bx + w > bcX + bcW) break;
+    g.fillRect(bx, bcY, w, bcH); bx += w;
+    si = (si * 16807) % 2147483647; bx += 1 + (si % 4);
+  }
   g.textAlign = 'left';
 
   cv.toBlob(async b => {
@@ -3365,6 +3737,226 @@ async function passPNG(){
   }, 'image/png');
 }
 document.addEventListener('click', e => { if(e.target.closest('[data-passpng]')) passPNG(); });
+
+/* ============================================================
+   CARTE POSTALE — choix du style + mise en page des photos
+   Photos : Wikipédia si dispo, sinon vignette illustrée. Export canvas.
+============================================================ */
+const PC_STYLES  = [{id:'pop', nom:'Pop'}, {id:'polaroid', nom:'Polaroïd'}, {id:'retro', nom:'Rétro'}];
+const PC_LAYOUTS = [{id:'grande', nom:'Une grande'}, {id:'duo', nom:'Deux'}, {id:'collage', nom:'Collage'}];
+let _pcStyle = 'pop', _pcLayout = 'grande', _pcPhotos = null;
+
+async function fetchWikiThumb(name){
+  try{
+    const r = await fetchT(`https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`, {}, 8000);
+    if(!r.ok) return null;
+    const d = await r.json();
+    const src = d.thumbnail?.source || d.originalimage?.source || null;
+    if(!src) return null;
+    /* évite drapeaux / blasons / armoiries (souvent renvoyés pour une ville) — pas des photos de voyage */
+    if(/flag|drapeau|bandeira|bandera|coat|_coa|\bcoa\b|arms|escudo|escut|wappen|wapen|blason|bras[aã]o|stemma|armoiries|gonfalone|seal|crest|emblem|logo|\.svg/i.test(src)) return null;
+    return src.replace(/\/\d+px-/, '/640px-');
+  }catch(e){ return null; }
+}
+function pcLoadImg(url){
+  return new Promise(res => {
+    if(!url) return res(null);
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => res(im); im.onerror = () => res(null);
+    im.src = url;
+  });
+}
+function pcChips(){
+  const st = $('#pcStyles'), ly = $('#pcLayouts');
+  if(st) st.innerHTML = PC_STYLES.map(s => `<div class="pc-chip ${s.id===_pcStyle?'on':''}" data-pcstyle="${s.id}">${s.nom}</div>`).join('');
+  if(ly) ly.innerHTML = PC_LAYOUTS.map(l => `<div class="pc-chip ${l.id===_pcLayout?'on':''}" data-pclayout="${l.id}">${l.nom}</div>`).join('');
+}
+async function openPostcard(){
+  const t = state.trip; if(!t) return;
+  $('#ovPostcard').classList.add('show');
+  pcChips();
+  if($('#pcLoading')) $('#pcLoading').style.display = '';
+  if($('#pcImg')) $('#pcImg').removeAttribute('src');
+  if(!_pcPhotos){
+    /* on privilégie les LIEUX (photos de monuments) puis la ville, puis le pays */
+    const places = [...((state.cache.plan?.programme || []).flatMap(j => j.lieux || [])), t.nom, t.pays].filter(Boolean);
+    const uniq = [...new Set(places)].slice(0, 4);
+    const imgs = await Promise.all(uniq.map(async n => pcLoadImg(await fetchWikiThumb(n))));
+    _pcPhotos = uniq.map((cap, i) => ({ cap, img: imgs[i] }));
+  }
+  renderPostcard();
+}
+function pcCover(g, img, x, y, w, h){
+  const ir = img.width / img.height, rr = w / h;
+  let sw, sh, sx, sy;
+  if(ir > rr){ sh = img.height; sw = sh * rr; sx = (img.width - sw) / 2; sy = 0; }
+  else { sw = img.width; sh = sw / rr; sx = 0; sy = (img.height - sh) / 2; }
+  g.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+/* Emplacement vide : juste une icône + le mot PHOTO (l'utilisateur y mettra sa photo). */
+function pcTile(g, x, y, w, h){
+  g.fillStyle = '#E7E2D6'; g.fillRect(x, y, w, h);
+  g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 2; g.setLineDash([9, 7]);
+  g.strokeRect(x + 9, y + 9, w - 18, h - 18); g.setLineDash([]);
+  const cx = x + w / 2, cy = y + h / 2, u = Math.min(w, h);
+  g.fillStyle = 'rgba(0,0,0,.4)'; g.textAlign = 'center';
+  g.font = `${Math.round(u * 0.24)}px Arial`;
+  g.fillText('📷', cx, cy + u * 0.02);
+  g.font = `900 ${Math.max(12, Math.round(u * 0.11))}px Sora, Arial`;
+  g.fillText('PHOTO', cx, cy + u * 0.28);
+  g.textAlign = 'left';
+}
+/* faux timbre postal */
+function pcStamp(g, x, y){
+  const w = 84, h = 100;
+  g.fillStyle = '#FFFDF3'; g.fillRect(x, y, w, h);
+  g.strokeStyle = '#2b2b2b'; g.lineWidth = 2; g.setLineDash([4, 4]);
+  g.strokeRect(x + 5, y + 5, w - 10, h - 10); g.setLineDash([]);
+  g.textAlign = 'center';
+  g.fillStyle = '#C0392B'; g.font = '34px Arial'; g.fillText('✈', x + w / 2, y + h / 2 + 8);
+  g.fillStyle = '#2b2b2b'; g.font = '900 10px Sora, Arial'; g.fillText('PAR AVION', x + w / 2, y + h - 14);
+  g.textAlign = 'left';
+}
+function pcLayoutRects(pz, layout, n){
+  const gp = 14, rects = [];
+  if(layout === 'grande' || n <= 1){ rects.push([pz.x, pz.y, pz.w, pz.h]); }
+  else if(layout === 'duo'){
+    const w = (pz.w - gp) / 2;
+    rects.push([pz.x, pz.y, w, pz.h], [pz.x + w + gp, pz.y, w, pz.h]);
+  }else{ /* collage 2x2 */
+    const w = (pz.w - gp) / 2, h = (pz.h - gp) / 2;
+    rects.push([pz.x, pz.y, w, h], [pz.x + w + gp, pz.y, w, h], [pz.x, pz.y + h + gp, w, h], [pz.x + w + gp, pz.y + h + gp, w, h]);
+  }
+  return rects;
+}
+function drawPostcard(g, W, H, style, layout, photos, t){
+  const d = stayDates();
+  const dates = d ? `${d.in.split('-').reverse().slice(0,2).join('/')} – ${d.out.split('-').reverse().slice(0,2).join('/')}` : String(state.prefs?.when || 'souvenir').toUpperCase();
+  const S = {
+    pop:      { bg:'#FFE600', ink:'#101010', band:'#101010', bandInk:'#FFE600', border:10, titleFont:'900 66px Sora, Arial' },
+    polaroid: { bg:'#ECECEC', ink:'#141414', band:'#FFFFFF', bandInk:'#141414', border:6,  titleFont:'900 58px Sora, Arial' },
+    retro:    { bg:'#F1E7CE', ink:'#3B2E20', band:'#F1E7CE', bandInk:'#3B2E20', border:6,  titleFont:'900 60px Sora, Georgia, serif' }
+  }[style];
+  g.fillStyle = S.bg; g.fillRect(0, 0, W, H);
+  const pad = 30, bandH = 168;
+  const pz = { x: pad, y: pad, w: W - 2 * pad, h: H - 2 * pad - bandH - 8 };
+  const rects = pcLayoutRects(pz, layout, photos.length || 1);
+  rects.forEach((r, i) => {
+    const p = photos[i] || {};   /* slot au-delà des photos fournies → emplacement « PHOTO » */
+    const [x, y, w, h] = r;
+    if(style === 'polaroid'){
+      const fr = 12, capH = 26;
+      /* petite ombre douce sous chaque polaroïd */
+      g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(x + 5, y + 6, w, h);
+      g.fillStyle = '#fff'; g.fillRect(x, y, w, h);
+      g.strokeStyle = '#141414'; g.lineWidth = 3; g.strokeRect(x, y, w, h);
+      const ix = x + fr, iy = y + fr, iw = w - 2 * fr, ih = h - fr - capH;
+      if(p.img) pcCover(g, p.img, ix, iy, iw, ih); else pcTile(g, ix, iy, iw, ih);
+      /* bande blanche du bas laissée vide (look polaroïd, pas de nom de lieu) */
+    }else{
+      if(style === 'pop'){ g.fillStyle = '#101010'; g.fillRect(x + 8, y + 8, w, h); }  /* ombre dure */
+      if(p.img) pcCover(g, p.img, x, y, w, h); else pcTile(g, x, y, w, h);
+      g.strokeStyle = S.ink; g.lineWidth = style === 'pop' ? 6 : 3; g.strokeRect(x, y, w, h);
+    }
+  });
+  /* bande de texte */
+  const by = H - pad - bandH;
+  if(style !== 'retro'){ g.fillStyle = S.band; g.fillRect(pad, by, W - 2 * pad, bandH); }
+  g.strokeStyle = S.ink; g.lineWidth = style === 'pop' ? 6 : 3;
+  if(style !== 'retro') g.strokeRect(pad, by, W - 2 * pad, bandH);
+  const tx = pad + 24, ink = S.bandInk;
+  const accent = style === 'pop' ? '#FFE600' : (style === 'polaroid' ? '#FF6B00' : '#C0392B');
+  /* faux timbre, côté droit de la bande (look carte postale) */
+  pcStamp(g, W - pad - 104, by + 16, style);
+  const txMax = W - 2 * pad - 150;   /* laisse la place au timbre */
+  /* titre = destination, ajusté à la largeur */
+  const nom = String(t.nom || '').toUpperCase();
+  let fs = 64; g.textAlign = 'left';
+  do { g.font = `900 ${fs}px Sora, Arial`; fs -= 2; } while(g.measureText(nom).width > txMax && fs > 22);
+  g.fillStyle = ink; g.fillText(nom, tx, by + 62);
+  const tw = Math.min(g.measureText(nom).width, txMax);
+  g.fillStyle = accent; g.fillRect(tx, by + 74, tw, 7);            /* soulignement accent */
+  g.font = '800 23px Inter, Arial';
+  g.fillStyle = style === 'pop' ? 'rgba(255,230,0,.9)' : (style === 'polaroid' ? '#555' : '#6b5a44');
+  g.fillText(`${String(t.pays || '').toUpperCase()}  ·  ${dates}`, tx, by + 112);
+  const hl = (state.cache.plan?.programme || []).flatMap(j => j.lieux || []).filter(Boolean).slice(0, 3).join('  ·  ');
+  if(hl){ g.font = '700 18px Inter, Arial'; g.fillStyle = style === 'pop' ? 'rgba(255,230,0,.65)' : '#8a7a63'; g.fillText('📍 ' + hl.slice(0, 62), tx, by + 144); }
+  /* marque Acolite */
+  g.textAlign = 'right'; g.font = '900 19px Sora, Arial'; g.fillStyle = ink;
+  g.fillText('ACOLITE ✈', W - pad - 20, by + bandH - 16); g.textAlign = 'left';
+  /* cadre extérieur */
+  g.strokeStyle = S.ink; g.lineWidth = S.border; g.strokeRect(S.border / 2, S.border / 2, W - S.border, H - S.border);
+}
+function renderPostcard(){
+  const t = state.trip; if(!t) return;
+  const W = 1000, H = 700, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  drawPostcard(cv.getContext('2d'), W, H, _pcStyle, _pcLayout, _pcPhotos || [], t);
+  window._pcCanvas = cv;
+  const img = $('#pcImg');
+  if(img){ img.onload = () => { const l = $('#pcLoading'); if(l) l.style.display = 'none'; }; img.src = cv.toDataURL('image/png'); }
+}
+document.addEventListener('click', e => {
+  if(e.target.closest('[data-postcard]')){ openPostcard(); return; }
+  const st = e.target.closest('[data-pcstyle]');
+  if(st){ _pcStyle = st.dataset.pcstyle; pcChips(); renderPostcard(); return; }
+  const ly = e.target.closest('[data-pclayout]');
+  if(ly){ _pcLayout = ly.dataset.pclayout; pcChips(); renderPostcard(); return; }
+});
+/* --- Tes propres photos --- */
+function pcUseFiles(files){
+  const arr = [...files].filter(f => /^image\//.test(f.type)).slice(0, 4);
+  if(!arr.length){ toast('Choisis des images 📷'); return; }
+  /* data: URL (et non blob:) car la CSP img-src n'autorise pas blob: */
+  Promise.all(arr.map(f => new Promise(res => {
+    const rd = new FileReader();
+    rd.onload = () => { const im = new Image(); im.onload = () => res({ cap:'', img: im }); im.onerror = () => res(null); im.src = rd.result; };
+    rd.onerror = () => res(null);
+    rd.readAsDataURL(f);
+  }))).then(ps => {
+    const ok = ps.filter(Boolean);
+    if(!ok.length){ toast('Photos illisibles'); return; }
+    _pcPhotos = ok;
+    /* adapte la disposition au nombre de photos fournies */
+    _pcLayout = ok.length >= 3 ? 'collage' : ok.length === 2 ? 'duo' : 'grande';
+    pcChips(); renderPostcard();
+    toast(`📸 ${ok.length} photo(s) ajoutée(s)`);
+  });
+}
+const _ePcMine = $('#pcMine'); if(_ePcMine) _ePcMine.onclick = () => $('#pcFile')?.click();
+const _ePcFile = $('#pcFile'); if(_ePcFile) _ePcFile.onchange = e => { const fs = e.target.files; if(fs?.length) pcUseFiles(fs); e.target.value = ''; };
+const _ePcWeb = $('#pcWeb'); if(_ePcWeb) _ePcWeb.onclick = async () => {
+  const t = state.trip; if(!t) return;
+  if($('#pcLoading')){ $('#pcLoading').textContent = 'Recherche de photos…'; $('#pcLoading').style.display = ''; }
+  if($('#pcImg')) $('#pcImg').removeAttribute('src');
+  const places = [...((state.cache.plan?.programme || []).flatMap(j => j.lieux || [])), t.nom, t.pays].filter(Boolean);
+  const uniq = [...new Set(places)].slice(0, 4);
+  const imgs = await Promise.all(uniq.map(async n => pcLoadImg(await fetchWikiThumb(n))));
+  _pcPhotos = uniq.map((cap, i) => ({ cap, img: imgs[i] }));
+  const found = _pcPhotos.filter(p => p.img).length;
+  renderPostcard();
+  toast(found ? `🌐 ${found} photo(s) trouvée(s)` : 'Aucune photo trouvée — ajoute les tiennes 📸');
+};
+const _ePcD = $('#pcDownload'); if(_ePcD) _ePcD.onclick = () => {
+  if(!window._pcCanvas) return;
+  window._pcCanvas.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = `acolite-postcard-${String(state.trip?.nom||'voyage').toLowerCase().replace(/[^a-z0-9]+/g,'-')}.png`;
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('🖼️ Carte postale téléchargée');
+  }, 'image/png');
+};
+const _ePcS = $('#pcShare'); if(_ePcS) _ePcS.onclick = () => {
+  if(!window._pcCanvas) return;
+  window._pcCanvas.toBlob(async b => {
+    const file = typeof File !== 'undefined' ? new File([b], 'postcard.png', { type:'image/png' }) : null;
+    if(file && navigator.canShare?.({ files:[file] })){
+      try{ await navigator.share({ files:[file], title:'Ma carte postale Acolite', text:`Mon voyage à ${state.trip?.nom} ✈️` }); return; }
+      catch(e){ if(e.name === 'AbortError') return; }
+    }
+    _ePcD.click();
+  }, 'image/png');
+};
 
 /* --- Ajuste la taille des valeurs pour qu'aucun mot ne soit coupé --- */
 function fitStats(){

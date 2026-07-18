@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev https://*.deno.dev https://*.val.run; frame-src https://www.openstreetmap.org https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com https://upload.wikimedia.org; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev https://*.deno.dev https://*.val.run; frame-src https://www.openstreetmap.org https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="theme-color" content="#FFE600" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0B0B10" media="(prefers-color-scheme: dark)">
@@ -39,12 +39,17 @@
   <div id="catTrip">
   <nav class="steps">
     <div class="step active" data-step="1"><span class="n">1</span>Questions</div>
-    <div class="step locked" data-step="2"><span class="n">2</span>Les 3 choix</div>
+    <div class="step locked" data-step="2"><span class="n">2</span>Les choix</div>
     <div class="step locked" data-step="3"><span class="n">3</span>Ton voyage</div>
   </nav>
 
   <!-- ================= VUE 1 : ENVIES ================= -->
   <section class="view" id="view1">
+    <div class="card" id="tripGallery" hidden>
+      <h3 style="margin:0 0 4px">🧳 Mes voyages</h3>
+      <p class="sub" style="margin:0 0 12px">Reprends un voyage déjà exploré, ou lances-en un nouveau ci-dessous.</p>
+      <div class="gallery" id="galleryList"></div>
+    </div>
     <div class="card">
       <h2>Où est-ce qu'on t'emmène ? 🌍</h2>
       <p class="sub">Décris tes envies, Acolite te propose des destinations sur mesure — puis t'aide à affiner.</p>
@@ -75,12 +80,43 @@
         <div class="field"><label for="fKids">Enfants</label>
           <select id="fKids"><option selected>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select>
         </div>
+        <div class="field"><label for="fVibe">Ambiance recherchée</label>
+          <select id="fVibe">
+            <option value="" selected>Peu importe — surprends-moi</option>
+            <option value="plage & détente">🏖 Plage &amp; détente</option>
+            <option value="ville & culture">🏛 Ville &amp; culture</option>
+            <option value="nature & aventure">🥾 Nature &amp; aventure</option>
+            <option value="fête & vie nocturne">🎉 Fête &amp; vie nocturne</option>
+            <option value="romantique">💘 Romantique</option>
+            <option value="bien-être & repos">🧘 Bien-être &amp; repos</option>
+          </select>
+        </div>
+        <div class="field"><label for="fWith">Avec qui</label>
+          <select id="fWith">
+            <option value="" selected>Peu importe</option>
+            <option value="en solo">🧍 En solo</option>
+            <option value="en couple">💞 En couple</option>
+            <option value="entre amis">👯 Entre amis</option>
+            <option value="en famille">👨‍👩‍👧 En famille</option>
+            <option value="entre collègues">💼 Entre collègues</option>
+          </select>
+        </div>
+        <div class="field"><label for="fStay">Style d'hébergement</label>
+          <select id="fStay">
+            <option value="" selected>Peu importe</option>
+            <option value="hôtel">🏨 Hôtel</option>
+            <option value="appartement / Airbnb">🏠 Appartement / Airbnb</option>
+            <option value="auberge / éco">🎒 Auberge / éco</option>
+            <option value="séjour de luxe">✨ Séjour de luxe</option>
+          </select>
+        </div>
       </div>
       <div class="field" style="margin-top:14px"><label for="fFree">Tes limites & conditions</label>
         <textarea id="fFree" placeholder="Ex : max 3h de trajet, pas d'auberge, je pars avec un bébé, je veux la plage, budget serré sur le logement…"></textarea>
       </div>
       <div style="margin-top:18px;display:flex;flex-direction:column;gap:12px">
         <button class="btn" id="btnGo" style="width:100%;justify-content:center">✨ Propose-moi des voyages</button>
+        <button class="btn ghost" id="btnCountry" style="width:100%;justify-content:center">🎯 Choisis un pays, l'IA trouve le lieu</button>
         <div class="btn-duo">
           <button class="btn ghost" id="btnLucky">🎲 Surprends-moi</button>
           <button class="btn ghost" id="btnScanTicket">📷 Scanner un ticket</button>
@@ -90,9 +126,9 @@
   </section>
 
 
-  <!-- ================= VUE 2 : LES 3 CHOIX ================= -->
+  <!-- ================= VUE 2 : LES CHOIX ================= -->
   <section class="view hidden" id="view2">
-    <div id="zoneResults"><div class="card"><p class="sub" style="margin:0">Remplis le questionnaire à l'étape 1 pour voir tes 3 propositions ici.</p></div></div>
+    <div id="zoneResults"><div class="card"><p class="sub" style="margin:0">Remplis le questionnaire à l'étape 1 pour voir tes propositions ici.</p></div></div>
   </section>
 
   <!-- ================= VUE 3 : Y ALLER ================= -->
@@ -109,6 +145,21 @@
         <button class="btn ghost sm" id="btnExport">⬇ Exporter (.md)</button>
         <button class="btn ghost sm" id="btnReset">↺ Nouveau voyage</button>
       </div>
+      <div class="btn-duo" style="margin-top:10px">
+        <button class="btn ghost sm" id="btnBackup">💾 Sauvegarder (fichier)</button>
+        <button class="btn ghost sm" id="btnRestore">📂 Importer</button>
+      </div>
+      <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+    </div>
+    <div class="card" id="cardEvents">
+      <h3 style="margin:0 0 4px">🎉 Pendant ton séjour</h3>
+      <p class="sub" style="margin:0 0 10px">Festivals, fêtes locales, marchés et jours fériés autour de tes dates.</p>
+      <div id="zoneEvents"><button class="btn sm ghost" id="btnEvents">Voir les événements</button></div>
+    </div>
+    <div class="card" id="cardInfo">
+      <h3 style="margin:0 0 4px">📌 À savoir avant de partir</h3>
+      <p class="sub" style="margin:0 0 10px">Visa, prises électriques, urgences, pourboires, eau, décalage horaire.</p>
+      <div id="zoneInfo"><button class="btn sm ghost" id="btnInfo">Afficher la fiche pratique</button></div>
     </div>
   </section>
 
@@ -126,10 +177,26 @@
     </div>
     <div class="mapstops" id="zoneStops"></div>
     <iframe id="projMap" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+    <div class="cat-empty" id="mapEmpty" hidden>
+      <div class="cat-empty-card">
+        <div class="ce-emoji">🗺️</div>
+        <h3>Pas encore de voyage</h3>
+        <p>Choisis une destination et Acolite trace ton itinéraire, jour par jour, ici même.</p>
+        <button class="btn" id="mapEmptyGo">✨ Commencer un voyage</button>
+      </div>
+    </div>
   </section>
 
   <!-- ================= CATÉGORIE : PROFIL ================= -->
   <section class="hidden" id="catProfile">
+    <div class="cat-empty-banner" id="profileEmpty" hidden>
+      <div class="ce-emoji">✈️</div>
+      <div style="flex:1;min-width:0">
+        <h3 style="margin:0">Aucun voyage en cours</h3>
+        <p class="hint" style="margin:2px 0 0">Lance ton premier voyage pour débloquer la carte, le programme et le ticket.</p>
+      </div>
+      <button class="btn sm ghost" id="profileEmptyGo">Commencer</button>
+    </div>
     <div class="card">
       <h2>Mon compte 👤</h2>
       <div class="row" style="align-items:center;gap:16px;margin-top:14px">
@@ -144,7 +211,7 @@
 
     <div class="card">
       <div class="acc" id="accPrefs">
-        <div class="acc-head" data-acc>🎛 PRÉFÉRENCES <span class="arr">›</span></div>
+        <div class="acc-head" data-acc>🎛️ PRÉFÉRENCES <span class="arr">›</span></div>
         <div class="acc-body">
 
           <h3 style="margin:0 0 6px">🧭 Ton style de voyage</h3>
@@ -172,8 +239,9 @@
               <label for="stModel">Modèle</label>
               <select id="stModel">
                 <option value="auto">Automatique (recommandé)</option>
-                <option value="gemini-2.5-flash">Rapide — Flash</option>
-                <option value="gemini-2.5-pro">Puissant — Pro (plus lent)</option>
+                <option value="gemini-3.5-flash">Nouvelle génération — 3.5 Flash</option>
+                <option value="gemini-2.5-flash">Éprouvé — 2.5 Flash</option>
+                <option value="gemini-2.5-pro">Puissant — 2.5 Pro (plus lent)</option>
               </select>
             </div>
             <div class="field">
@@ -203,7 +271,7 @@
       </div>
 
       <div class="acc" id="accActions">
-      <div class="acc-head" data-acc>⚙ ACTIONS <span class="arr">›</span></div>
+      <div class="acc-head" data-acc>⚡ ACTIONS <span class="arr">›</span></div>
       <div class="acc-body">
       <div class="item act">
         <div class="head"><div class="emo">⬇</div><h4>Exporter mon voyage</h4></div>
@@ -247,15 +315,6 @@
       </div>
       </div><!-- /acc-body -->
       </div><!-- /acc -->
-    </div>
-
-    <div class="acc" id="accAdmin">
-      <div class="acc-head" data-acc>🛠 DIAGNOSTIC (temporaire) <span class="arr">›</span></div>
-      <div class="acc-body">
-        <p class="hint" style="margin:0 0 10px">Ce panneau teste tout ce qui est branché et te dit ce qui marche ou pas. À retirer avant la mise en ligne publique.</p>
-        <button class="btn sm" id="btnDiag" style="width:100%;justify-content:center">▶ Lancer le diagnostic complet</button>
-        <div id="zoneDiag" style="margin-top:12px"></div>
-      </div>
     </div>
 
     <div class="danger-zone">
@@ -394,7 +453,46 @@
   </div>
 </div>
 
+<!-- ===== Carte postale ===== -->
+<div class="overlay" id="ovPostcard">
+  <div class="modal" style="max-height:92vh;overflow-y:auto">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">Ta carte postale 🖼️</h2>
+      <button class="close-btn" data-close="ovPostcard" aria-label="Fermer">✕</button>
+    </div>
+    <div class="pc-preview"><img id="pcImg" alt="Aperçu de la carte postale"><div class="pc-loading" id="pcLoading">Composition…</div></div>
+    <div class="pc-group"><span class="pc-label">Style</span><div class="pc-chips" id="pcStyles"></div></div>
+    <div class="pc-group"><span class="pc-label">Disposition</span><div class="pc-chips" id="pcLayouts"></div></div>
+    <div class="pc-group"><span class="pc-label">Photos</span>
+      <div class="btn-duo">
+        <button class="btn sm ghost" id="pcMine">📸 Mes photos</button>
+        <button class="btn sm ghost" id="pcWeb">🌐 Photos du web</button>
+      </div>
+      <input type="file" id="pcFile" accept="image/*" multiple hidden>
+    </div>
+    <div class="btn-duo" style="margin-top:14px">
+      <button class="btn sm" id="pcDownload">⬇ Télécharger</button>
+      <button class="btn sm ghost" id="pcShare">📤 Partager</button>
+    </div>
+    <p class="hint" style="margin-top:8px">Ajoute <strong>tes photos</strong> ou laisse Acolite chercher des photos du web. Souvenir uniquement.</p>
+  </div>
+</div>
+
 <div id="toast"></div>
+
+<!-- ================= ONBOARDING (première visite) ================= -->
+<div class="onboard" id="onboard" hidden>
+  <div class="onboard-card">
+    <button class="onboard-skip" id="onboardSkip" aria-label="Passer l'introduction">Passer</button>
+    <div class="onboard-emoji" id="onboardEmoji">🌍</div>
+    <h2 id="onboardTitle">Bienvenue sur Acolite</h2>
+    <p id="onboardText">Ton copilote de voyage.</p>
+    <div class="onboard-foot">
+      <span class="onboard-dots" id="onboardDots"></span>
+      <button class="btn" id="onboardNext">Suivant →</button>
+    </div>
+  </div>
+</div>
 
 <script src="boot-check.js"></script>
 <script src="config.js"></script>

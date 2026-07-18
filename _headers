@@ -1,0 +1,21 @@
+# En-têtes de cache (Cloudflare Pages / Netlify)
+# HTML/JS/CSS/SW : toujours revalidés → les mises à jour arrivent immédiatement
+# (le service worker sert la version en cache en secours hors-ligne)
+/index.html
+  Cache-Control: no-cache
+/*.js
+  Cache-Control: no-cache
+/*.css
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
+/manifest.json
+  Cache-Control: no-cache
+
+# Assets immuables (icônes, images) : cache long
+/*.png
+  Cache-Control: public, max-age=31536000, immutable
+/*.svg
+  Cache-Control: public, max-age=31536000, immutable
+/*.webp
+  Cache-Control: public, max-age=31536000, immutable
