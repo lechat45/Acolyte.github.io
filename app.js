@@ -719,7 +719,7 @@ function passHTML(){
     <div class="pass-tear">
       <div class="pass-acts">
         <button class="pact" data-passpng title="Télécharger le ticket avec son QR code">📷<span>Ticket</span></button>
-        <button class="pact" data-postcard title="Créer une carte postale à partager">🖼️<span>Postcard</span></button>
+        <button class="pact" data-postcard title="Créer une carte postale à partager">🖼️<span>Postale</span></button>
         <button class="pact" data-sharelink title="Partager un lien qui importe ce voyage">🔗<span>Lien</span></button>
         <button class="pact" data-ics title="Ajouter le programme à ton agenda">📅<span>Agenda</span></button>
       </div>
@@ -1232,6 +1232,57 @@ function stayLinks(place){
   };
 }
 
+/* ============================================================
+   EMPREINTE CARBONE — estimation A/R par personne + alternative plus sobre
+============================================================ */
+const CO2_G_KM = { avion: 250, voiture: 190, train: 30, bus: 60 };   /* g CO₂ par km */
+function carbonHTML(mode){
+  const dist = state.cache._real?.dist;        /* km, aller simple (données réelles) */
+  if(!dist || dist < 5) return '';
+  const A = (state.prefs?.adults || 1) + (state.prefs?.kids || 0);
+  const kg = m => {
+    let f = CO2_G_KM[m] ?? CO2_G_KM.avion;
+    if(m === 'voiture') f = f / Math.max(1, A);   /* la voiture se partage entre passagers */
+    return Math.round(dist * 2 * f / 1000);
+  };
+  const m = ['avion','train','voiture'].includes(mode) ? mode : 'avion';
+  const mine = kg(m);
+  const best = ['train','voiture','avion'].filter(x => x !== m).map(x => ({ x, v: kg(x) })).sort((a,b) => a.v - b.v)[0];
+  const gain = best && best.v < mine ? Math.round((1 - best.v / mine) * 100) : 0;
+  const ICO = { avion:'✈️', train:'🚆', voiture:'🚗' };
+  return `<div class="divider"></div>
+    <h3 style="margin:0 0 4px">🌍 Empreinte carbone</h3>
+    <p class="hint" style="margin:0 0 10px">Estimation aller-retour par personne, sur ~${Math.round(dist)} km de trajet.</p>
+    <div class="item" style="align-items:flex-start">
+      <div class="emo">${ICO[m] || '🌍'}</div>
+      <div style="flex:1;min-width:0">
+        <h4>${mine} kg de CO₂ · en ${esc(m)}</h4>
+        <p class="hint" style="margin:2px 0 0">${gain
+          ? `En ${esc(best.x)}, ce serait ~${best.v} kg — <strong>${gain} % de moins</strong>.`
+          : `C'est déjà l'option la plus sobre sur ce trajet 👏`}</p>
+      </div>
+    </div>`;
+}
+
+/* ============================================================
+   MODE « JOUR J » — pendant le voyage, la journée du jour en avant
+============================================================ */
+function todayHTML(){
+  const d = stayDates(); if(!d) return '';
+  const now = new Date(), start = new Date(d.in + 'T00:00:00'), end = new Date(d.out + 'T23:59:59');
+  if(isNaN(start) || now < start || now > end) return '';
+  const idx = Math.floor((now - start) / 86400000) + 1;
+  const prog = state.cache.plan?.programme || [];
+  const jr = prog.find(x => +x.jour === idx);
+  return `<div class="card today-card">
+    <h3 style="margin:0 0 4px">📍 Aujourd'hui — jour ${idx}${prog.length ? ` / ${prog.length}` : ''}</h3>
+    ${jr ? `<h4 style="margin:6px 0 4px">${esc(jr.resume || '')}</h4>
+        ${(jr.lieux || []).length ? `<p class="hint" style="margin:0">📍 ${jr.lieux.map(esc).join(' · ')}</p>` : ''}
+        <button class="btn sm" data-daydetail="${esc(String(idx))}" style="margin-top:10px">🕘 Détailler ma journée</button>`
+      : `<p class="sub" style="margin:0">Journée libre — profite bien !</p>`}
+  </div>`;
+}
+
 function renderPlan(d){
   const icons = {avion:'✈️', train:'🚆', voiture:'🚗'};
   const tr = d.transport||{}, lg = d.logement||{}, bd = d.budget||{};
@@ -1244,6 +1295,7 @@ function renderPlan(d){
   const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : null;
 
   let html = `
+    ${todayHTML()}
     <p class="sub" style="margin:-4px 0 12px">Le voyage qu'Acolite a construit pour toi${nuits ? `, sur ${nuits} nuit(s)` : ''}${A > 1 ? `, pour ${A} personnes` : ''}. ${d._checked === 'fixed' ? '⚠️ Une seconde IA a relu le plan et corrigé des incohérences.' : d._checked ? '✔ Budget, durée et transport relus par une seconde IA.' : ''}</p>
 
     <h3 style="margin:0 0 10px">📋 L'essentiel</h3>
@@ -1266,17 +1318,25 @@ function renderPlan(d){
     ${d.conseil_cle ? `<div class="item" style="align-items:flex-start;background:var(--primary)"><div class="emo">💡</div>
       <div style="flex:1"><h4 style="color:#101010">Le conseil à retenir</h4><p style="color:#101010">${esc(d.conseil_cle)}</p></div></div>` : ''}
 
+    ${carbonHTML(tr.mode)}
+
     <div class="divider"></div>
     <h3 style="margin:0 0 4px">📆 Ton programme, jour par jour</h3>
     <p class="hint" style="margin:0 0 12px">Une journée ne te convient pas ? Le bouton 🔄 la refait à elle seule (pluie, fatigue, budget…).</p>
     ${(d.programme||[]).map(jr=>`
-      <div class="item" style="align-items:flex-start">
-        <span class="tl-time" style="flex-shrink:0">J${esc(String(jr.jour))}</span>
-        <div style="flex:1;min-width:0">
-          <h4>${esc(jr.resume)}</h4>
-          ${(jr.lieux||[]).length ? `<p class="hint" style="margin:3px 0 0">📍 ${jr.lieux.map(esc).join(' · ')}</p>` : ''}
+      <div class="day-block">
+        <div class="item" style="align-items:flex-start">
+          <span class="tl-time" style="flex-shrink:0">J${esc(String(jr.jour))}</span>
+          <div style="flex:1;min-width:0">
+            <h4>${esc(jr.resume)}</h4>
+            ${(jr.lieux||[]).length ? `<p class="hint" style="margin:3px 0 0">📍 ${jr.lieux.map(esc).join(' · ')}</p>` : ''}
+          </div>
+          <div class="side row" style="flex-shrink:0;gap:6px">
+            <button class="btn sm ghost" data-daydetail="${esc(String(jr.jour))}" title="Détailler cette journée heure par heure" style="padding:6px 9px">🕘</button>
+            <button class="btn sm ghost" data-planb="${esc(String(jr.jour))}" title="Refaire cette journée" style="padding:6px 9px">🔄</button>
+          </div>
         </div>
-        <button class="btn sm ghost" data-planb="${esc(String(jr.jour))}" title="Refaire cette journée" style="flex-shrink:0;padding:6px 9px">🔄</button>
+        <div class="day-detail" data-daybox="${esc(String(jr.jour))}"></div>
       </div>`).join('')}`;
 
   if(qs.length){
@@ -1288,16 +1348,7 @@ function renderPlan(d){
     });
   }
 
-  html += `
-    <div class="divider"></div>
-    <h3 style="margin:0 0 4px">👉 Et maintenant ?</h3>
-    <p class="hint" style="margin:0 0 4px"><strong>Réservation</strong> : tous les liens (billets, hôtels avec prix réels, activités), déjà pré-remplis.<br>
-    <strong>Simulation</strong> : les vrais prix des vols et des trains, jour par jour, pour choisir le bon moment.</p>
-    <div class="btn-duo" style="margin-top:14px">
-      <button class="btn sm ghost" id="btnPlanRedo">🔄 Tout réorganiser</button>
-      <button class="btn sm ghost" data-changedest>↩ Changer de destination</button>
-    </div>`;
-
+  /* (les boutons Réserver / Gérer vivent désormais dans leurs propres cartes sous le plan) */
   $('#zonePlan').innerHTML = html;
   fitStats();
   refreshPasses();
@@ -1406,6 +1457,43 @@ Réponds UNIQUEMENT en JSON : {"jour":${jour},"resume":"phrase courte","lieux":[
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-planb]');
   if(b) planB(b.dataset.planb);
+});
+
+/* ============================================================
+   PROGRAMME HEURE PAR HEURE — détaille une journée du plan
+============================================================ */
+async function loadDayDetail(jour){
+  const t = state.trip; if(!t) return;
+  const box = document.querySelector(`[data-daybox="${jour}"]`);
+  if(!box) return;
+  if(box.dataset.open === '1'){ box.innerHTML = ''; box.dataset.open = '0'; return; }  /* re-clic = replie */
+  box.dataset.open = '1';
+  state.cache.days = state.cache.days || {};
+  if(state.cache.days[jour]){ box.innerHTML = timelineHTML(state.cache.days[jour]); return; }
+  box.innerHTML = loaderHTML('Construction de la journée heure par heure…');
+  const jr = (state.cache.plan?.programme || []).find(x => String(x.jour) === String(jour)) || {};
+  const pace = { doux:'doux (peu d\'activités, du temps libre)', equilibre:'équilibré (2-3 activités)', intense:'intense (programme dense)' }[SET?.rythme] || 'équilibré';
+  const prompt = `Tu es Acolite, guide local expert de ${t.nom} (${t.pays}). ${ctx()}
+Détaille HEURE PAR HEURE le JOUR ${jour} du séjour.
+Thème de la journée : ${jr.resume || 'à toi de le définir'}
+Lieux déjà prévus ce jour (à intégrer, dans un ordre logique et géographiquement cohérent) : ${(jr.lieux || []).join(', ') || 'à toi de choisir'}
+Rythme souhaité : ${pace}.
+Programme RÉALISTE : horaires cohérents, temps de trajet inclus, pauses repas. Uniquement des lieux RÉELS et vérifiables.
+Réponds UNIQUEMENT en JSON :
+{"titre_journee":"thème du jour","etapes":[{"heure":"09:00","titre":"...","description":"1-2 phrases concrètes avec un vrai conseil","lieu":"nom précis pour Google Maps ou null","type":"visite|repas|pause|trajet"}]}
+Entre 6 et 9 étapes.`;
+  try{
+    const d = await gemini(prompt, true, 4096, false, 0.5);
+    state.cache.days[jour] = d; save();
+    box.innerHTML = timelineHTML(d);
+  }catch(e){
+    if(e.message !== 'NO_KEY') box.innerHTML = errHTML('Journée indisponible pour le moment.', 'day' + jour);
+    _retryFns['day' + jour] = () => { box.dataset.open = '0'; loadDayDetail(jour); };
+  }
+}
+document.addEventListener('click', e => {
+  const d = e.target.closest('[data-daydetail]');
+  if(d) loadDayDetail(d.dataset.daydetail);
 });
 
 /* --- Accordéons + boutons "changer de destination" (CSP stricte : aucun onclick inline) --- */
@@ -1537,7 +1625,7 @@ function planValidate(){
 /* Délégation : boutons du plan (la zone est re-rendue) */
 document.addEventListener('click', e => {
   if(e.target.id === 'btnPlanOk'){ planValidate(); return; }
-  if(e.target.id === 'btnPlanRedo'){ loadPlan(true); return; }
+  if(e.target.id === 'btnPlanRedo' || e.target.id === 'btnPlanRedo2'){ loadPlan(true); return; }
   const q = e.target.closest('.chip.planq');
   if(q){
     state.planAnswers = state.planAnswers || [];
@@ -3105,12 +3193,12 @@ function prefsBlock(){
 
 /* --- Rendu du panneau Préférences --- */
 const OPT = {
-  stStyle:  { key:'style',  multi:true,  items:[['detente','🏖 Détente'],['culture','🏛 Culture'],['aventure','🥾 Aventure'],['fete','🎉 Fête'],['nature','🌿 Nature'],['gastro','🍽 Gastronomie'],['famille','👨‍👩‍👧 Famille'],['romantique','💘 Romantique']] },
+  stStyle:  { key:'style',  multi:true,  items:[['detente','🏖️ Détente'],['culture','🏛️ Culture'],['aventure','🥾 Aventure'],['fete','🎉 Fête'],['nature','🌿 Nature'],['gastro','🍽️ Gastronomie'],['famille','👨‍👩‍👧 Famille'],['romantique','💘 Romantique']] },
   stRythme: { key:'rythme', items:[['doux','🐢 Doux'],['equilibre','⚖️ Équilibré'],['intense','⚡ Intense']] },
   stFood:   { key:'food',   items:[['aucun','🍽️ Aucune contrainte'],['vege','🥗 Végétarien'],['vegan','🌱 Végan'],['halal','☪️ Halal'],['casher','✡️ Casher'],['sansgluten','🌾 Sans gluten']] },
   stAcces:  { key:'acces',  items:[['non','✅ Aucun besoin'],['oui','♿ Mobilité réduite']] },
   stEco:    { key:'eviter', multi:true, items:[['avion','✈️ Éviter l\'avion'],['train','🚆 Éviter le train'],['voiture','🚗 Éviter la voiture']] },
-  stTheme:  { key:'theme',  items:[['auto','🖥 Système'],['light','☀️ Clair'],['dark','🌙 Sombre']] },
+  stTheme:  { key:'theme',  items:[['auto','🖥️ Système'],['light','☀️ Clair'],['dark','🌙 Sombre']] },
   stIA:     { key:null,     toggles:[['verif','🔍 Relecture par une 2e IA'],['reels','📡 Données réelles (météo, trains, fériés)']] },
   stUI:     { key:null,     toggles:[['motion','✨ Animations']] }
 };
@@ -3313,6 +3401,34 @@ document.addEventListener('change', e => {
   if(!r) return;
   projRoute(r);
   updateProjOpen(r);
+});
+/* ‹ › : passer au trajet précédent/suivant sans ouvrir la liste */
+function mapStep(dir){
+  const sel = $('#mapDay'), routes = window._projRoutes || [];
+  if(!sel || sel.disabled || routes.length < 2) return;
+  const i = (+sel.value + dir + routes.length) % routes.length;
+  sel.value = String(i);
+  projRoute(routes[i]);
+  updateProjOpen(routes[i]);
+}
+/* 🧭 : centre la carte sur la position réelle du voyageur (pratique sur place) */
+function mapLocate(){
+  if(!navigator.geolocation){ toast('Géolocalisation indisponible sur cet appareil'); return; }
+  toast('🧭 Recherche de ta position…');
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const la = pos.coords.latitude, lo = pos.coords.longitude, d = 0.008;
+      $('#projMap').src = `https://www.openstreetmap.org/export/embed.html?bbox=${lo-d*1.6},${la-d},${lo+d*1.6},${la+d}&layer=mapnik&marker=${la},${lo}`;
+      toast('📍 Te voilà !');
+    },
+    () => toast('Position refusée ou introuvable'),
+    { timeout: 8000 }
+  );
+}
+document.addEventListener('click', e => {
+  if(e.target.id === 'mapPrev') mapStep(-1);
+  if(e.target.id === 'mapNext') mapStep(1);
+  if(e.target.id === 'mapLocate') mapLocate();
 });
 
 /* --- Profil : infos + stats + paramètres --- */
@@ -3804,7 +3920,7 @@ const PC_STYLES  = [
   {id:'noir', nom:'Cinéma'}, {id:'azur', nom:'Bord de mer'}, {id:'kraft', nom:'Kraft'}
 ];
 const PC_LAYOUTS = [{id:'grande', nom:'Une grande'}, {id:'duo', nom:'Deux'}, {id:'collage', nom:'Collage'}];
-let _pcStyle = 'pop', _pcLayout = 'grande', _pcPhotos = null;
+let _pcStyle = 'pop', _pcLayout = 'grande', _pcPhotos = null, _pcTemplate = 'classique';
 
 async function fetchWikiThumb(name){
   try{
@@ -3827,9 +3943,13 @@ function pcLoadImg(url){
   });
 }
 function pcChips(){
-  const st = $('#pcStyles'), ly = $('#pcLayouts');
+  const tp = $('#pcTemplates'), st = $('#pcStyles'), ly = $('#pcLayouts');
+  if(tp) tp.innerHTML = PC_TEMPLATES.map(m => `<div class="pc-chip ${m.id===_pcTemplate?'on':''}" data-pctpl="${m.id}">${m.nom}</div>`).join('');
   if(st) st.innerHTML = PC_STYLES.map(s => `<div class="pc-chip ${s.id===_pcStyle?'on':''}" data-pcstyle="${s.id}">${s.nom}</div>`).join('');
   if(ly) ly.innerHTML = PC_LAYOUTS.map(l => `<div class="pc-chip ${l.id===_pcLayout?'on':''}" data-pclayout="${l.id}">${l.nom}</div>`).join('');
+  /* le modèle « Dos de carte » n'utilise qu'une vignette → la disposition n'a pas d'effet */
+  const lyGroup = $('#pcLayoutGroup');
+  if(lyGroup) lyGroup.style.display = _pcTemplate === 'dos' ? 'none' : '';
 }
 async function openPostcard(){
   const t = state.trip; if(!t) return;
@@ -3880,6 +4000,22 @@ function pcTile(g, x, y, w, h){
   g.fillText('PHOTO', cx, cy + u * 0.28);
   g.textAlign = 'left';
 }
+/* cachet d'oblitération circulaire (comme sur une vraie enveloppe) */
+function pcPostmark(g, cx, cy, r, txt, sub){
+  g.save();
+  g.globalAlpha = .55; g.strokeStyle = '#2b2b2b'; g.lineWidth = 3;
+  g.beginPath(); g.arc(cx, cy, r, 0, 7); g.stroke();
+  g.beginPath(); g.arc(cx, cy, r - 7, 0, 7); g.stroke();
+  g.textAlign = 'center'; g.fillStyle = '#2b2b2b';
+  g.font = `900 ${Math.round(r * 0.30)}px Sora, Arial`;
+  g.fillText(String(txt || '').slice(0, 9).toUpperCase(), cx, cy - 1);
+  g.font = `700 ${Math.round(r * 0.21)}px Inter, Arial`;
+  g.fillText(String(sub || '').slice(0, 12), cx, cy + r * 0.34);
+  /* petites barres d'oblitération */
+  g.lineWidth = 2;
+  for(let i = -2; i <= 2; i++){ g.beginPath(); g.moveTo(cx + r + 6, cy + i * 7); g.lineTo(cx + r + 40, cy + i * 7); g.stroke(); }
+  g.restore(); g.textAlign = 'left';
+}
 /* faux timbre postal */
 function pcStamp(g, x, y){
   const w = 84, h = 100;
@@ -3905,78 +4041,295 @@ function pcLayoutRects(pz, layout){
   }
   return rects;
 }
-function drawPostcard(g, W, H, style, layout, photos, t){
+/* Palettes de couleurs — indépendantes du MODÈLE (qui, lui, réorganise les infos) */
+const PC_PALETTES = {
+  pop:      { bg:'#FFE600', ink:'#101010', band:'#101010', bandInk:'#FFE600', border:10, bandFill:true,  sub:'rgba(255,230,0,.9)',  hlt:'rgba(255,230,0,.65)', accent:'#FFE600', frame:6 },
+  polaroid: { bg:'#ECECEC', ink:'#141414', band:'#FFFFFF', bandInk:'#141414', border:6,  bandFill:true,  sub:'#555',               hlt:'#8a8a8a',             accent:'#FF6B00', frame:3 },
+  retro:    { bg:'#F1E7CE', ink:'#3B2E20', band:'#F1E7CE', bandInk:'#3B2E20', border:6,  bandFill:false, sub:'#6b5a44',            hlt:'#8a7a63',             accent:'#C0392B', frame:3 },
+  noir:     { bg:'#14171C', ink:'#F2F2F2', band:'#14171C', bandInk:'#F5F5F5', border:4,  bandFill:false, sub:'#9AA3AD',            hlt:'#6E7681',             accent:'#E23B3B', frame:2 },
+  azur:     { bg:'#DFF3F7', ink:'#0E3A46', band:'#FFFFFF', bandInk:'#0E3A46', border:7,  bandFill:true,  sub:'#3d7d8c',            hlt:'#6fa3ae',             accent:'#00A6C0', frame:4 },
+  kraft:    { bg:'#C9A66B', ink:'#2E2013', band:'#C9A66B', bandInk:'#2E2013', border:7,  bandFill:false, sub:'#5b4227',            hlt:'#6f5334',             accent:'#7A4E2D', frame:4 }
+};
+/* MODÈLES : chacun réorganise complètement les informations et la mise en page */
+const PC_TEMPLATES = [
+  { id:'classique', nom:'📐 Classique' },
+  { id:'magazine',  nom:'📰 Magazine' },
+  { id:'dos',       nom:'✉️ Dos de carte' },
+  { id:'pellicule', nom:'🎞️ Pellicule' },
+  { id:'mosaique',  nom:'🧩 Mosaïque' },
+  { id:'passeport', nom:'🛂 Passeport' },
+  { id:'minimal',   nom:'✦ Minimal' },
+  { id:'vertical',  nom:'📱 Portrait', w:700, h:1000 }   /* format vertical */
+];
+
+/* Infos du voyage, préparées une fois pour tous les modèles */
+function pcInfo(t){
   const d = stayDates();
-  const dates = d ? `${d.in.split('-').reverse().slice(0,2).join('/')} – ${d.out.split('-').reverse().slice(0,2).join('/')}` : String(state.prefs?.when || 'souvenir').toUpperCase();
-  const STYLES = ({
-    pop:      { bg:'#FFE600', ink:'#101010', band:'#101010', bandInk:'#FFE600', border:10, bandFill:true,  sub:'rgba(255,230,0,.9)',  hlt:'rgba(255,230,0,.65)', accent:'#FFE600', frame:6 },
-    polaroid: { bg:'#ECECEC', ink:'#141414', band:'#FFFFFF', bandInk:'#141414', border:6,  bandFill:true,  sub:'#555',               hlt:'#8a8a8a',             accent:'#FF6B00', frame:3 },
-    retro:    { bg:'#F1E7CE', ink:'#3B2E20', band:'#F1E7CE', bandInk:'#3B2E20', border:6,  bandFill:false, sub:'#6b5a44',            hlt:'#8a7a63',             accent:'#C0392B', frame:3 },
-    noir:     { bg:'#14171C', ink:'#F2F2F2', band:'#14171C', bandInk:'#F5F5F5', border:4,  bandFill:false, sub:'#9AA3AD',            hlt:'#6E7681',             accent:'#E23B3B', frame:2 },
-    azur:     { bg:'#DFF3F7', ink:'#0E3A46', band:'#FFFFFF', bandInk:'#0E3A46', border:7,  bandFill:true,  sub:'#3d7d8c',            hlt:'#6fa3ae',             accent:'#00A6C0', frame:4 },
-    kraft:    { bg:'#C9A66B', ink:'#2E2013', band:'#C9A66B', bandInk:'#2E2013', border:7,  bandFill:false, sub:'#5b4227',            hlt:'#6f5334',             accent:'#7A4E2D', frame:4 }
-  });
-  const S = STYLES[style] || STYLES.pop;   /* style inconnu → repli sûr, jamais un rendu vide */
-  g.fillStyle = S.bg; g.fillRect(0, 0, W, H);
-  const pad = 30, bandH = 168;
-  const pz = { x: pad, y: pad, w: W - 2 * pad, h: H - 2 * pad - bandH - 8 };
-  const rects = pcLayoutRects(pz, layout);
+  return {
+    nom: String(t.nom || '').toUpperCase(),
+    pays: String(t.pays || '').toUpperCase(),
+    dates: d ? `${d.in.split('-').reverse().slice(0,2).join('/')} – ${d.out.split('-').reverse().slice(0,2).join('/')}` : String(state.prefs?.when || 'souvenir').toUpperCase(),
+    hl: (state.cache.plan?.programme || []).flatMap(j => j.lieux || []).filter(Boolean).slice(0, 4)
+  };
+}
+/* règle la taille de police pour tenir dans `max` */
+function pcFit(g, txt, max, start, weight = '900', fam = 'Sora, Arial'){
+  let fs = start;
+  do { g.font = `${weight} ${fs}px ${fam}`; fs -= 2; } while(g.measureText(txt).width > max && fs > 14);
+  return Math.min(g.measureText(txt).width, max);
+}
+/* texte à lettres espacées (petites capitales type « eyebrow ») */
+function pcTrack(g, txt, x, y, sp = 3){
+  let cx = x; for(const ch of String(txt)){ g.fillText(ch, cx, y); cx += g.measureText(ch).width + sp; }
+  return cx - x - sp;
+}
+/* dessine les photos dans des rectangles, avec le traitement propre au style */
+function pcDrawPhotos(g, rects, photos, style, S, bare){
   rects.forEach((r, i) => {
-    const p = photos[i] || {};   /* slot au-delà des photos fournies → emplacement « PHOTO » */
+    const p = photos[i] || {};
     const [x, y, w, h] = r;
-    if(style === 'polaroid'){
+    if(!bare && style === 'polaroid'){
       const fr = 12, capH = 26;
-      /* petite ombre douce sous chaque polaroïd */
       g.fillStyle = 'rgba(0,0,0,.14)'; g.fillRect(x + 5, y + 6, w, h);
       g.fillStyle = '#fff'; g.fillRect(x, y, w, h);
       g.strokeStyle = '#141414'; g.lineWidth = 3; g.strokeRect(x, y, w, h);
       const ix = x + fr, iy = y + fr, iw = w - 2 * fr, ih = h - fr - capH;
       if(p.img) pcPhoto(g, p.img, ix, iy, iw, ih); else pcTile(g, ix, iy, iw, ih);
-      /* bande blanche du bas laissée vide (look polaroïd, pas de nom de lieu) */
-    }else{
-      if(style === 'pop'){ g.fillStyle = '#101010'; g.fillRect(x + 8, y + 8, w, h); }  /* ombre dure */
-      if(style === 'azur'){ g.fillStyle = '#fff'; g.fillRect(x - 6, y - 6, w + 12, h + 12); }  /* liseré blanc */
-      if(p.img) pcPhoto(g, p.img, x, y, w, h); else pcTile(g, x, y, w, h);
-      g.strokeStyle = S.ink; g.lineWidth = S.frame; g.strokeRect(x, y, w, h);
+      return;
     }
+    if(!bare && style === 'pop'){ g.fillStyle = '#101010'; g.fillRect(x + 8, y + 8, w, h); }
+    if(!bare && style === 'azur'){ g.fillStyle = '#fff'; g.fillRect(x - 6, y - 6, w + 12, h + 12); }
+    if(p.img) pcPhoto(g, p.img, x, y, w, h); else pcTile(g, x, y, w, h);
+    if(!bare){ g.strokeStyle = S.ink; g.lineWidth = S.frame; g.strokeRect(x, y, w, h); }
   });
-  /* bande de texte */
+}
+
+/* ---- MODÈLE 1 : Classique (photos en haut, bandeau d'infos en bas) ---- */
+function tplClassique(g, W, H, { S, I, style, layout, photos }){
+  const pad = 30, bandH = 168;
+  pcDrawPhotos(g, pcLayoutRects({ x:pad, y:pad, w:W - 2*pad, h:H - 2*pad - bandH - 8 }, layout), photos, style, S);
   const by = H - pad - bandH;
   if(S.bandFill){
-    g.fillStyle = S.band; g.fillRect(pad, by, W - 2 * pad, bandH);
-    g.strokeStyle = S.ink; g.lineWidth = S.frame; g.strokeRect(pad, by, W - 2 * pad, bandH);
+    g.fillStyle = S.band; g.fillRect(pad, by, W - 2*pad, bandH);
+    g.strokeStyle = S.ink; g.lineWidth = S.frame; g.strokeRect(pad, by, W - 2*pad, bandH);
   }else{
-    /* pas de bloc : un simple filet de séparation, plus élégant */
     g.strokeStyle = S.ink; g.globalAlpha = .35; g.lineWidth = 2;
-    g.beginPath(); g.moveTo(pad + 4, by + 2); g.lineTo(W - pad - 4, by + 2); g.stroke();
-    g.globalAlpha = 1;
+    g.beginPath(); g.moveTo(pad + 4, by + 2); g.lineTo(W - pad - 4, by + 2); g.stroke(); g.globalAlpha = 1;
   }
-  const tx = pad + 24, ink = S.bandInk;
-  const accent = S.accent;
-  /* faux timbre, côté droit de la bande (look carte postale) */
+  const tx = pad + 24;
   pcStamp(g, W - pad - 104, by + 16);
-  const txMax = W - 2 * pad - 150;   /* laisse la place au timbre */
-  /* titre = destination, ajusté à la largeur */
-  const nom = String(t.nom || '').toUpperCase();
-  let fs = 64; g.textAlign = 'left';
-  do { g.font = `900 ${fs}px Sora, Arial`; fs -= 2; } while(g.measureText(nom).width > txMax && fs > 22);
-  g.fillStyle = ink; g.fillText(nom, tx, by + 62);
-  const tw = Math.min(g.measureText(nom).width, txMax);
-  g.fillStyle = accent; g.fillRect(tx, by + 74, tw, 7);            /* soulignement accent */
-  g.font = '800 23px Inter, Arial';
-  g.fillStyle = S.sub;
-  g.fillText(`${String(t.pays || '').toUpperCase()}  ·  ${dates}`, tx, by + 112);
-  const hl = (state.cache.plan?.programme || []).flatMap(j => j.lieux || []).filter(Boolean).slice(0, 3).join('  ·  ');
-  if(hl){ g.font = '700 18px Inter, Arial'; g.fillStyle = S.hlt; g.fillText('📍 ' + hl.slice(0, 62), tx, by + 144); }
-  /* marque Acolite */
-  g.textAlign = 'right'; g.font = '900 19px Sora, Arial'; g.fillStyle = ink;
-  g.fillText('ACOLITE ✈', W - pad - 20, by + bandH - 16); g.textAlign = 'left';
-  /* cadre extérieur */
+  g.textAlign = 'left';
+  g.font = '800 12px Sora, Arial'; g.fillStyle = S.hlt;
+  pcTrack(g, 'CARNET DE VOYAGE', tx, by + 30, 3);          /* sur-titre */
+  const tw = pcFit(g, I.nom, W - 2*pad - 150, 58);
+  g.fillStyle = S.bandInk; g.fillText(I.nom, tx, by + 78);
+  g.fillStyle = S.accent; g.fillRect(tx, by + 90, tw, 7);
+  g.font = '800 22px Inter, Arial'; g.fillStyle = S.sub;
+  g.fillText(`${I.pays}  ·  ${I.dates}`, tx, by + 124);
+  if(I.hl.length){ g.font = '700 17px Inter, Arial'; g.fillStyle = S.hlt; g.fillText('📍 ' + I.hl.slice(0,3).join('  ·  ').slice(0,62), tx, by + 152); }
+  g.textAlign = 'right'; g.font = '900 19px Sora, Arial'; g.fillStyle = S.bandInk;
+  g.fillText('ACOLITE ✈', W - pad - 20, by + bandH - 14); g.textAlign = 'left';
+}
+
+/* ---- MODÈLE 2 : Magazine (photo plein cadre, titre en surimpression) ---- */
+function tplMagazine(g, W, H, { S, I, layout, photos, style }){
+  pcDrawPhotos(g, pcLayoutRects({ x:0, y:0, w:W, h:H }, layout), photos, style, S, true);
+  const gr = g.createLinearGradient(0, H * .38, 0, H);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(.55, 'rgba(0,0,0,.55)'); gr.addColorStop(1, 'rgba(0,0,0,.9)');
+  g.fillStyle = gr; g.fillRect(0, H * .38, W, H * .62);
+  g.fillStyle = S.accent; g.fillRect(0, 0, W, 12);            /* bandeau accent en haut */
+  const tx = 48;
+  g.textAlign = 'left';
+  /* sur-titre façon magazine, en haut à gauche */
+  g.fillStyle = 'rgba(255,255,255,.9)'; g.font = '800 13px Sora, Arial';
+  pcTrack(g, 'CARNET DE VOYAGE', tx, 56, 4);
+  const tw = pcFit(g, I.nom, W - 210, 86);
+  g.fillStyle = '#fff'; g.fillText(I.nom, tx, H - 112);
+  g.fillStyle = S.accent; g.fillRect(tx, H - 96, tw, 9);
+  g.font = '800 25px Inter, Arial'; g.fillStyle = 'rgba(255,255,255,.92)';
+  g.fillText(`${I.pays}  ·  ${I.dates}`, tx, H - 54);
+  if(I.hl.length){ g.font = '700 18px Inter, Arial'; g.fillStyle = 'rgba(255,255,255,.72)'; g.fillText('📍 ' + I.hl.slice(0,3).join('  ·  ').slice(0,64), tx, H - 22); }
+  pcStamp(g, W - 132, 32);
+  g.textAlign = 'right'; g.font = '900 18px Sora, Arial'; g.fillStyle = 'rgba(255,255,255,.85)';
+  g.fillText('ACOLITE ✈', W - 40, H - 22); g.textAlign = 'left';
+}
+
+/* ---- MODÈLE 3 : Dos de carte (message à gauche, timbre + adresse à droite) ---- */
+function tplDos(g, W, H, { S, I, photos, style }){
+  const pad = 44, mid = W / 2;
+  g.strokeStyle = S.ink; g.globalAlpha = .45; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(mid, pad); g.lineTo(mid, H - pad); g.stroke(); g.globalAlpha = 1;
+  /* gauche : vignette photo + « message » */
+  const lx = pad + 12, tw2 = 200, th = 148, p0 = photos[0] || {};
+  g.fillStyle = '#fff'; g.fillRect(lx - 7, pad + 4, tw2 + 14, th + 14);
+  g.strokeStyle = S.ink; g.lineWidth = 3; g.strokeRect(lx - 7, pad + 4, tw2 + 14, th + 14);
+  if(p0.img) pcPhoto(g, p0.img, lx, pad + 11, tw2, th); else pcTile(g, lx, pad + 11, tw2, th);
+  let my = pad + th + 82;
+  g.textAlign = 'left';
+  const lw = mid - pad - 60;
+  const tw3 = pcFit(g, I.nom, lw, 46);
+  g.fillStyle = S.ink; g.fillText(I.nom, lx, my);
+  g.fillStyle = S.accent; g.fillRect(lx, my + 13, tw3, 6);
+  my += 54;
+  g.font = '700 19px Inter, Arial'; g.fillStyle = S.sub;
+  g.fillText(`${I.pays} · ${I.dates}`, lx, my); my += 36;
+  g.font = '600 17px Inter, Arial'; g.fillStyle = S.hlt;
+  I.hl.slice(0, 4).forEach(l => { if(my < H - pad){ g.fillText('·  ' + String(l).slice(0, 32), lx, my); my += 28; } });
+  /* droite : timbre + lignes d'adresse */
+  const rx = mid + 46;
+  /* en-tête façon vraie carte postale */
+  g.font = '800 13px Sora, Arial'; g.fillStyle = S.hlt;
+  pcTrack(g, 'CARTE POSTALE · CORRESPONDANCE', rx, pad + 22, 3);
+  pcStamp(g, W - pad - 96, pad + 44);
+  pcPostmark(g, W - pad - 124, pad + 88, 38, I.pays.slice(0, 3), I.dates.slice(0, 5));
+  g.strokeStyle = S.ink; g.globalAlpha = .3; g.lineWidth = 2;
+  for(let i = 0, ay = H / 2 - 4; i < 4; i++, ay += 46){ g.beginPath(); g.moveTo(rx, ay); g.lineTo(W - pad - 16, ay); g.stroke(); }
+  g.globalAlpha = 1;
+  g.fillStyle = S.ink; g.font = '800 21px Inter, Arial';
+  g.fillText(I.nom.slice(0, 22), rx + 6, H / 2 - 12);
+  g.font = '700 18px Inter, Arial'; g.fillStyle = S.sub;
+  g.fillText(I.pays, rx + 6, H / 2 + 34);
+  g.fillText(I.dates, rx + 6, H / 2 + 80);
+  g.textAlign = 'right'; g.font = '900 17px Sora, Arial'; g.fillStyle = S.ink;
+  g.fillText('ACOLITE ✈', W - pad, H - pad + 10); g.textAlign = 'left';
+}
+
+/* ---- MODÈLE 4 : Pellicule (bande de film + infos dessous) ---- */
+function tplPellicule(g, W, H, { S, I, layout, photos, style }){
+  const sy = 64, sh = 312;
+  g.fillStyle = '#111'; g.fillRect(0, sy, W, sh);
+  g.fillStyle = S.bg;
+  for(let x = 16; x < W - 12; x += 44){ g.fillRect(x, sy + 13, 23, 16); g.fillRect(x, sy + sh - 29, 23, 16); }
+  /* marquages de pellicule (numéros de vue + marque du film) */
+  g.fillStyle = '#E8A33D'; g.font = '700 12px monospace'; g.textAlign = 'left';
+  g.fillText('ACOLITE 400  ·  12A   13   13A   14', 30, sy + 40);
+  g.fillText('→  ' + I.dates, 30, sy + sh - 34);
+  const n = layout === 'grande' ? 1 : layout === 'duo' ? 2 : 4;
+  const gp = 12, iw = (W - 60 - gp * (n - 1)) / n, iy = sy + 44, ih = sh - 88;
+  const rects = []; for(let i = 0; i < n; i++) rects.push([30 + i * (iw + gp), iy, iw, ih]);
+  pcDrawPhotos(g, rects, photos, style, S, true);
+  const tx = 44; const y = sy + sh + 72;
+  g.textAlign = 'left';
+  const tw = pcFit(g, I.nom, W - 250, 62);
+  g.fillStyle = S.ink; g.fillText(I.nom, tx, y);
+  g.fillStyle = S.accent; g.fillRect(tx, y + 14, tw, 7);
+  g.font = '800 22px Inter, Arial'; g.fillStyle = S.sub;
+  g.fillText(`${I.pays}  ·  ${I.dates}`, tx, y + 56);
+  if(I.hl.length){ g.font = '700 17px Inter, Arial'; g.fillStyle = S.hlt; g.fillText('📍 ' + I.hl.slice(0,3).join('  ·  ').slice(0,58), tx, y + 88); }
+  pcStamp(g, W - 138, H - 156);
+  g.textAlign = 'right'; g.font = '900 17px Sora, Arial'; g.fillStyle = S.ink;
+  g.fillText('ACOLITE ✈', W - 44, H - 26); g.textAlign = 'left';
+}
+
+/* ---- MODÈLE 5 : Mosaïque (1 grande + 2 petites, bloc d'infos en surimpression) ---- */
+function tplMosaique(g, W, H, { S, I, photos, style }){
+  const pad = 26, gp = 12;
+  const bigW = (W - 2*pad) * .60, colW = (W - 2*pad) - bigW - gp, zh = H - 2*pad, rh = (zh - gp) / 2;
+  pcDrawPhotos(g, [[pad, pad, bigW, zh]], [photos[0] || {}], style, S, true);
+  pcDrawPhotos(g, [[pad + bigW + gp, pad, colW, rh], [pad + bigW + gp, pad + rh + gp, colW, rh]],
+               [photos[1] || {}, photos[2] || {}], style, S, true);
+  /* bloc d'infos posé sur la grande photo */
+  const bw = bigW - 32, bh = 158, bx = pad + 16, by = H - pad - 20 - bh;
+  g.fillStyle = S.ink; g.globalAlpha = .92; g.fillRect(bx, by, bw, bh); g.globalAlpha = 1;
+  g.fillStyle = S.accent; g.fillRect(bx, by, 8, bh);
+  const tx = bx + 26;
+  g.textAlign = 'left'; g.fillStyle = S.bg;
+  g.font = '800 12px Sora, Arial'; pcTrack(g, 'CARNET DE VOYAGE', tx, by + 30, 3);
+  pcFit(g, I.nom, bw - 52, 46); g.fillStyle = S.bg; g.fillText(I.nom, tx, by + 76);
+  g.font = '800 19px Inter, Arial'; g.globalAlpha = .8;
+  g.fillText(`${I.pays}  ·  ${I.dates}`, tx, by + 108);
+  if(I.hl.length){ g.font = '700 15px Inter, Arial'; g.globalAlpha = .62; g.fillText('📍 ' + I.hl.slice(0,2).join('  ·  ').slice(0,40), tx, by + 136); }
+  g.globalAlpha = 1;
+  pcStamp(g, W - pad - 100, pad + 14);
+  /* signature posée sur une photo → blanc + ombre pour rester lisible */
+  g.textAlign = 'right'; g.font = '900 16px Sora, Arial';
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.fillText('ACOLITE ✈', W - pad - 11, H - pad - 7);
+  g.fillStyle = '#fff'; g.fillText('ACOLITE ✈', W - pad - 12, H - pad - 8); g.textAlign = 'left';
+}
+
+/* ---- MODÈLE 6 : Passeport (page de passeport + tampon d'entrée) ---- */
+function tplPasseport(g, W, H, { S, I, photos }){
+  const pad = 42;
+  g.textAlign = 'left'; g.fillStyle = S.ink; g.font = '900 20px Sora, Arial';
+  pcTrack(g, 'PASSEPORT · PASSPORT', pad, pad + 24, 4);
+  g.strokeStyle = S.ink; g.globalAlpha = .35; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(pad, pad + 42); g.lineTo(W - pad, pad + 42); g.stroke(); g.globalAlpha = 1;
+  const pw = 186, ph = 236, px = pad, py = pad + 70, p0 = photos[0] || {};
+  g.fillStyle = '#fff'; g.fillRect(px - 5, py - 5, pw + 10, ph + 10);
+  g.strokeStyle = S.ink; g.lineWidth = 3; g.strokeRect(px - 5, py - 5, pw + 10, ph + 10);
+  if(p0.img) pcPhoto(g, p0.img, px, py, pw, ph); else pcTile(g, px, py, pw, ph);
+  const fx = px + pw + 54; let fy = py + 10;
+  const field = (lbl, val) => {
+    g.font = '700 12px Inter, Arial'; g.fillStyle = S.hlt; pcTrack(g, lbl, fx, fy, 2);
+    g.fillStyle = S.ink; pcFit(g, String(val || '—'), W - fx - pad, 30);
+    g.fillText(String(val || '—'), fx, fy + 36); fy += 78;
+  };
+  field('DESTINATION / DESTINATION', I.nom);
+  field('PAYS / COUNTRY', I.pays);
+  field('DATES / DATES', I.dates);
+  pcPostmark(g, W - pad - 96, H - pad - 118, 44, I.pays.slice(0, 3), I.dates.slice(0, 5));
+  /* bande lisible par machine, façon passeport */
+  g.fillStyle = S.ink; g.globalAlpha = .1; g.fillRect(pad, H - pad - 54, W - 2*pad, 54); g.globalAlpha = 1;
+  g.font = '700 17px monospace'; g.fillStyle = S.ink;
+  const mrz = ('ACO<' + I.nom.replace(/[^A-Z0-9]/gi, '<') + '<<' + I.pays.replace(/[^A-Z0-9]/gi, '<')).slice(0, 42).padEnd(42, '<');
+  g.fillText(mrz, pad + 12, H - pad - 20);
+}
+
+/* ---- MODÈLE 7 : Minimal (une photo centrée, typo aérée) ---- */
+function tplMinimal(g, W, H, { S, I, photos, style }){
+  const pw = W * .52, ph = H * .44, px = (W - pw) / 2, py = H * .12, p0 = photos[0] || {};
+  if(p0.img) pcPhoto(g, p0.img, px, py, pw, ph); else pcTile(g, px, py, pw, ph);
+  g.strokeStyle = S.ink; g.lineWidth = 2; g.strokeRect(px, py, pw, ph);
+  g.textAlign = 'center';
+  const cy = py + ph + 62;
+  g.fillStyle = S.hlt; g.font = '800 11px Sora, Arial';
+  const ew = g.measureText('CARNET DE VOYAGE').width + 15 * 3;
+  pcTrack(g, 'CARNET DE VOYAGE', W / 2 - ew / 2, cy - 34, 3);
+  pcFit(g, I.nom, W * .8, 52); g.fillStyle = S.ink; g.fillText(I.nom, W / 2, cy);
+  g.fillStyle = S.accent; g.fillRect(W / 2 - 32, cy + 18, 64, 5);
+  g.font = '700 20px Inter, Arial'; g.fillStyle = S.sub;
+  g.fillText(`${I.pays}  ·  ${I.dates}`, W / 2, cy + 60);
+  if(I.hl.length){ g.font = '600 16px Inter, Arial'; g.fillStyle = S.hlt; g.fillText(I.hl.slice(0,3).join('   ·   ').slice(0,56), W / 2, cy + 92); }
+  g.font = '900 15px Sora, Arial'; g.fillStyle = S.ink; g.fillText('ACOLITE ✈', W / 2, H - 34);
+  g.textAlign = 'left';
+}
+
+/* ---- MODÈLE 8 : Portrait (format vertical, façon story) ---- */
+function tplVertical(g, W, H, { S, I, layout, photos, style }){
+  const pad = 26, pzh = H * .54;
+  pcDrawPhotos(g, pcLayoutRects({ x: pad, y: pad, w: W - 2*pad, h: pzh }, layout), photos, style, S);
+  const tx = pad + 8; let y = pad + pzh + 78;
+  g.textAlign = 'left';
+  g.font = '800 12px Sora, Arial'; g.fillStyle = S.hlt;
+  pcTrack(g, 'CARNET DE VOYAGE', tx, y - 48, 3);
+  const tw = pcFit(g, I.nom, W - 2*pad - 16, 58);
+  g.fillStyle = S.ink; g.fillText(I.nom, tx, y);
+  g.fillStyle = S.accent; g.fillRect(tx, y + 16, tw, 8);
+  g.font = '800 21px Inter, Arial'; g.fillStyle = S.sub;
+  g.fillText(`${I.pays}  ·  ${I.dates}`, tx, y + 58);
+  g.font = '700 17px Inter, Arial'; g.fillStyle = S.hlt;
+  let ly = y + 100;
+  I.hl.slice(0, 4).forEach(l => { if(ly < H - 70){ g.fillText('📍 ' + String(l).slice(0, 28), tx, ly); ly += 30; } });
+  pcStamp(g, W - pad - 96, pad + pzh + 16);
+  g.textAlign = 'right'; g.font = '900 17px Sora, Arial'; g.fillStyle = S.ink;
+  g.fillText('ACOLITE ✈', W - pad - 8, H - 28); g.textAlign = 'left';
+}
+
+function drawPostcard(g, W, H, style, layout, photos, t){
+  const S = PC_PALETTES[style] || PC_PALETTES.pop;   /* style inconnu → repli sûr */
+  const I = pcInfo(t);
+  g.fillStyle = S.bg; g.fillRect(0, 0, W, H);
+  const TPL = { classique: tplClassique, magazine: tplMagazine, dos: tplDos, pellicule: tplPellicule,
+                mosaique: tplMosaique, passeport: tplPasseport, minimal: tplMinimal, vertical: tplVertical };
+  (TPL[_pcTemplate] || tplClassique)(g, W, H, { S, I, style, layout, photos });
   g.strokeStyle = S.ink; g.lineWidth = S.border; g.strokeRect(S.border / 2, S.border / 2, W - S.border, H - S.border);
 }
 function renderPostcard(){
   const t = state.trip; if(!t) return;
-  const W = 1000, H = 700, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  /* chaque modèle peut imposer son format (ex : « Portrait » est vertical) */
+  const tpl = PC_TEMPLATES.find(x => x.id === _pcTemplate) || PC_TEMPLATES[0];
+  const W = tpl.w || 1000, H = tpl.h || 700;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   drawPostcard(cv.getContext('2d'), W, H, _pcStyle, _pcLayout, _pcPhotos || [], t);
   window._pcCanvas = cv;
   const img = $('#pcImg');
@@ -3984,6 +4337,8 @@ function renderPostcard(){
 }
 document.addEventListener('click', e => {
   if(e.target.closest('[data-postcard]')){ openPostcard(); return; }
+  const tp = e.target.closest('[data-pctpl]');
+  if(tp){ _pcTemplate = tp.dataset.pctpl; pcChips(); renderPostcard(); return; }
   const st = e.target.closest('[data-pcstyle]');
   if(st){ _pcStyle = st.dataset.pcstyle; pcChips(); renderPostcard(); return; }
   const ly = e.target.closest('[data-pclayout]');

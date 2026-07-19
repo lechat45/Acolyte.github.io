@@ -382,6 +382,18 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .toggle button.on{background:var(--primary);border-color:var(--stroke)}
 
 /* ===== Timeline ===== */
+/* ===== Détail horaire d'une journée (déplié sous le jour) ===== */
+.day-detail:not(:empty){
+  margin:4px 0 18px;padding:18px 14px 2px;
+  border:2px solid var(--stroke);border-radius:12px;background:var(--bg);
+  animation:pop .3s ease both;
+}
+/* ===== Carte « Aujourd'hui » (mode Jour J) ===== */
+.today-card{background:var(--primary);box-shadow:5px 5px 0 var(--stroke)}
+.today-card h3,.today-card h4{color:#101010}
+.today-card .hint,.today-card .sub{color:rgba(16,16,16,.78)}
+.today-card .btn{background:var(--secondary);color:var(--txt)}
+
 .timeline{position:relative;padding-left:30px}
 .timeline::before{content:'';position:absolute;left:10px;top:6px;bottom:6px;width:4px;background:var(--stroke)}
 .tl-item{position:relative;padding:0 0 24px 16px;animation:pop .35s ease both}
@@ -1021,7 +1033,12 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   background:var(--secondary);color:var(--txt);
   border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);border-radius:12px;
   padding:11px 12px;font-family:'Sora',sans-serif;font-weight:900;font-size:.78rem;
-  text-decoration:none;white-space:nowrap;
+  text-decoration:none;white-space:nowrap;cursor:pointer;
+}
+.mapbar .rt:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--stroke)}
+.mapbar .rt.nav{padding:9px 13px;font-size:1.1rem;line-height:1}
+@media(max-width:560px){
+  .mapbar #projOpen{display:none}       /* petit écran : ‹ › + 🧭 suffisent */
 }
 
 /* ===== Panneau Préférences ===== */
