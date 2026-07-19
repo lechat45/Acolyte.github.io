@@ -81,7 +81,31 @@ let state = {
   propAnswers: []     // réponses d'affinage des propositions
 };
 
-function save(){ localStorage.setItem(LS_TRIP, JSON.stringify(state)); }
+/* Écriture localStorage tolérante : en navigation privée ou stockage plein,
+   setItem lève une exception — ici on ne casse jamais le flux appelant. */
+function lsSet(k, v){ try{ localStorage.setItem(k, v); return true; }catch(e){ return false; } }
+
+/* save() ne doit JAMAIS lever d'exception : il est appelé partout (choix du voyage,
+   navigation, dépenses…) et un quota dépassé bloquerait l'action en cours. */
+function save(){
+  try{
+    localStorage.setItem(LS_TRIP, JSON.stringify(state));
+  }catch(e){
+    /* stockage plein → on ne garde que l'essentiel et on réessaie */
+    try{
+      const slim = {
+        ...state,
+        cache: { plan: state.cache?.plan, _real: state.cache?._real },
+        chatLog: (state.chatLog || []).slice(-10)
+      };
+      localStorage.setItem(LS_TRIP, JSON.stringify(slim));
+      state.cache = slim.cache;
+      toast('💾 Stockage plein — cache allégé');
+    }catch(e2){
+      toast('⚠️ Sauvegarde impossible (stockage plein ou désactivé)');
+    }
+  }
+}
 function load(){
   try{ const s = JSON.parse(localStorage.getItem(LS_TRIP)); if(s) state = {...state, ...s}; }catch(e){}
 }
@@ -140,8 +164,8 @@ async function resolveGemModel(key, force = false){
     || names.find(n => n.includes('flash') && !n.includes('image') && !n.includes('tts'))
     || names[0];
   if(!pick) throw new Error('LIST:Aucun modèle compatible sur cette clé.');
-  localStorage.setItem(LS_GEMM, pick);
-  localStorage.setItem('acolite_gem_names', JSON.stringify(names)); /* pour la bascule auto */
+  lsSet(LS_GEMM, pick);
+  lsSet('acolite_gem_names', JSON.stringify(names)); /* pour la bascule auto */
   return pick;
 }
 
@@ -228,7 +252,7 @@ async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, 
     const next = nextGemModel(model);
     if(next && next !== model){
       GEM_OVERRIDE = next;
-      localStorage.setItem(LS_GEMM, next);
+      lsSet(LS_GEMM, next);
       return gemini(prompt, expectJson, maxTok, false, temp, _hops + 1);
     }
   }
@@ -278,7 +302,7 @@ async function groq(prompt, expectJson = true, maxTok = 2048, _retryModel = fals
     /* modèle retiré par Groq → on passe au suivant de la liste et on mémorise */
     const cur = groqModel();
     const next = GROQ_PREFERRED[GROQ_PREFERRED.indexOf(cur) + 1] || GROQ_PREFERRED.find(m => m !== cur);
-    if(next && next !== cur){ localStorage.setItem(LS_GROQM, next); return groq(prompt, expectJson, maxTok, true); }
+    if(next && next !== cur){ lsSet(LS_GROQM, next); return groq(prompt, expectJson, maxTok, true); }
   }
   if(!r.ok) throw new Error('GROQ_HTTP ' + r.status);
   const d = await r.json();
@@ -630,6 +654,7 @@ function reopenTrip(i){
   if(x.prefs) state.prefs = x.prefs;
   state.cache = {}; state.checklist = {}; state.spends = []; state.chatLog = []; state.notes = ''; state.resas = [];
   state._geo = null; state.planAnswers = []; state._qsDone = false; _onSiteDone = false;
+  _pcPhotos = null;   /* sinon la carte postale garderait les photos du voyage précédent */
   save();
   unlockSteps();
   toast(`On repart pour ${x.trip.nom} ! ✈️`);
@@ -645,6 +670,7 @@ function chooseTrip(i){
   pushHistory(state.trip);
   state.cache = {}; state.checklist = {}; state.spends = []; state.chatLog = []; state.notes = ''; state.resas = [];
   state._geo = null; state.planAnswers = []; state._qsDone = false; _onSiteDone = false;
+  _pcPhotos = null;   /* photos de carte postale liées au voyage précédent */
   save();
   unlockSteps();
   toast(`Cap sur ${state.trip.nom} ! ✈️`);
@@ -1136,7 +1162,7 @@ async function loadHotels(force = false){
       if(!rows.length) throw new Error('aucun tarif pour ces dates');
       rows.sort((a, b) => (a.priceFrom || a.priceAvg) - (b.priceFrom || b.priceAvg));
       state.cache[ck] = rows.slice(0, 8); save();
-      localStorage.setItem('acolite_relay', r.nom);
+      lsSet('acolite_relay', r.nom);
       renderHotels(state.cache[ck], r.nom);
       return;
     }catch(e){
@@ -2829,7 +2855,7 @@ const _e16 = $('#btnReset'); if(_e16) _e16.onclick = () => {
 const LS_USER = 'acolite_user';
 const LS_AUTH = 'acolite_logged';
 const getUser = () => { try{ return JSON.parse(localStorage.getItem(LS_USER)); }catch(e){ return null; } };
-const setUser = u => localStorage.setItem(LS_USER, JSON.stringify(u));
+const setUser = u => lsSet(LS_USER, JSON.stringify(u));
 
 async function sha(txt){
   try{
@@ -2916,7 +2942,7 @@ const _e22 = $('#btnVerify'); if(_e22) _e22.onclick = async () => {
     return authErr(`Code incorrect (${5 - u.tries} essai${5-u.tries>1?'s':''} restant) — vérifie tes emails et les spams.`);
   }
   u.verified = true; delete u.code; delete u.codeH; delete u.tries; delete u.codeAt; setUser(u);
-  localStorage.setItem(LS_AUTH, '1');
+  lsSet(LS_AUTH, '1');
   authErr('');
   enterApp();
   toast('Compte vérifié — bienvenue ! 🎉');
@@ -2932,7 +2958,7 @@ const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
     $('#vfEmail').textContent = u.email; authShow('authVerify'); sendVerifyEmail(u.email, code);
     return;
   }
-  localStorage.setItem(LS_AUTH, '1');
+  lsSet(LS_AUTH, '1');
   enterApp();
   toast('Re-bonjour ' + email.split('@')[0] + ' 👋');
 };
@@ -3034,7 +3060,11 @@ const SET_DEF = {
   verif: true,          /* relecture croisée par une 2e IA */
   reels: true,          /* données réelles (météo, trains, fériés…) */
   font: 100,
-  motion: true          /* animations */
+  motion: true,         /* animations */
+  theme: 'auto',        /* auto (système) | light | dark */
+  homeCity: '',         /* ville de départ pré-remplie à chaque nouveau voyage */
+  defAdults: 2,         /* voyageurs par défaut */
+  defKids: 0
 };
 let SET = { ...SET_DEF };
 function loadSettings(){
@@ -3048,6 +3078,7 @@ function saveSettings(){
 function applySettings(){
   document.documentElement.style.fontSize = (SET.font || 100) + '%';
   document.documentElement.classList.toggle('no-motion', !SET.motion);
+  applyTheme();
 }
 
 /* Ce bloc part dans TOUS les prompts : l'IA connaît enfin tes goûts */
@@ -3079,6 +3110,7 @@ const OPT = {
   stFood:   { key:'food',   items:[['aucun','🍽️ Aucune contrainte'],['vege','🥗 Végétarien'],['vegan','🌱 Végan'],['halal','☪️ Halal'],['casher','✡️ Casher'],['sansgluten','🌾 Sans gluten']] },
   stAcces:  { key:'acces',  items:[['non','✅ Aucun besoin'],['oui','♿ Mobilité réduite']] },
   stEco:    { key:'eviter', multi:true, items:[['avion','✈️ Éviter l\'avion'],['train','🚆 Éviter le train'],['voiture','🚗 Éviter la voiture']] },
+  stTheme:  { key:'theme',  items:[['auto','🖥 Système'],['light','☀️ Clair'],['dark','🌙 Sombre']] },
   stIA:     { key:null,     toggles:[['verif','🔍 Relecture par une 2e IA'],['reels','📡 Données réelles (météo, trains, fériés)']] },
   stUI:     { key:null,     toggles:[['motion','✨ Animations']] }
 };
@@ -3100,6 +3132,20 @@ function renderSettings(){
   const dt = $('#stDetail'); if(dt) dt.value = SET.detail;
   const f = $('#stFont'); if(f) f.value = SET.font;
   const fv = $('#stFsVal'); if(fv) fv.textContent = SET.font + ' %';
+  const hc = $('#stHome'); if(hc) hc.value = SET.homeCity || '';
+  const sa = $('#stAdults'); if(sa) sa.value = String(SET.defAdults ?? 2);
+  const sk = $('#stKids'); if(sk) sk.value = String(SET.defKids ?? 0);
+}
+/* Valeurs par défaut → pré-remplissage du questionnaire (uniquement si vide) */
+function applyTripDefaults(){
+  const from = $('#fFrom'); if(from && !from.value.trim() && SET.homeCity) from.value = SET.homeCity;
+  const ad = $('#fAdults'); if(ad && SET.defAdults) ad.value = String(SET.defAdults);
+  const ki = $('#fKids'); if(ki && SET.defKids !== undefined) ki.value = String(SET.defKids);
+}
+{
+  const hc = $('#stHome'); if(hc) hc.onchange = () => { SET.homeCity = hc.value.trim().slice(0, 60); saveSettings(); applyTripDefaults(); toast('🏠 Ville de départ par défaut enregistrée'); };
+  const sa = $('#stAdults'); if(sa) sa.onchange = () => { SET.defAdults = +sa.value || 2; saveSettings(); applyTripDefaults(); };
+  const sk = $('#stKids'); if(sk) sk.onchange = () => { SET.defKids = +sk.value || 0; saveSettings(); applyTripDefaults(); };
 }
 document.addEventListener('click', e => {
   const c = e.target.closest('[data-set]');
@@ -3289,8 +3335,16 @@ const _e27 = $('#pfLogout'); if(_e27) _e27.onclick = () => {
   requireAuth();
 };
 const LS_THEME = 'acolite_theme';
+const _sysDark = () => window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+/* 3 modes : auto (suit le système) · light · dark.
+   On reste compatible avec l'ancien réglage stocké dans LS_THEME. */
+function themeMode(){
+  if(SET?.theme) return SET.theme;
+  return localStorage.getItem(LS_THEME) === 'dark' ? 'dark' : 'auto';
+}
 function applyTheme(){
-  const dark = localStorage.getItem(LS_THEME) === 'dark';
+  const mode = themeMode();
+  const dark = mode === 'dark' || (mode === 'auto' && _sysDark());
   document.documentElement.dataset.theme = dark ? 'dark' : '';
   document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.remove());
   const m = document.createElement('meta');
@@ -3298,11 +3352,13 @@ function applyTheme(){
   m.content = dark ? '#0B0B10' : '#FFE600';
   document.head.appendChild(m);
 }
+/* le mode « Système » réagit en direct au changement de thème de l'appareil */
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if(themeMode() === 'auto') applyTheme(); });
 const _e28 = $('#pfTheme'); if(_e28) _e28.onclick = () => {
-  const cur = localStorage.getItem(LS_THEME) === 'dark' ? '' : 'dark';
-  cur ? localStorage.setItem(LS_THEME, cur) : localStorage.removeItem(LS_THEME);
-  applyTheme();
-  toast(cur ? '🌙 Vol de nuit activé' : '☀️ Retour au jour');
+  const dark = document.documentElement.dataset.theme === 'dark';
+  SET.theme = dark ? 'light' : 'dark';
+  saveSettings(); renderSettings();
+  toast(SET.theme === 'dark' ? '🌙 Vol de nuit activé' : '☀️ Retour au jour');
 };
 applyTheme();
 
@@ -3409,6 +3465,7 @@ function importPayload(str){
   state.destinations = [o.trip];
   state.cache = {}; state.checklist = {}; state.spends = []; state.notes = ''; state.resas = [];
   state.planAnswers = []; state._qsDone = false; state.modeManual = false;
+  _pcPhotos = null;   /* photos de carte postale liées au voyage précédent */
   save(); unlockSteps();
   switchCat('trip');
   gotoStep(3);
@@ -3742,7 +3799,10 @@ document.addEventListener('click', e => { if(e.target.closest('[data-passpng]'))
    CARTE POSTALE — choix du style + mise en page des photos
    Photos : Wikipédia si dispo, sinon vignette illustrée. Export canvas.
 ============================================================ */
-const PC_STYLES  = [{id:'pop', nom:'Pop'}, {id:'polaroid', nom:'Polaroïd'}, {id:'retro', nom:'Rétro'}];
+const PC_STYLES  = [
+  {id:'pop', nom:'Pop'}, {id:'polaroid', nom:'Polaroïd'}, {id:'retro', nom:'Rétro'},
+  {id:'noir', nom:'Cinéma'}, {id:'azur', nom:'Bord de mer'}, {id:'kraft', nom:'Kraft'}
+];
 const PC_LAYOUTS = [{id:'grande', nom:'Une grande'}, {id:'duo', nom:'Deux'}, {id:'collage', nom:'Collage'}];
 let _pcStyle = 'pop', _pcLayout = 'grande', _pcPhotos = null;
 
@@ -3793,6 +3853,20 @@ function pcCover(g, img, x, y, w, h){
   else { sw = img.width; sh = sw / rr; sx = 0; sy = (img.height - sh) / 2; }
   g.drawImage(img, sx, sy, sw, sh, x, y, w, h);
 }
+/* Photo BIEN CADRÉE : l'image entière est visible (jamais rognée),
+   posée sur une version floutée d'elle-même qui remplit le cadre. */
+function pcPhoto(g, img, x, y, w, h){
+  g.save();
+  g.beginPath(); g.rect(x, y, w, h); g.clip();
+  try{ g.filter = 'blur(18px) brightness(.6)'; }catch(e){}
+  pcCover(g, img, x - 24, y - 24, w + 48, h + 48);   /* fond flou débordant */
+  try{ g.filter = 'none'; }catch(e){}
+  const ir = img.width / img.height, rr = w / h;
+  let dw, dh;
+  if(ir > rr){ dw = w; dh = w / ir; } else { dh = h; dw = h * ir; }
+  g.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);  /* image entière, centrée */
+  g.restore();
+}
 /* Emplacement vide : juste une icône + le mot PHOTO (l'utilisateur y mettra sa photo). */
 function pcTile(g, x, y, w, h){
   g.fillStyle = '#E7E2D6'; g.fillRect(x, y, w, h);
@@ -3817,9 +3891,11 @@ function pcStamp(g, x, y){
   g.fillStyle = '#2b2b2b'; g.font = '900 10px Sora, Arial'; g.fillText('PAR AVION', x + w / 2, y + h - 14);
   g.textAlign = 'left';
 }
-function pcLayoutRects(pz, layout, n){
+/* La disposition dépend UNIQUEMENT du choix de l'utilisateur : les emplacements
+   en trop affichent un pavé « PHOTO » (avant, 1 seule photo forçait la grande image). */
+function pcLayoutRects(pz, layout){
   const gp = 14, rects = [];
-  if(layout === 'grande' || n <= 1){ rects.push([pz.x, pz.y, pz.w, pz.h]); }
+  if(layout === 'grande'){ rects.push([pz.x, pz.y, pz.w, pz.h]); }
   else if(layout === 'duo'){
     const w = (pz.w - gp) / 2;
     rects.push([pz.x, pz.y, w, pz.h], [pz.x + w + gp, pz.y, w, pz.h]);
@@ -3832,15 +3908,19 @@ function pcLayoutRects(pz, layout, n){
 function drawPostcard(g, W, H, style, layout, photos, t){
   const d = stayDates();
   const dates = d ? `${d.in.split('-').reverse().slice(0,2).join('/')} – ${d.out.split('-').reverse().slice(0,2).join('/')}` : String(state.prefs?.when || 'souvenir').toUpperCase();
-  const S = {
-    pop:      { bg:'#FFE600', ink:'#101010', band:'#101010', bandInk:'#FFE600', border:10, titleFont:'900 66px Sora, Arial' },
-    polaroid: { bg:'#ECECEC', ink:'#141414', band:'#FFFFFF', bandInk:'#141414', border:6,  titleFont:'900 58px Sora, Arial' },
-    retro:    { bg:'#F1E7CE', ink:'#3B2E20', band:'#F1E7CE', bandInk:'#3B2E20', border:6,  titleFont:'900 60px Sora, Georgia, serif' }
-  }[style];
+  const STYLES = ({
+    pop:      { bg:'#FFE600', ink:'#101010', band:'#101010', bandInk:'#FFE600', border:10, bandFill:true,  sub:'rgba(255,230,0,.9)',  hlt:'rgba(255,230,0,.65)', accent:'#FFE600', frame:6 },
+    polaroid: { bg:'#ECECEC', ink:'#141414', band:'#FFFFFF', bandInk:'#141414', border:6,  bandFill:true,  sub:'#555',               hlt:'#8a8a8a',             accent:'#FF6B00', frame:3 },
+    retro:    { bg:'#F1E7CE', ink:'#3B2E20', band:'#F1E7CE', bandInk:'#3B2E20', border:6,  bandFill:false, sub:'#6b5a44',            hlt:'#8a7a63',             accent:'#C0392B', frame:3 },
+    noir:     { bg:'#14171C', ink:'#F2F2F2', band:'#14171C', bandInk:'#F5F5F5', border:4,  bandFill:false, sub:'#9AA3AD',            hlt:'#6E7681',             accent:'#E23B3B', frame:2 },
+    azur:     { bg:'#DFF3F7', ink:'#0E3A46', band:'#FFFFFF', bandInk:'#0E3A46', border:7,  bandFill:true,  sub:'#3d7d8c',            hlt:'#6fa3ae',             accent:'#00A6C0', frame:4 },
+    kraft:    { bg:'#C9A66B', ink:'#2E2013', band:'#C9A66B', bandInk:'#2E2013', border:7,  bandFill:false, sub:'#5b4227',            hlt:'#6f5334',             accent:'#7A4E2D', frame:4 }
+  });
+  const S = STYLES[style] || STYLES.pop;   /* style inconnu → repli sûr, jamais un rendu vide */
   g.fillStyle = S.bg; g.fillRect(0, 0, W, H);
   const pad = 30, bandH = 168;
   const pz = { x: pad, y: pad, w: W - 2 * pad, h: H - 2 * pad - bandH - 8 };
-  const rects = pcLayoutRects(pz, layout, photos.length || 1);
+  const rects = pcLayoutRects(pz, layout);
   rects.forEach((r, i) => {
     const p = photos[i] || {};   /* slot au-delà des photos fournies → emplacement « PHOTO » */
     const [x, y, w, h] = r;
@@ -3851,23 +3931,30 @@ function drawPostcard(g, W, H, style, layout, photos, t){
       g.fillStyle = '#fff'; g.fillRect(x, y, w, h);
       g.strokeStyle = '#141414'; g.lineWidth = 3; g.strokeRect(x, y, w, h);
       const ix = x + fr, iy = y + fr, iw = w - 2 * fr, ih = h - fr - capH;
-      if(p.img) pcCover(g, p.img, ix, iy, iw, ih); else pcTile(g, ix, iy, iw, ih);
+      if(p.img) pcPhoto(g, p.img, ix, iy, iw, ih); else pcTile(g, ix, iy, iw, ih);
       /* bande blanche du bas laissée vide (look polaroïd, pas de nom de lieu) */
     }else{
       if(style === 'pop'){ g.fillStyle = '#101010'; g.fillRect(x + 8, y + 8, w, h); }  /* ombre dure */
-      if(p.img) pcCover(g, p.img, x, y, w, h); else pcTile(g, x, y, w, h);
-      g.strokeStyle = S.ink; g.lineWidth = style === 'pop' ? 6 : 3; g.strokeRect(x, y, w, h);
+      if(style === 'azur'){ g.fillStyle = '#fff'; g.fillRect(x - 6, y - 6, w + 12, h + 12); }  /* liseré blanc */
+      if(p.img) pcPhoto(g, p.img, x, y, w, h); else pcTile(g, x, y, w, h);
+      g.strokeStyle = S.ink; g.lineWidth = S.frame; g.strokeRect(x, y, w, h);
     }
   });
   /* bande de texte */
   const by = H - pad - bandH;
-  if(style !== 'retro'){ g.fillStyle = S.band; g.fillRect(pad, by, W - 2 * pad, bandH); }
-  g.strokeStyle = S.ink; g.lineWidth = style === 'pop' ? 6 : 3;
-  if(style !== 'retro') g.strokeRect(pad, by, W - 2 * pad, bandH);
+  if(S.bandFill){
+    g.fillStyle = S.band; g.fillRect(pad, by, W - 2 * pad, bandH);
+    g.strokeStyle = S.ink; g.lineWidth = S.frame; g.strokeRect(pad, by, W - 2 * pad, bandH);
+  }else{
+    /* pas de bloc : un simple filet de séparation, plus élégant */
+    g.strokeStyle = S.ink; g.globalAlpha = .35; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(pad + 4, by + 2); g.lineTo(W - pad - 4, by + 2); g.stroke();
+    g.globalAlpha = 1;
+  }
   const tx = pad + 24, ink = S.bandInk;
-  const accent = style === 'pop' ? '#FFE600' : (style === 'polaroid' ? '#FF6B00' : '#C0392B');
+  const accent = S.accent;
   /* faux timbre, côté droit de la bande (look carte postale) */
-  pcStamp(g, W - pad - 104, by + 16, style);
+  pcStamp(g, W - pad - 104, by + 16);
   const txMax = W - 2 * pad - 150;   /* laisse la place au timbre */
   /* titre = destination, ajusté à la largeur */
   const nom = String(t.nom || '').toUpperCase();
@@ -3877,10 +3964,10 @@ function drawPostcard(g, W, H, style, layout, photos, t){
   const tw = Math.min(g.measureText(nom).width, txMax);
   g.fillStyle = accent; g.fillRect(tx, by + 74, tw, 7);            /* soulignement accent */
   g.font = '800 23px Inter, Arial';
-  g.fillStyle = style === 'pop' ? 'rgba(255,230,0,.9)' : (style === 'polaroid' ? '#555' : '#6b5a44');
+  g.fillStyle = S.sub;
   g.fillText(`${String(t.pays || '').toUpperCase()}  ·  ${dates}`, tx, by + 112);
   const hl = (state.cache.plan?.programme || []).flatMap(j => j.lieux || []).filter(Boolean).slice(0, 3).join('  ·  ');
-  if(hl){ g.font = '700 18px Inter, Arial'; g.fillStyle = style === 'pop' ? 'rgba(255,230,0,.65)' : '#8a7a63'; g.fillText('📍 ' + hl.slice(0, 62), tx, by + 144); }
+  if(hl){ g.font = '700 18px Inter, Arial'; g.fillStyle = S.hlt; g.fillText('📍 ' + hl.slice(0, 62), tx, by + 144); }
   /* marque Acolite */
   g.textAlign = 'right'; g.font = '900 19px Sora, Arial'; g.fillStyle = ink;
   g.fillText('ACOLITE ✈', W - pad - 20, by + bandH - 16); g.textAlign = 'left';
@@ -3916,8 +4003,10 @@ function pcUseFiles(files){
     const ok = ps.filter(Boolean);
     if(!ok.length){ toast('Photos illisibles'); return; }
     _pcPhotos = ok;
-    /* adapte la disposition au nombre de photos fournies */
-    _pcLayout = ok.length >= 3 ? 'collage' : ok.length === 2 ? 'duo' : 'grande';
+    /* on ne force la disposition que si elle est trop petite pour montrer toutes les photos —
+       sinon on respecte le choix de l'utilisateur (ex : 1 photo en « Collage »). */
+    const slots = { grande:1, duo:2, collage:4 }[_pcLayout] || 1;
+    if(ok.length > slots) _pcLayout = ok.length >= 3 ? 'collage' : 'duo';
     pcChips(); renderPostcard();
     toast(`📸 ${ok.length} photo(s) ajoutée(s)`);
   });
@@ -4103,6 +4192,8 @@ if(state.prefs){
   if(state.prefs.adults) $('#fAdults').value = state.prefs.adults;
   if(state.prefs.kids !== undefined) $('#fKids').value = state.prefs.kids;
   if(state.prefs.free) $('#fFree').value = (state.prefs.free||'').split(' | Affinage :')[0];
+}else{
+  applyTripDefaults();   /* pas encore de voyage → on pré-remplit avec les valeurs par défaut */
 }
 unlockSteps();
 if(state.lastProps) renderDestinations(state.lastProps);
