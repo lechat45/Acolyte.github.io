@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acolite — image de présentation</title>
+<style>
+  body{margin:0;background:#2b2b2b;display:flex;flex-direction:column;align-items:center;gap:18px;padding:24px;font-family:Arial,sans-serif}
+  canvas{max-width:100%;height:auto;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  button{font:900 16px 'Sora',Arial,sans-serif;padding:14px 28px;background:#FFE600;border:3px solid #101010;box-shadow:5px 5px 0 #101010;cursor:pointer;border-radius:8px}
+  button:active{transform:translate(3px,3px);box-shadow:1px 1px 0 #101010}
+  p{color:#aaa;font-size:13px;margin:0}
+</style>
+</head>
+<body>
+<canvas id="cv" width="1200" height="630"></canvas>
+<button id="dl">⬇ Télécharger promo.png (1200×630)</button>
+<p>Format idéal pour les réseaux sociaux et l'aperçu de lien (og:image).</p>
+<script>
+const cv = document.getElementById('cv'), g = cv.getContext('2d');
+/* repli pour les navigateurs sans roundRect (Safari < 16) */
+if(!g.roundRect){
+  g.roundRect = function(x, y, w, h, r){
+    r = Math.min(r, w / 2, h / 2);
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+  };
+}
+const Y = '#FFE600', K = '#101010', PAPER = '#F4F3EF', W = 1200, H = 630;
+
+/* fond papier à pois */
+g.fillStyle = PAPER; g.fillRect(0, 0, W, H);
+g.fillStyle = 'rgba(0,0,0,.07)';
+for(let x = 14; x < W; x += 26) for(let y = 14; y < H; y += 26){ g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fill(); }
+
+function hardRect(x, y, w, h, fill, shadow = 8, stroke = 4, r = 0){
+  g.fillStyle = K; g.fillRect(x + shadow, y + shadow, w, h);
+  g.fillStyle = fill; g.fillRect(x, y, w, h);
+  g.strokeStyle = K; g.lineWidth = stroke; g.strokeRect(x, y, w, h);
+}
+
+/* ============ COLONNE GAUCHE : marque + slogan + points forts ============ */
+/* logo */
+hardRect(64, 64, 74, 74, K, 7, 4);
+g.fillStyle = Y; g.font = '900 46px Arial'; g.textAlign = 'center'; g.fillText('A', 101, 118); g.textAlign = 'left';
+g.fillStyle = K; g.font = '900 64px Arial';
+g.fillText('ACOLITE', 162, 122);
+g.fillStyle = Y; g.fillRect(162, 134, 292, 10);
+
+/* slogan */
+g.fillStyle = K; g.font = '900 34px Arial';
+g.fillText('Your AI travel copilot —', 66, 208);
+g.fillText('from dream to day-by-day.', 66, 250);
+
+/* points forts */
+const feats = [
+  '🧭  Pays → ville → transport → jours',
+  '🌍  CO₂, météo, trains & prix réels',
+  '🔍  Plan relu par une 2ᵉ IA',
+  '📴  Hors-ligne · gratuit, sans abonnement'
+];
+g.font = '700 20px Arial';
+feats.forEach((f, i) => {
+  hardRect(66, 292 + i * 62, 478, 48, '#fff', 5, 3);
+  g.fillStyle = K; g.fillText(f, 84, 292 + i * 62 + 31);
+});
+
+/* mention démo */
+g.font = '800 15px Arial'; g.fillStyle = 'rgba(16,16,16,.55)';
+g.fillText('Démo — les données restent dans ton navigateur', 66, 592);
+
+/* ============ COLONNE DROITE : mockup téléphone ============ */
+const px = 640, py = 42, pw = 490, ph = 548;
+/* coque */
+g.fillStyle = K; g.fillRect(px + 10, py + 10, pw, ph);
+g.fillStyle = '#fff';
+g.beginPath(); g.roundRect(px, py, pw, ph, 26); g.fill();
+g.strokeStyle = K; g.lineWidth = 6; g.beginPath(); g.roundRect(px, py, pw, ph, 26); g.stroke();
+g.save(); g.beginPath(); g.roundRect(px + 3, py + 3, pw - 6, ph - 6, 22); g.clip();
+g.fillStyle = PAPER; g.fillRect(px, py, pw, ph);
+
+/* en-tête app */
+hardRect(px + 22, py + 22, pw - 60, 54, Y, 6, 4);
+g.fillStyle = K; g.fillRect(px + 38, py + 36, 26, 26);
+g.fillStyle = Y; g.font = '900 17px Arial'; g.textAlign = 'center'; g.fillText('A', px + 51, py + 55); g.textAlign = 'left';
+g.fillStyle = K; g.font = '900 24px Arial'; g.fillText('ACOLITE', px + 76, py + 58);
+
+/* étapes */
+const steps = [['1', 'QUESTIONS', '#fff'], ['2', 'CHOIX', '#fff'], ['3', 'VOYAGE', Y]];
+steps.forEach((s, i) => {
+  const sx = px + 22 + i * 148;
+  hardRect(sx, py + 96, 136, 40, s[2], 5, 3);
+  g.fillStyle = K; g.font = '900 13px Arial';
+  g.fillText(s[0] + ' · ' + s[1], sx + 14, py + 121);
+});
+
+/* billet */
+hardRect(px + 22, py + 156, pw - 60, 158, Y, 7, 4);
+g.fillStyle = K; g.font = '900 44px Arial';
+g.fillText('PAR', px + 44, py + 216);
+g.textAlign = 'right'; g.fillText('LIS', px + pw - 58, py + 216); g.textAlign = 'left';
+g.setLineDash([10, 7]); g.lineWidth = 4; g.strokeStyle = K;
+g.beginPath(); g.moveTo(px + 148, py + 201); g.lineTo(px + pw - 148, py + 201); g.stroke(); g.setLineDash([]);
+g.font = '26px Arial'; g.textAlign = 'center'; g.fillText('✈', px + pw / 2 - 8, py + 210); g.textAlign = 'left';
+g.font = '800 13px Arial'; g.fillStyle = 'rgba(16,16,16,.62)';
+g.fillText('DESTINATION', px + 44, py + 252); g.fillText('DATES', px + 250, py + 252);
+g.fillStyle = K; g.font = '800 17px Arial';
+g.fillText('Lisbonne 🇵🇹', px + 44, py + 274); g.fillText('12/09 → 19/09', px + 250, py + 274);
+g.font = '800 13px Arial'; g.fillStyle = 'rgba(16,16,16,.62)';
+g.fillText('BUDGET', px + 44, py + 296);
+g.fillStyle = K; g.font = '800 15px Arial'; g.fillText('850 € / pers · Hôtel · Baixa', px + 108, py + 296);
+
+/* stats du plan */
+const stats = [['✈️ AVION', '120-180 €'], ['🏨 BAIXA', '90-130 €/n'], ['🌍 CO₂', '725 kg']];
+stats.forEach((s, i) => {
+  const sx = px + 22 + i * 148;
+  hardRect(sx, py + 336, 136, 74, '#fff', 5, 3);
+  g.fillStyle = K; g.font = '900 15px Arial'; g.fillText(s[0], sx + 12, py + 364);
+  g.font = '700 14px Arial'; g.fillStyle = '#444'; g.fillText(s[1], sx + 12, py + 388);
+});
+
+/* programme */
+hardRect(px + 22, py + 430, pw - 60, 96, '#fff', 6, 3);
+g.fillStyle = K; g.font = '900 15px Arial';
+g.fillText('📆  J1  Arrivée & Baixa', px + 40, py + 460);
+g.fillText('📆  J2  Belém — 09:00 → 18:00', px + 40, py + 486);
+g.font = '700 13px Arial'; g.fillStyle = '#555';
+g.fillText('📍 Praça do Comércio · Tour de Belém · Alfama', px + 40, py + 510);
+g.restore();
+
+/* badge « gratuit » en travers */
+g.save();
+g.translate(1084, 96); g.rotate(0.22);
+g.fillStyle = K; g.fillRect(-84, -24, 168, 44);
+g.fillStyle = Y; g.fillRect(-90, -30, 168, 44);
+g.strokeStyle = K; g.lineWidth = 3.5; g.strokeRect(-90, -30, 168, 44);
+g.fillStyle = K; g.font = '900 19px Arial'; g.textAlign = 'center';
+g.fillText('100 % GRATUIT', -6, -1);
+g.restore();
+
+/* cadre global */
+g.strokeStyle = K; g.lineWidth = 12; g.strokeRect(6, 6, W - 12, H - 12);
+
+document.getElementById('dl').onclick = () => {
+  const a = document.createElement('a');
+  a.download = 'promo.png';
+  a.href = cv.toDataURL('image/png');
+  a.click();
+};
+</script>
+</body>
+</html>

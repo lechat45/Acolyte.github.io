@@ -382,6 +382,33 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .toggle button.on{background:var(--primary);border-color:var(--stroke)}
 
 /* ===== Timeline ===== */
+/* ===== Tableau partagé : votes + commentaires par jour ===== */
+.day-collab{display:flex;align-items:center;gap:8px;margin:2px 0 10px;padding-left:4px}
+.cvote{
+  display:inline-flex;align-items:center;gap:5px;
+  font:800 .78rem 'Sora',sans-serif;color:var(--txt);
+  background:var(--secondary);border:2px solid var(--stroke);border-radius:18px;
+  padding:5px 12px;cursor:pointer;box-shadow:2px 2px 0 var(--stroke);
+}
+.cvote:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--stroke)}
+.cvote.on{background:var(--primary);color:#101010}
+.collab-hint{font-size:.68rem;font-weight:700;color:var(--txt-2);margin-left:auto;padding-right:4px}
+.day-comments{
+  margin:0 0 12px;padding:12px;border:2px solid var(--stroke);border-radius:10px;
+  background:var(--bg);animation:pop .25s ease both;
+}
+.day-comments[hidden]{display:none}
+.com-list p{margin:0 0 7px;font-size:.85rem;line-height:1.45}
+.com-list b{font-family:'Sora',sans-serif;font-size:.78rem;background:var(--primary);color:#101010;padding:1px 7px;border:1.5px solid var(--stroke);border-radius:9px;margin-right:5px}
+.com-bar{display:flex;gap:8px;margin-top:9px}
+.com-inp{flex:1;min-width:0;padding:9px 12px;border:2px solid var(--stroke);border-radius:8px;background:var(--secondary);color:var(--txt);font:600 .85rem inherit}
+.com-inp:focus{outline:none;box-shadow:2px 2px 0 var(--stroke)}
+
+/* ===== Carte du jour (image hors-ligne) ===== */
+.daymap{
+  display:block;width:100%;margin:4px 0 12px;
+  border:3px solid var(--stroke);border-radius:10px;box-shadow:3px 3px 0 var(--stroke);
+}
 /* ===== Détail horaire d'une journée (déplié sous le jour) ===== */
 .day-detail:not(:empty){
   margin:4px 0 18px;padding:18px 14px 2px;
@@ -1160,4 +1187,9 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   #dossier .lieux{margin:0;font-size:10pt;color:#333}
   #dossier .lnk{font-size:9pt;color:#555;word-break:break-all}
   #dossier footer{margin-top:16pt;padding-top:6pt;border-top:1.5pt solid #000;font-size:8.5pt;color:#555}
+}
+
+/* carte du jour dans le carnet imprimé */
+@media print{
+  #dossier .djmap{display:block;width:88%;max-width:420pt;margin:4pt 0 8pt;border:1.5pt solid #000}
 }

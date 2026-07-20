@@ -149,9 +149,9 @@ async function resolveGemModel(key, force = false){
     const cached = localStorage.getItem(LS_GEMM);
     if(cached) return cached;
   }
-  const r = await fetch(useBackend()
+  const r = await fetchT(useBackend()
     ? `${API()}/gemini/models`
-    : `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=100`);
+    : `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=100`, {}, 10000);
   if(!r.ok){
     const msg = await gemErrMsg(r);
     throw new Error('LIST:' + msg);
@@ -655,6 +655,7 @@ function reopenTrip(i){
   state.cache = {}; state.checklist = {}; state.spends = []; state.chatLog = []; state.notes = ''; state.resas = [];
   state._geo = null; state.planAnswers = []; state._qsDone = false; _onSiteDone = false;
   _pcPhotos = null;   /* sinon la carte postale garderait les photos du voyage précédent */
+  state.board = { votes:{}, comments:{} };
   save();
   unlockSteps();
   toast(`On repart pour ${x.trip.nom} ! ✈️`);
@@ -671,6 +672,7 @@ function chooseTrip(i){
   state.cache = {}; state.checklist = {}; state.spends = []; state.chatLog = []; state.notes = ''; state.resas = [];
   state._geo = null; state.planAnswers = []; state._qsDone = false; _onSiteDone = false;
   _pcPhotos = null;   /* photos de carte postale liées au voyage précédent */
+  state.board = { votes:{}, comments:{} };   /* votes/commentaires liés à l'ancien voyage */
   save();
   unlockSteps();
   toast(`Cap sur ${state.trip.nom} ! ✈️`);
@@ -783,7 +785,7 @@ function syncModeFromPlan(d){
 ============================================================ */
 async function geoPlace(name, cc){
   try{
-    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=5&language=fr&format=json`);
+    const r = await fetchT(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=5&language=fr&format=json`, {}, 7000);
     const d = await r.json();
     const res = d.results || [];
     if(!res.length) return null;
@@ -826,7 +828,7 @@ async function realData(){
           /* départ lointain → climat réel du même mois l'an dernier (archive Open-Meteo) */
           const y = depDate.getFullYear() - 1, m = String(depDate.getMonth() + 1).padStart(2, '0');
           const last = new Date(y, depDate.getMonth() + 1, 0).getDate();
-          const wa = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${g2.latitude}&longitude=${g2.longitude}&start_date=${y}-${m}-01&end_date=${y}-${m}-${last}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`).then(r=>r.json()).catch(()=>null);
+          const wa = await fetchT(`https://archive-api.open-meteo.com/v1/archive?latitude=${g2.latitude}&longitude=${g2.longitude}&start_date=${y}-${m}-01&end_date=${y}-${m}-${last}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`, {}, 7000).then(r=>r.json()).catch(()=>null);
           if(wa?.daily?.temperature_2m_max?.length){
             const rain = Math.round((wa.daily.precipitation_sum||[]).reduce((a,b)=>a+(b||0),0));
             R.meteo = `climat typique du mois du voyage (relevés réels ${m}/${y}) : ${_avg(wa.daily.temperature_2m_min)}°C à ${_avg(wa.daily.temperature_2m_max)}°C, ${rain} mm de pluie sur le mois`;
@@ -834,7 +836,7 @@ async function realData(){
           }
         }
         if(!R.meteo){
-          const w = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${g2.latitude}&longitude=${g2.longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_mean&forecast_days=7&timezone=auto`).then(r=>r.json());
+          const w = await fetchT(`https://api.open-meteo.com/v1/forecast?latitude=${g2.latitude}&longitude=${g2.longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_mean&forecast_days=7&timezone=auto`, {}, 7000).then(r=>r.json());
           if(w.daily?.temperature_2m_max?.length){
             R.meteo = `${_avg(w.daily.temperature_2m_min)}°C à ${_avg(w.daily.temperature_2m_max)}°C, probabilité de pluie ${_avg(w.daily.precipitation_probability_mean||[0])}% (relevé réel, 7 prochains jours)`;
             R.mNums = { min:_avg(w.daily.temperature_2m_min), max:_avg(w.daily.temperature_2m_max), rain:_avg(w.daily.precipitation_probability_mean||[0]) };
@@ -926,6 +928,7 @@ Contrôle STRICTEMENT et uniquement ces 7 points :
 5. Les lieux cités existent-ils VRAIMENT dans cette ville, et sont-ils ouverts à la période du voyage (attention aux jours fériés signalés) ?
 6. Le programme est-il réaliste en temps (pas 6 musées dans une seule journée), avec un premier et un dernier jour ALLÉGÉS (arrivée/départ) ?
 7. Le QUARTIER du logement est-il cohérent avec le point d'arrivée (aéroport/gare) ET les lieux du programme ?
+8. Si le voyage est MULTI-BASES ("logement.etapes") : l'ordre des bases est-il géographiquement logique (pas de retour en arrière), chaque base a-t-elle ≥ 2 nuits, la somme des nuits colle-t-elle à la durée, et les trajets entre bases sont-ils comptés dans le budget ?
 Réponds en JSON : {"ok":true} si tout est cohérent, sinon {"ok":false,"problemes":["max 4 incohérences, courtes et factuelles"]}`, true, 700);
     if(v?.ok !== false || !(v.problemes||[]).length){ d._checked = 'ok'; return d; }
     const d2 = await gemini(basePrompt + `\n\nATTENTION — une relecture indépendante a détecté ces incohérences dans une première version. Corrige-les IMPÉRATIVEMENT :\n- ${v.problemes.join('\n- ')}`, true, 8192, false, 0.4);
@@ -968,7 +971,9 @@ async function loadPlan(force = false){
   let mi = 0;
   const msgTimer = setInterval(() => { mi++; const m = zone.querySelector('.loader-msg'); if(m) m.textContent = msgs[mi % msgs.length]; }, 2600);
   const answers = (state.planAnswers||[]).join(' · ');
-  const realCtx = await realData();
+  /* budget de temps : les données réelles ne doivent JAMAIS bloquer le plan
+     (réseau lent/coupé → on continue sans elles au bout de 12 s) */
+  const realCtx = await Promise.race([ realData(), new Promise(r => setTimeout(() => r(''), 12000)) ]);
   /* Le transport et le logement ont DÉJÀ été trouvés à l'étape 2 : on les garde et on approfondit */
   const dejaTrouve = (t.transport_conseille || t.logement_quartier)
     ? `\nCHOIX DÉJÀ VALIDÉS À L'ÉTAPE 2 (le voyageur les a acceptés en choisissant ce voyage — GARDE-LES, sauf si les données réelles les contredisent) :
@@ -991,6 +996,7 @@ ${answers ? 'RÉPONSES du voyageur à tes questions précédentes (à intégrer 
 
 MISSION : organise TOUT le voyage en suivant STRICTEMENT cet ordre d'analyse, chaque étape s'appuyant sur la précédente :
 ÉTAPE 1 — LE LIEU EXACT : si la destination est un pays ou une zone large, choisis LA ville/zone précise où aller (et dis pourquoi). Sinon, confirme la ville et identifie le point d'arrivée concret (aéroport, gare).
+CAS MULTI-PAYS / ITINÉRANT : si le voyage couvre PLUSIEURS pays ou villes (ex : « Italie puis Slovénie », roadtrip), découpe-le en 2-3 BASES maximum (villes-étapes dans un ordre géographique logique, JAMAIS de retour en arrière, minimum 2 nuits par base). Remplis alors "logement.etapes" (une entrée par base) et donne à chaque jour du programme son champ "base". Les trajets ENTRE bases (mode, durée, prix réels) vont dans "transport.details" et comptent dans le budget.
 ÉTAPE 2 — LE TRANSPORT : compare avion / train / voiture sur QUATRE critères : pollution (utilise les chiffres CO₂ ci-dessus), temps de trajet porte-à-porte, prix, et conditions du voyageur (budget, enfants, transports à éviter, météo/saison). Tranche et justifie.
 ÉTAPE 3 — LES LIEUX PRINCIPAUX : liste les 5 à 8 endroits incontournables de la ville/zone (monuments, quartiers, sites naturels), avec leur position relative (nord/sud/centre…).
 ÉTAPE 4 — LE LOGEMENT : choisis le quartier en croisant DEUX critères : la proximité/liaison avec le point d'arrivée de l'étape 1-2 (aéroport/gare) ET l'accès facile aux lieux principaux de l'étape 3. Explique ce compromis.
@@ -1017,11 +1023,12 @@ Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (ra
  },
  "logement":{
    "type":"1 ou 2 mots MAXIMUM : hôtel, appartement, auberge, villa…",
-   "quartier":"quartier précis recommandé",
+   "quartier":"quartier précis recommandé (voyage à 1 base) OU la base principale",
    "prix_nuit":"fourchette en € uniquement, ex 80-120€ (sans le mot nuit)",
-   "pourquoi":"1 phrase"
+   "pourquoi":"1 phrase",
+   "etapes":[{"ville":"base","quartier":"quartier réel","nuits":nombre,"prix_nuit":"80-120€"}] — UNIQUEMENT si multi-bases, sinon omets ce champ
  },
- "programme":[{"jour":1,"resume":"le thème du jour en 1 ligne","lieux":["2-4 lieux RÉELS visités ce jour (monuments, quartiers, sites précis)"]}],
+ "programme":[{"jour":1,"resume":"le thème du jour en 1 ligne","lieux":["2-4 lieux RÉELS visités ce jour (monuments, quartiers, sites précis)"],"base":"ville-étape du jour — UNIQUEMENT si multi-bases"}],
  "budget":{"total":nombre entier en euros par personne,"repartition":"1 phrase : transport X€ + logement Y€ + vie sur place Z€"},
  "sur_place":"1-2 phrases : comment se déplacer entre les lieux (pass/carte de transport local avec prix, marche…)",
  "a_reserver":["2 à 4 réservations à faire À L'AVANCE, chacune avec le délai (ex : Tour de Belém — 1 semaine avant)"],
@@ -1144,11 +1151,13 @@ async function loadHotels(force = false){
     zone.innerHTML = `<p class="hint">Renseigne une date de départ à l'étape 1 pour voir les prix réels des hôtels ici.</p>`;
     return;
   }
-  const ck = `hot_${t.nom}_${d.in}`;
+  /* multi-bases : on cherche les hôtels de la 1ʳᵉ base (un nom d'itinéraire « A → B » ne matcherait rien) */
+  const hotCity = state.cache.plan?.logement?.etapes?.[0]?.ville || cleanPlace(t.ville_aeroport) || t.nom;
+  const ck = `hot_${hotCity}_${d.in}`;
   if(state.cache[ck] && !force){ renderHotels(state.cache[ck]); return; }
   zone.innerHTML = loaderHTML('Recherche des prix réels (Booking, Expedia, Agoda…)');
   const A = state.prefs?.adults || 2, K = state.prefs?.kids || 0;
-  const qs = `location=${encodeURIComponent(t.nom)}&checkIn=${d.in}&checkOut=${d.out}`
+  const qs = `location=${encodeURIComponent(hotCity)}&checkIn=${d.in}&checkOut=${d.out}`
     + `&adults=${A}${K ? '&children=' + K : ''}&currency=eur&limit=10`;
   /* backend : le token est ajouté côté serveur → il ne transite jamais par le navigateur */
   if(useBackend()){
@@ -1324,7 +1333,7 @@ function renderPlan(d){
     <h3 style="margin:0 0 10px">📋 L'essentiel</h3>
     <div class="plan-grid">
       <div class="plan-stat"><div class="k">Comment y aller</div><div class="v">${icons[tr.mode]||'✈️'} ${esc(tr.mode||'?')}</div><div class="s">${esc(tr.prix_estime||'')}</div></div>
-      <div class="plan-stat"><div class="k">Où dormir</div><div class="v">🏨 ${esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${esc(lg.quartier||'')}${lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : ''}</div></div>
+      <div class="plan-stat"><div class="k">Où dormir</div><div class="v">🏨 ${(lg.etapes||[]).length ? esc(lg.etapes.length + ' étapes') : esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${(lg.etapes||[]).length ? esc(lg.etapes.map(e=>`${e.ville} (${e.nuits}n)`).join(' · ')) : esc(lg.quartier||'') + (lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : '')}</div></div>
       <div class="plan-stat"><div class="k">Ce que ça coûte</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">par personne${A > 1 && btNum ? ` · ${btNum * A} € au total` : ''}</div></div>
       ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Le temps qu'il fera</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
     </div>
@@ -1335,7 +1344,8 @@ function renderPlan(d){
       <div style="flex:1"><h4>Y aller en ${esc(tr.mode||'transport')}</h4><p>${esc(tr.pourquoi||'—')}</p>
       ${tr.details ? `<p class="hint" style="margin-top:4px">${esc(tr.details)}</p>` : ''}</div></div>
     <div class="item" style="align-items:flex-start"><div class="emo">🏨</div>
-      <div style="flex:1"><h4>Dormir à ${esc(lg.quartier||'—')}</h4><p>${esc(lg.pourquoi||'—')}</p></div></div>
+      <div style="flex:1"><h4>${(lg.etapes||[]).length ? 'Dormir — voyage en étapes' : 'Dormir à ' + esc(lg.quartier||'—')}</h4><p>${esc(lg.pourquoi||'—')}</p>
+      ${(lg.etapes||[]).map(e=>`<p class="hint" style="margin:3px 0 0">🛏 <strong>${esc(e.ville||'')}</strong> — ${esc(e.quartier||'')} · ${esc(String(e.nuits??'?'))} nuit(s)${e.prix_nuit ? ' · ' + esc(e.prix_nuit) + '/nuit' : ''}</p>`).join('')}</div></div>
     ${bd.repartition ? `<div class="item" style="align-items:flex-start"><div class="emo">💶</div>
       <div style="flex:1"><h4>Le budget en détail</h4><p>${esc(bd.repartition)}</p></div></div>` : ''}
     ${d.sur_place ? `<div class="item" style="align-items:flex-start"><div class="emo">🚇</div>
@@ -1355,7 +1365,7 @@ function renderPlan(d){
         <div class="item" style="align-items:flex-start">
           <span class="tl-time" style="flex-shrink:0">J${esc(String(jr.jour))}</span>
           <div style="flex:1;min-width:0">
-            <h4>${esc(jr.resume)}</h4>
+            <h4>${esc(jr.resume)}${jr.base ? ` <span class="tag cyan" style="font-size:.64rem">📍 ${esc(jr.base)}</span>` : ''}</h4>
             ${(jr.lieux||[]).length ? `<p class="hint" style="margin:3px 0 0">📍 ${jr.lieux.map(esc).join(' · ')}</p>` : ''}
           </div>
           <div class="side row" style="flex-shrink:0;gap:6px">
@@ -1363,6 +1373,8 @@ function renderPlan(d){
             <button class="btn sm ghost" data-planb="${esc(String(jr.jour))}" title="Refaire cette journée" style="padding:6px 9px">🔄</button>
           </div>
         </div>
+        ${state.cache.maps?.[jr.jour] ? `<img class="daymap" src="${state.cache.maps[jr.jour]}" alt="Carte du jour ${esc(String(jr.jour))} (hors-ligne)">` : ''}
+        ${collabBarHTML(jr.jour)}
         <div class="day-detail" data-daybox="${esc(String(jr.jour))}"></div>
       </div>`).join('')}`;
 
@@ -1484,6 +1496,89 @@ Réponds UNIQUEMENT en JSON : {"jour":${jour},"resume":"phrase courte","lieux":[
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-planb]');
   if(b) planB(b.dataset.planb);
+});
+
+/* ============================================================
+   TABLEAU PARTAGÉ — votes 👍/👎 et commentaires par journée.
+   Pensé pour planifier À PLUSIEURS : l'état voyage avec la
+   sauvegarde-fichier / l'import, chacun ajoute ses votes.
+============================================================ */
+function boardState(){
+  state.board = state.board || { votes:{}, comments:{} };
+  state.board.votes = state.board.votes || {};
+  state.board.comments = state.board.comments || {};
+  return state.board;
+}
+const voterName = () => (getUser()?.pseudo || 'Moi').slice(0, 20);
+function collabBarHTML(jour){
+  const b = boardState(), j = String(jour);
+  const votes = b.votes[j] || {};
+  const up = Object.values(votes).filter(v => v === 'up').length;
+  const down = Object.values(votes).filter(v => v === 'down').length;
+  const mine = votes[voterName()];
+  const coms = b.comments[j] || [];
+  return `<div class="day-collab">
+    <button class="cvote ${mine === 'up' ? 'on' : ''}" data-vote="${esc(j)}:up" title="J'aime cette journée">👍 <b>${up}</b></button>
+    <button class="cvote ${mine === 'down' ? 'on' : ''}" data-vote="${esc(j)}:down" title="Pas fan de cette journée">👎 <b>${down}</b></button>
+    <button class="cvote" data-comtoggle="${esc(j)}" title="Commentaires de l'équipe">💬 <b>${coms.length}</b></button>
+    <span class="collab-hint">planifiez à plusieurs</span>
+  </div>
+  <div class="day-comments" data-combox="${esc(j)}" hidden>
+    <div class="com-list">${coms.map(c => `<p><b>${esc(c.who)}</b> ${esc(c.txt)}</p>`).join('') || '<p class="hint" style="margin:0">Aucun commentaire — lance la discussion !</p>'}</div>
+    <div class="com-bar">
+      <input class="com-inp" data-cominp="${esc(j)}" maxlength="180" placeholder="ex : plutôt le matin ? on ajoute un resto ?">
+      <button class="btn sm" data-comsend="${esc(j)}">Envoyer</button>
+    </div>
+  </div>`;
+}
+function refreshCollabBar(jour){
+  const j = String(jour);
+  const block = document.querySelector(`[data-daybox="${CSS.escape(j)}"]`)?.closest('.day-block');
+  if(!block) return;
+  const bar = block.querySelector('.day-collab'), box = block.querySelector('.day-comments');
+  if(!bar || !box) return;
+  const wasOpen = !box.hidden;
+  const draft = box.querySelector('.com-inp')?.value || '';   /* ne perd pas un commentaire en cours de frappe */
+  const tmp = document.createElement('div'); tmp.innerHTML = collabBarHTML(j);
+  bar.replaceWith(tmp.children[0]);
+  box.replaceWith(tmp.children[0]);
+  if(wasOpen){ const nb = block.querySelector('.day-comments'); if(nb) nb.hidden = false; }
+  if(draft){ const ni = block.querySelector('.com-inp'); if(ni) ni.value = draft; }
+}
+document.addEventListener('click', e => {
+  const v = e.target.closest('[data-vote]');
+  if(v){
+    const [j, dir] = v.dataset.vote.split(':');
+    const b = boardState(); b.votes[j] = b.votes[j] || {};
+    const me = voterName();
+    b.votes[j][me] = b.votes[j][me] === dir ? undefined : dir;   /* re-clic = retire le vote */
+    if(!b.votes[j][me]) delete b.votes[j][me];
+    save(); refreshCollabBar(j);
+    return;
+  }
+  const ct = e.target.closest('[data-comtoggle]');
+  if(ct){
+    const box = document.querySelector(`[data-combox="${CSS.escape(ct.dataset.comtoggle)}"]`);
+    if(box) box.hidden = !box.hidden;
+    return;
+  }
+  const cs = e.target.closest('[data-comsend]');
+  if(cs){
+    const j = cs.dataset.comsend;
+    const inp = document.querySelector(`[data-cominp="${CSS.escape(j)}"]`);
+    const txt = (inp?.value || '').trim();
+    if(!txt) return;
+    const b = boardState(); b.comments[j] = b.comments[j] || [];
+    b.comments[j].push({ who: voterName(), txt: txt.slice(0, 180), ts: Date.now() });
+    save(); refreshCollabBar(j);
+    const box = document.querySelector(`[data-combox="${CSS.escape(j)}"]`); if(box) box.hidden = false;
+    toast('💬 Commentaire ajouté — partage la sauvegarde à ton co-voyageur');
+  }
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && e.target.matches?.('[data-cominp]')){
+    document.querySelector(`[data-comsend="${CSS.escape(e.target.dataset.cominp)}"]`)?.click();
+  }
 });
 
 /* ============================================================
@@ -2680,6 +2775,105 @@ const _e11 = $('#btnExport'); if(_e11) _e11.onclick = () => {
 };
 
 /* ============================================================
+   CARTES HORS-LIGNE — une carte par journée (tuiles OSM → image
+   en cache local) : consultable sans réseau + intégrée au carnet
+============================================================ */
+const _lon2t = (lon, z) => (lon + 180) / 360 * Math.pow(2, z);
+const _lat2t = (lat, z) => (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, z);
+function loadTileImg(url){
+  return new Promise(res => {
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => res(im); im.onerror = () => res(null);
+    im.src = url;
+  });
+}
+async function buildDayMap(jour){
+  const t = state.trip, plan = state.cache.plan;
+  const jr = (plan?.programme || []).find(x => String(x.jour) === String(jour));
+  if(!t || !jr) return null;
+  const cc = ccFor(t.pays);
+  /* géocode les lieux du jour (les monuments échouent parfois → on garde ceux trouvés) */
+  const lieux = (jr.lieux || []).filter(Boolean).slice(0, 4);
+  const found = [];
+  for(const l of lieux){
+    const g0 = await geoPlace(cleanPlace(l), cc);
+    if(g0) found.push({ nom: l, lat: +g0.latitude, lon: +g0.longitude });
+  }
+  /* repli : la base du jour (multi-étapes) sinon le centre-ville */
+  if(!found.length){
+    const g0 = (jr.base ? await geoPlace(cleanPlace(jr.base), cc) : null) || await geocode();
+    if(!g0) return null;
+    found.push({ nom: jr.base || t.nom, lat: +g0.latitude, lon: +g0.longitude });
+  }
+  /* filtre les points aberrants (géocodage parti dans un autre pays : > 80 km du 1er) */
+  const ref = found[0];
+  const pts = found.filter(p => havKm({latitude:ref.lat, longitude:ref.lon}, {latitude:p.lat, longitude:p.lon}) < 80);
+  /* zoom qui fait tenir tous les points dans 3×2 tuiles */
+  let z = 15;
+  for(; z > 10; z--){
+    const xs = pts.map(p => _lon2t(p.lon, z)), ys = pts.map(p => _lat2t(p.lat, z));
+    if(Math.max(...xs) - Math.min(...xs) < 2.4 && Math.max(...ys) - Math.min(...ys) < 1.5) break;
+  }
+  const cx = pts.reduce((a, p) => a + _lon2t(p.lon, z), 0) / pts.length;
+  const cy = pts.reduce((a, p) => a + _lat2t(p.lat, z), 0) / pts.length;
+  const startX = Math.floor(cx - 1.5), startY = Math.floor(cy - 1);
+  /* 3×2 tuiles de 256 → 768×512 */
+  const cv = document.createElement('canvas'); cv.width = 768; cv.height = 512;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#e8e4da'; g.fillRect(0, 0, 768, 512);
+  const jobs = [];
+  for(let dx = 0; dx < 3; dx++) for(let dy = 0; dy < 2; dy++)
+    jobs.push(loadTileImg(`https://tile.openstreetmap.org/${z}/${startX + dx}/${startY + dy}.png`)
+      .then(im => ({ im, dx, dy })));
+  const tiles = await Promise.all(jobs);
+  const okTiles = tiles.filter(x => x.im);
+  if(!okTiles.length) return null;              /* aucun réseau/tuile → pas de carte */
+  okTiles.forEach(({ im, dx, dy }) => g.drawImage(im, dx * 256, dy * 256, 256, 256));
+  /* pins numérotés */
+  pts.forEach((p, i) => {
+    const x = (_lon2t(p.lon, z) - startX) * 256, y = (_lat2t(p.lat, z) - startY) * 256;
+    if(x < 8 || y < 8 || x > 760 || y > 504) return;
+    g.fillStyle = '#101010'; g.beginPath(); g.arc(x + 2, y + 2, 15, 0, 7); g.fill();
+    g.fillStyle = '#FFE600'; g.beginPath(); g.arc(x, y, 15, 0, 7); g.fill();
+    g.strokeStyle = '#101010'; g.lineWidth = 3; g.stroke();
+    g.fillStyle = '#101010'; g.font = '900 16px Sora, Arial'; g.textAlign = 'center';
+    g.fillText(String(i + 1), x, y + 6); g.textAlign = 'left';
+  });
+  /* bandeau titre + légende + attribution */
+  g.fillStyle = '#FFE600'; g.fillRect(0, 0, 768, 40);
+  g.strokeStyle = '#101010'; g.lineWidth = 3; g.strokeRect(1.5, 1.5, 765, 37);
+  g.fillStyle = '#101010'; g.font = '900 19px Sora, Arial';
+  g.fillText(`Jour ${jour} — ${String(jr.resume || '').slice(0, 44)}`, 14, 27);
+  const leg = pts.map((p, i) => `${i + 1}·${String(p.nom).split(',')[0].slice(0, 18)}`).join('   ');
+  g.fillStyle = 'rgba(255,255,255,.94)'; g.fillRect(0, 512 - 30, 768, 30);
+  g.fillStyle = '#101010'; g.font = '700 13px Inter, Arial';
+  g.fillText(leg.slice(0, 88), 12, 512 - 10);
+  g.textAlign = 'right'; g.fillStyle = '#555'; g.font = '600 11px Arial';
+  g.fillText('© OpenStreetMap contributors', 758, 512 - 10); g.textAlign = 'left';
+  return cv.toDataURL('image/jpeg', 0.72);
+}
+async function prepareOfflineMaps(){
+  const plan = state.cache.plan;
+  if(!state.trip || !(plan?.programme || []).length){ toast('Génère d’abord le plan (étape 3) 😉'); return; }
+  const btn = $('#btnMaps'); if(btn){ btn.disabled = true; }
+  state.cache.maps = state.cache.maps || {};
+  let ok = 0, ko = 0;
+  for(const jr of plan.programme){
+    if(state.cache.maps[jr.jour]){ ok++; continue; }
+    toast(`🗺️ Carte du jour ${jr.jour}…`);
+    try{
+      const url = await buildDayMap(jr.jour);
+      if(url){ state.cache.maps[jr.jour] = url; ok++; save(); }
+      else ko++;
+    }catch(e){ ko++; }
+  }
+  if(btn) btn.disabled = false;
+  renderPlan(plan);   /* réaffiche avec les vignettes cartes */
+  toast(ok ? `🗺️ ${ok} carte(s) prête(s) hors-ligne ✔${ko ? ` (${ko} indisponible(s))` : ''}` : '🗺️ Cartes indisponibles — vérifie ta connexion');
+}
+const _eMaps = $('#btnMaps'); if(_eMaps) _eMaps.onclick = prepareOfflineMaps;
+
+/* ============================================================
    CARNET DE VOYAGE (PDF) — plan complet + réservations, pensé
    pour être imprimé/enregistré en PDF AVANT le départ (hors-ligne)
 ============================================================ */
@@ -2693,7 +2887,9 @@ function buildDossierHTML(){
     <p>${esc2(dates)} · ${esc2(A)} · départ de ${esc2(p.from || '—')} — Carnet généré par Acolite</p></header>`;
   h += `<section><h2>L'essentiel</h2><table>
     <tr><th>Transport</th><td>${esc2(pl.transport?.mode || '—')} · ${esc2(pl.transport?.prix_estime || '')}<br>${esc2(pl.transport?.details || '')}</td></tr>
-    <tr><th>Logement</th><td>${esc2(pl.logement?.type || '—')} · quartier ${esc2(pl.logement?.quartier || '—')} · ${esc2(pl.logement?.prix_nuit || '')}/nuit</td></tr>
+    <tr><th>Logement</th><td>${(pl.logement?.etapes || []).length
+      ? pl.logement.etapes.map(e => `${esc2(e.ville || '')} — ${esc2(e.quartier || '')} · ${esc2(String(e.nuits ?? '?'))} nuit(s)${e.prix_nuit ? ' · ' + esc2(e.prix_nuit) + '/nuit' : ''}`).join('<br>')
+      : `${esc2(pl.logement?.type || '—')} · quartier ${esc2(pl.logement?.quartier || '—')} · ${esc2(pl.logement?.prix_nuit || '')}/nuit`}</td></tr>
     <tr><th>Budget</th><td>${esc2(String(pl.budget?.total ?? '—'))} €/pers — ${esc2(pl.budget?.repartition || '')}</td></tr>
     ${pl.sur_place ? `<tr><th>Sur place</th><td>${esc2(pl.sur_place)}</td></tr>` : ''}
   </table></section>`;
@@ -2708,13 +2904,16 @@ function buildDossierHTML(){
   if((pl.programme || []).length){
     h += `<section><h2>📆 Programme jour par jour</h2>`;
     pl.programme.forEach(j => {
-      h += `<div class="dj"><h3>Jour ${esc2(String(j.jour))} — ${esc2(j.resume || '')}</h3>`;
+      h += `<div class="dj"><h3>Jour ${esc2(String(j.jour))} — ${esc2(j.resume || '')}${j.base ? ` <small>(${esc2(j.base)})</small>` : ''}</h3>`;
       if((j.lieux || []).length) h += `<p class="lieux">📍 ${j.lieux.map(esc2).join(' · ')}</p>`;
+      if(state.cache.maps?.[j.jour]) h += `<img class="djmap" src="${state.cache.maps[j.jour]}" alt="Carte jour ${esc2(String(j.jour))}">`;
       const det = days[j.jour];
       if(det?.etapes?.length){
         h += `<ul class="heures">` + det.etapes.map(e =>
           `<li><strong>${esc2(e.heure || '')}</strong> ${esc2(e.titre || '')}${e.lieu ? ` <em>(${esc2(e.lieu)})</em>` : ''} — ${esc2(e.description || '')}</li>`).join('') + `</ul>`;
       }
+      const coms = state.board?.comments?.[String(j.jour)] || [];
+      if(coms.length) h += `<p class="lieux">💬 ${coms.map(c => `<strong>${esc2(c.who)}</strong> : ${esc2(c.txt)}`).join(' · ')}</p>`;
       h += `</div>`;
     });
     h += `</section>`;
@@ -3404,12 +3603,10 @@ async function projRoute(route){
   const t = state.trip || {};
   const q = state.cache.plan?.logement?.quartier;
 
-  /* Le géocodeur ne connaît que les villes/quartiers, pas les monuments.
-     On tente donc, dans l'ordre : le quartier → la ville → le pays. */
-  /* On tente, dans l'ordre : le quartier → la ville de l'aéroport → la ville → le pays.
-     La ville de l'aéroport est plus fiable que le nom (souvent un site/monument). */
+  /* On tente, dans l'ordre : la ville-étape du jour (multi-bases) → le quartier →
+     la ville de l'aéroport → la ville → le pays. Le géocodeur connaît mal les monuments. */
   const raw = route.walk
-    ? [q, t.ville_aeroport, t.nom, t.pays]
+    ? [route.ville, q, t.ville_aeroport, t.nom, t.pays]
     : [t.ville_aeroport, t.nom, t.pays];
   const essais = [...new Set(raw.map(cleanPlace).filter(Boolean))];
   const cc = ccFor(t.pays);
@@ -3472,13 +3669,15 @@ function buildProjectMap(){
   routes.push({ label:`${({plane:'✈️',train:'🚆',car:'🚗'})[state.mode]||'✈️'} Aller — ${p.from || 'départ'} → ${t.nom}`,
                 saddr: p.from || 'Paris', stops:[`${t.nom}, ${t.pays}`], walk:false });
   const base = c.plan?.logement?.quartier ? `${c.plan.logement.quartier}, ${t.nom}` : `${t.nom}, ${t.pays}`;
-  const days = (c.plan?.programme || []).map(x => ({ jour:x.jour, resume:x.resume, lieux:x.lieux || [] }));
+  const days = (c.plan?.programme || []).map(x => ({ jour:x.jour, resume:x.resume, lieux:x.lieux || [], base:x.base }));
   days.forEach(x => {
-    const lieux = (x.lieux || []).filter(Boolean).map(l => `${l}, ${t.nom}`).slice(0, 8);
+    /* multi-bases : les lieux du jour se rattachent à SA ville-étape, pas au nom de l'itinéraire */
+    const ville = x.base || t.nom;
+    const lieux = (x.lieux || []).filter(Boolean).map(l => `${l}, ${ville}`).slice(0, 8);
     if(lieux.length){
       routes.push({
-        label: `🗓️ Jour ${x.jour} — ${String(x.resume || '').slice(0, 30)}`,
-        saddr: base, stops: lieux, walk: true
+        label: `🗓️ Jour ${x.jour} — ${x.base ? x.base + ' · ' : ''}${String(x.resume || '').slice(0, 26)}`,
+        saddr: x.base ? `${x.base}` : base, stops: lieux, walk: true, ville: x.base || ''
       });
     }
   });
@@ -3680,6 +3879,7 @@ function importPayload(str){
   state.cache = {}; state.checklist = {}; state.spends = []; state.notes = ''; state.resas = [];
   state.planAnswers = []; state._qsDone = false; state.modeManual = false;
   _pcPhotos = null;   /* photos de carte postale liées au voyage précédent */
+  state.board = { votes:{}, comments:{} };   /* votes/commentaires liés à l'ancien voyage */
   save(); unlockSteps();
   switchCat('trip');
   gotoStep(3);

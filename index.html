@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com https://upload.wikimedia.org; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev https://*.deno.dev https://*.val.run; frame-src https://www.openstreetmap.org https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com https://upload.wikimedia.org https://tile.openstreetmap.org; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev https://*.deno.dev https://*.val.run; frame-src https://www.openstreetmap.org https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="theme-color" content="#FFE600" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0B0B10" media="(prefers-color-scheme: dark)">
@@ -12,6 +12,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Acolite — Ton copilote de voyage</title>
+<meta name="description" content="Acolite imagine, compare et organise ton voyage de A à Z : destination, transport (CO₂, prix, durée), logement, programme jour par jour. Gratuit, hors-ligne, sans abonnement.">
+<!-- Aperçu de lien (réseaux sociaux) — génère promo.png depuis promo.html et place-le à la racine -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Acolite — Your AI travel copilot">
+<meta property="og:description" content="From dream to day-by-day: one idea in, a whole bookable trip out. Free, offline-ready, no subscription.">
+<meta property="og:image" content="promo.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -148,8 +155,11 @@
       <p class="sub" style="margin:0 0 12px">Tous les liens pré-remplis (billets, hôtels avec prix réels, activités) et les vrais prix des vols jour par jour.</p>
       <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
       <button class="btn ghost" id="btnOpenSim" style="width:100%;justify-content:center;margin-top:10px">🛫 Simulation des vols &amp; trains</button>
-      <button class="btn ghost" id="btnDossier" style="width:100%;justify-content:center;margin-top:10px">📄 Carnet de voyage (PDF hors-ligne)</button>
-      <p class="hint" style="margin:8px 0 0">✈️ Avant le décollage : télécharge le carnet en PDF (plan complet + n° de réservation). L'app elle-même garde ton voyage consultable <strong>sans connexion</strong>.</p>
+      <div class="btn-duo" style="margin-top:10px">
+        <button class="btn ghost sm" id="btnDossier">📄 Carnet (PDF)</button>
+        <button class="btn ghost sm" id="btnMaps">🗺️ Cartes hors-ligne</button>
+      </div>
+      <p class="hint" style="margin:8px 0 0">✈️ Avant le décollage : télécharge le carnet PDF (plan + n° de réservation) et prépare les <strong>cartes de chaque journée</strong> — tout reste consultable <strong>sans connexion</strong>, réseau coupé ou pas.</p>
     </div>
 
     <!-- 3 · Pendant le séjour -->
