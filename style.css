@@ -1139,3 +1139,25 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 }
 .stop:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--stroke)}
 
+
+/* ===== Carnet de voyage : visible uniquement à l'impression ===== */
+#dossier{display:none}
+@media print{
+  body > *:not(#dossier){display:none !important}
+  #dossier{display:block !important;color:#000;background:#fff;font-family:Georgia,'Times New Roman',serif;font-size:12pt;line-height:1.5}
+  #dossier header{border-bottom:3px solid #000;margin-bottom:14pt;padding-bottom:8pt}
+  #dossier h1{font-family:'Sora',Arial,sans-serif;font-size:22pt;margin:0 0 4pt}
+  #dossier header p{margin:0;font-size:10.5pt;color:#333}
+  #dossier h2{font-family:'Sora',Arial,sans-serif;font-size:13pt;margin:14pt 0 6pt;border-bottom:1.5pt solid #000;padding-bottom:2pt}
+  #dossier h3{font-size:11.5pt;margin:8pt 0 2pt}
+  #dossier section{break-inside:avoid-page}
+  #dossier .dj{break-inside:avoid-page;margin-bottom:6pt}
+  #dossier table{width:100%;border-collapse:collapse;font-size:10.5pt}
+  #dossier th{text-align:left;vertical-align:top;padding:3pt 8pt 3pt 0;width:110pt;font-family:'Sora',Arial,sans-serif;font-size:9.5pt}
+  #dossier td{padding:3pt 0;border-bottom:.5pt solid #999}
+  #dossier ul{margin:2pt 0 0;padding-left:16pt}
+  #dossier .heures{font-size:10pt;margin-top:2pt}
+  #dossier .lieux{margin:0;font-size:10pt;color:#333}
+  #dossier .lnk{font-size:9pt;color:#555;word-break:break-all}
+  #dossier footer{margin-top:16pt;padding-top:6pt;border-top:1.5pt solid #000;font-size:8.5pt;color:#555}
+}

@@ -2679,6 +2679,75 @@ const _e11 = $('#btnExport'); if(_e11) _e11.onclick = () => {
   toast('Voyage exporté 📄');
 };
 
+/* ============================================================
+   CARNET DE VOYAGE (PDF) — plan complet + réservations, pensé
+   pour être imprimé/enregistré en PDF AVANT le départ (hors-ligne)
+============================================================ */
+function buildDossierHTML(){
+  const t = state.trip, p = state.prefs || {}, pl = state.cache.plan || {}, d = stayDates();
+  const days = state.cache.days || {};
+  const esc2 = esc;
+  const dates = d ? `${d.in} → ${d.out}` : (p.when || 'dates flexibles');
+  const A = `${p.adults || 2} adulte(s)${p.kids ? ' + ' + p.kids + ' enfant(s)' : ''}`;
+  let h = `<header><h1>✈️ ${esc2(t.nom)}${t.pays ? ', ' + esc2(t.pays) : ''}</h1>
+    <p>${esc2(dates)} · ${esc2(A)} · départ de ${esc2(p.from || '—')} — Carnet généré par Acolite</p></header>`;
+  h += `<section><h2>L'essentiel</h2><table>
+    <tr><th>Transport</th><td>${esc2(pl.transport?.mode || '—')} · ${esc2(pl.transport?.prix_estime || '')}<br>${esc2(pl.transport?.details || '')}</td></tr>
+    <tr><th>Logement</th><td>${esc2(pl.logement?.type || '—')} · quartier ${esc2(pl.logement?.quartier || '—')} · ${esc2(pl.logement?.prix_nuit || '')}/nuit</td></tr>
+    <tr><th>Budget</th><td>${esc2(String(pl.budget?.total ?? '—'))} €/pers — ${esc2(pl.budget?.repartition || '')}</td></tr>
+    ${pl.sur_place ? `<tr><th>Sur place</th><td>${esc2(pl.sur_place)}</td></tr>` : ''}
+  </table></section>`;
+  if(state.resas?.length){
+    h += `<section><h2>📎 Réservations & références</h2><table>` +
+      state.resas.map(r => `<tr><th>${esc2(r.type)}</th><td><strong>${esc2(r.ref)}</strong>${r.link ? `<br><span class="lnk">${esc2(r.link)}</span>` : ''}</td></tr>`).join('') +
+      `</table></section>`;
+  }
+  if((pl.a_reserver || []).length){
+    h += `<section><h2>🎟️ À réserver à l'avance</h2><ul>` + pl.a_reserver.map(r => `<li>${esc2(r)}</li>`).join('') + `</ul></section>`;
+  }
+  if((pl.programme || []).length){
+    h += `<section><h2>📆 Programme jour par jour</h2>`;
+    pl.programme.forEach(j => {
+      h += `<div class="dj"><h3>Jour ${esc2(String(j.jour))} — ${esc2(j.resume || '')}</h3>`;
+      if((j.lieux || []).length) h += `<p class="lieux">📍 ${j.lieux.map(esc2).join(' · ')}</p>`;
+      const det = days[j.jour];
+      if(det?.etapes?.length){
+        h += `<ul class="heures">` + det.etapes.map(e =>
+          `<li><strong>${esc2(e.heure || '')}</strong> ${esc2(e.titre || '')}${e.lieu ? ` <em>(${esc2(e.lieu)})</em>` : ''} — ${esc2(e.description || '')}</li>`).join('') + `</ul>`;
+      }
+      h += `</div>`;
+    });
+    h += `</section>`;
+  }
+  const info = state.cache['cinfo_' + (t.pays || t.nom)];
+  if(info){
+    const rows = [['🛂 Formalités', info.visa], ['🔌 Prises', info.prise], ['🚨 Urgences', info.urgence], ['💶 Pourboire', info.pourboire],
+                  ['🚰 Eau', info.eau], ['🕐 Décalage', info.decalage], ['💉 Santé', info.sante]].filter(r => r[1]);
+    if(rows.length) h += `<section><h2>📌 Infos pratiques</h2><table>` +
+      rows.map(r => `<tr><th>${r[0]}</th><td>${esc2(String(r[1]))}</td></tr>`).join('') + `</table></section>`;
+  }
+  if(pl.conseil_cle) h += `<section><h2>💡 Le conseil à retenir</h2><p>${esc2(pl.conseil_cle)}</p></section>`;
+  if((state.notes || '').trim()) h += `<section><h2>📝 Mes notes</h2><p>${esc2(state.notes).replace(/\n/g, '<br>')}</p></section>`;
+  h += `<footer>Ticket souvenir — ne permet pas d'embarquer. Prix et horaires : estimations à vérifier. acolite</footer>`;
+  return h;
+}
+function openDossier(){
+  if(!state.trip){ toast('Choisis d’abord un voyage'); return; }
+  if(!state.cache.plan){ toast('Génère d’abord le plan (étape 3) 😉'); return; }
+  const dz = $('#dossier');
+  dz.innerHTML = buildDossierHTML();
+  dz.hidden = false;
+  const done = () => { dz.hidden = true; window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();   /* le voyageur choisit « Enregistrer en PDF » */
+  toast('📄 Choisis « Enregistrer au format PDF » dans la fenêtre d’impression');
+}
+const _eDos = $('#btnDossier'); if(_eDos) _eDos.onclick = openDossier;
+
+/* --- Signal hors-ligne : rassure le voyageur, son plan reste là --- */
+window.addEventListener('offline', () => toast('📴 Hors connexion — ton plan reste consultable dans Acolite'));
+window.addEventListener('online',  () => toast('📶 Connexion retrouvée'));
+
 /* --- Sauvegarde / restauration du voyage complet (fichier .json) ---
    Sécurise les données contre un vidage du localStorage / changement d'appareil. */
 function backupTrip(){

@@ -148,6 +148,8 @@
       <p class="sub" style="margin:0 0 12px">Tous les liens pré-remplis (billets, hôtels avec prix réels, activités) et les vrais prix des vols jour par jour.</p>
       <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
       <button class="btn ghost" id="btnOpenSim" style="width:100%;justify-content:center;margin-top:10px">🛫 Simulation des vols &amp; trains</button>
+      <button class="btn ghost" id="btnDossier" style="width:100%;justify-content:center;margin-top:10px">📄 Carnet de voyage (PDF hors-ligne)</button>
+      <p class="hint" style="margin:8px 0 0">✈️ Avant le décollage : télécharge le carnet en PDF (plan complet + n° de réservation). L'app elle-même garde ton voyage consultable <strong>sans connexion</strong>.</p>
     </div>
 
     <!-- 3 · Pendant le séjour -->
@@ -524,6 +526,9 @@
 </div>
 
 <div id="toast"></div>
+
+<!-- ===== Carnet de voyage imprimable (rempli au clic, visible seulement à l'impression) ===== -->
+<div id="dossier" hidden></div>
 
 <!-- ================= ONBOARDING (première visite) ================= -->
 <div class="onboard" id="onboard" hidden>
