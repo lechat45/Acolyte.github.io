@@ -918,13 +918,14 @@ async function reviewPlan(d, basePrompt){
   try{
     const v = await groq(`Tu es un vérificateur impitoyable de plans de voyage. ${ctx()}
 PLAN À VÉRIFIER (JSON) : ${JSON.stringify(d).slice(0, 5500)}
-Contrôle STRICTEMENT et uniquement ces 6 points :
+Contrôle STRICTEMENT et uniquement ces 7 points :
 1. "budget.total" respecte-t-il le budget demandé par personne ?
 2. Le nombre d'entrées de "programme" correspond-il à la durée demandée ?
-3. Le transport choisi est-il cohérent avec la distance et les limites du voyageur ?
+3. Le transport choisi est-il cohérent avec la distance, la POLLUTION (si un mode nettement moins polluant est comparable en temps/prix, le plan doit le justifier) et les limites du voyageur ?
 4. COHÉRENCE GÉOGRAPHIQUE : chaque journée regroupe-t-elle des lieux PROCHES les uns des autres ? Signale toute journée qui fait traverser la ville en zigzag (ex : un lieu au nord, puis au sud, puis de nouveau au nord).
 5. Les lieux cités existent-ils VRAIMENT dans cette ville, et sont-ils ouverts à la période du voyage (attention aux jours fériés signalés) ?
-6. Le programme est-il réaliste en temps (pas 6 musées dans une seule journée) ?
+6. Le programme est-il réaliste en temps (pas 6 musées dans une seule journée), avec un premier et un dernier jour ALLÉGÉS (arrivée/départ) ?
+7. Le QUARTIER du logement est-il cohérent avec le point d'arrivée (aéroport/gare) ET les lieux du programme ?
 Réponds en JSON : {"ok":true} si tout est cohérent, sinon {"ok":false,"problemes":["max 4 incohérences, courtes et factuelles"]}`, true, 700);
     if(v?.ok !== false || !(v.problemes||[]).length){ d._checked = 'ok'; return d; }
     const d2 = await gemini(basePrompt + `\n\nATTENTION — une relecture indépendante a détecté ces incohérences dans une première version. Corrige-les IMPÉRATIVEMENT :\n- ${v.problemes.join('\n- ')}`, true, 8192, false, 0.4);
@@ -975,19 +976,39 @@ async function loadPlan(force = false){
 - Logement : ${t.logement_type || '?'} dans le quartier ${t.logement_quartier || '?'}${t.logement_prix ? ` (${t.logement_prix}/nuit)` : ''}
 TON TRAVAIL : approfondir (détails pratiques, programme jour par jour, budget précis), PAS tout recommencer.\n`
     : '';
+  /* chiffres CO₂ réels injectés dans l'étape transport (aller-retour, par personne) */
+  const _dist = state.cache._real?.dist;
+  const _A = (p.adults || 1) + (p.kids || 0);
+  const co2Ctx = _dist
+    ? `CO₂ ESTIMÉ pour ${Math.round(_dist)} km (aller-retour, par personne, calcul réel) : avion ~${Math.round(_dist*2*CO2_G_KM.avion/1000)} kg · train ~${Math.round(_dist*2*CO2_G_KM.train/1000)} kg · voiture ~${Math.round(_dist*2*CO2_G_KM.voiture/Math.max(1,_A)/1000)} kg (partagée entre ${_A} voyageur(s)).`
+    : '';
   const prompt = `Tu es Acolite, organisateur de voyage expert. ${ctx()}
-${realCtx}${dejaTrouve}
-Destination validée : ${t.nom} (${t.pays}).
+${realCtx}${co2Ctx ? co2Ctx + '\n' : ''}${dejaTrouve}
+Destination validée : ${t.nom} (${t.pays})${t.ville_aeroport ? ` · point d'arrivée probable : ${t.ville_aeroport}${t.iata ? ' (' + t.iata + ')' : ''}` : ''}.
 RÈGLE ABSOLUE : ne cite que des quartiers, lieux et établissements RÉELS et vérifiables. En cas de doute, omets plutôt qu'inventer.
 Si les données réelles incluent un trajet en train ou un taux de change, appuie ton choix de transport et tes conversions de budget DESSUS.
 ${answers ? 'RÉPONSES du voyageur à tes questions précédentes (à intégrer au plan) : ' + answers : ''}
 
-MISSION : organise TOUT le voyage. C'est TOI qui décides du transport (avion, train ou voiture) en fonction du budget, de la distance depuis ${p.from || 'le point de départ'} et des limites du voyageur — justifie ton choix. Trouve le meilleur type de logement et le quartier. Structure le séjour. Reste STRICTEMENT dans le budget.
-INTERDIT de poser des questions : renvoie "questions":[]. Le voyageur a déjà tout précisé, construis le voyage complet directement.
+MISSION : organise TOUT le voyage en suivant STRICTEMENT cet ordre d'analyse, chaque étape s'appuyant sur la précédente :
+ÉTAPE 1 — LE LIEU EXACT : si la destination est un pays ou une zone large, choisis LA ville/zone précise où aller (et dis pourquoi). Sinon, confirme la ville et identifie le point d'arrivée concret (aéroport, gare).
+ÉTAPE 2 — LE TRANSPORT : compare avion / train / voiture sur QUATRE critères : pollution (utilise les chiffres CO₂ ci-dessus), temps de trajet porte-à-porte, prix, et conditions du voyageur (budget, enfants, transports à éviter, météo/saison). Tranche et justifie.
+ÉTAPE 3 — LES LIEUX PRINCIPAUX : liste les 5 à 8 endroits incontournables de la ville/zone (monuments, quartiers, sites naturels), avec leur position relative (nord/sud/centre…).
+ÉTAPE 4 — LE LOGEMENT : choisis le quartier en croisant DEUX critères : la proximité/liaison avec le point d'arrivée de l'étape 1-2 (aéroport/gare) ET l'accès facile aux lieux principaux de l'étape 3. Explique ce compromis.
+ÉTAPE 5 — LE PROGRAMME : organise les jours en regroupant les lieux de l'étape 3 par PROXIMITÉ GÉOGRAPHIQUE et facilité d'accès depuis le logement (pas de zigzag). MÉTÉO : si la météo réelle annonce de la pluie, place les lieux INTÉRIEURS (musées, marchés couverts) sur les jours à risque et le plein air sur les meilleurs jours. JOUR 1 : l'heure d'arrivée est inconnue sauf indication du voyageur → ne planifie que l'après-midi/soirée (installation + 1 activité douce près du logement) ; dernier jour = départ (allégé).
+ÉTAPE 6 — SUR PLACE & RÉSERVATIONS : indique comment se déplacer ENTRE les lieux (pass/carte de transport local avec prix réel, ou à pied), et liste ce qui doit se réserver À L'AVANCE (monuments avec quota, restaurants courus) avec le délai conseillé.
+Reste STRICTEMENT dans le budget à chaque étape.
+QUESTIONS : si un VRAI doute subsiste (notamment : un événement/festival a lieu pendant le séjour — le voyageur veut-il y assister ? ou un choix qui change le programme), pose 1-2 questions courtes dans "questions" avec un nombre PAIR d'options (2 ou 4). Sinon renvoie "questions":[].
 
-Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (raisonnement interne, jamais montré) AVANT le reste :
+Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (raisonnement interne, jamais montré) qui suit les 5 étapes DANS L'ORDRE :
 {
- "analyse":"3-4 phrases : comparaison chiffrée des transports possibles (durée/prix vs données réelles), quartier optimal et pourquoi, points de vigilance budget",
+ "analyse":{
+   "etape1_lieu":"ville/zone choisie + point d'arrivée (aéroport/gare) et pourquoi",
+   "etape2_transport":"comparaison chiffrée CO₂/durée/prix/conditions des 3 modes + le gagnant",
+   "etape3_lieux":["5-8 lieux principaux avec position (ex : Alfama — centre-est)"],
+   "etape4_logement":"quartier choisi = compromis arrivée ↔ lieux principaux, en 1-2 phrases",
+   "etape5_programme":"logique de regroupement géographique des jours + gestion météo/jour 1, en 1-2 phrases",
+   "etape6_surplace":"déplacements sur place + ce qui se réserve tôt, en 1 phrase"
+ },
  "transport":{
    "mode":"avion" ou "train" ou "voiture",
    "pourquoi":"2 phrases : pourquoi CE transport vu le budget et les conditions",
@@ -1002,6 +1023,8 @@ Réponds UNIQUEMENT en JSON. Commence OBLIGATOIREMENT par le champ "analyse" (ra
  },
  "programme":[{"jour":1,"resume":"le thème du jour en 1 ligne","lieux":["2-4 lieux RÉELS visités ce jour (monuments, quartiers, sites précis)"]}],
  "budget":{"total":nombre entier en euros par personne,"repartition":"1 phrase : transport X€ + logement Y€ + vie sur place Z€"},
+ "sur_place":"1-2 phrases : comment se déplacer entre les lieux (pass/carte de transport local avec prix, marche…)",
+ "a_reserver":["2 à 4 réservations à faire À L'AVANCE, chacune avec le délai (ex : Tour de Belém — 1 semaine avant)"],
  "conseil_cle":"LE conseil le plus important pour ce voyage",
  "questions":[{"texte":"question courte","options":["2 ou 4 réponses courtes — nombre PAIR"]}]
 }
@@ -1315,6 +1338,10 @@ function renderPlan(d){
       <div style="flex:1"><h4>Dormir à ${esc(lg.quartier||'—')}</h4><p>${esc(lg.pourquoi||'—')}</p></div></div>
     ${bd.repartition ? `<div class="item" style="align-items:flex-start"><div class="emo">💶</div>
       <div style="flex:1"><h4>Le budget en détail</h4><p>${esc(bd.repartition)}</p></div></div>` : ''}
+    ${d.sur_place ? `<div class="item" style="align-items:flex-start"><div class="emo">🚇</div>
+      <div style="flex:1"><h4>Se déplacer sur place</h4><p>${esc(d.sur_place)}</p></div></div>` : ''}
+    ${(d.a_reserver||[]).length ? `<div class="item" style="align-items:flex-start"><div class="emo">🎟️</div>
+      <div style="flex:1"><h4>À réserver à l'avance</h4>${d.a_reserver.map(r=>`<p class="hint" style="margin:2px 0 0">· ${esc(r)}</p>`).join('')}</div></div>` : ''}
     ${d.conseil_cle ? `<div class="item" style="align-items:flex-start;background:var(--primary)"><div class="emo">💡</div>
       <div style="flex:1"><h4 style="color:#101010">Le conseil à retenir</h4><p style="color:#101010">${esc(d.conseil_cle)}</p></div></div>` : ''}
 
@@ -2598,6 +2625,8 @@ const _e11 = $('#btnExport'); if(_e11) _e11.onclick = () => {
     md += `- **Logement :** ${pl.logement?.type||''} à ${pl.logement?.quartier||''} (${pl.logement?.prix_nuit||''}/nuit)\n`;
     md += `- **Budget total :** ${pl.budget?.total||''} €/pers — ${pl.budget?.repartition||''}\n`;
     (pl.programme||[]).forEach(j=> md += `- Jour ${j.jour} : ${j.resume}\n`);
+    if(pl.sur_place) md += `- **Sur place :** ${pl.sur_place}\n`;
+    (pl.a_reserver||[]).forEach(r=> md += `- 🎟️ À réserver tôt : ${r}\n`);
     md += `- 💡 ${pl.conseil_cle||''}\n`;
   }
   const tr = c['transport_'+state.mode];
