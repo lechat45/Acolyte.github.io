@@ -366,6 +366,23 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .tag.ok{background:var(--ok);color:#fff}
 .tag.warn{background:var(--accent-orange);color:#fff}
 
+/* ===== Bandeau réseau (lent / hors-ligne) ===== */
+.net-badge{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(76px + env(safe-area-inset-bottom, 0px));z-index:60;
+  max-width:calc(100% - 24px);padding:8px 14px;
+  font:800 .74rem 'Sora',sans-serif;text-align:center;
+  background:var(--accent-orange);color:#fff;
+  border:2px solid var(--stroke);border-radius:20px;box-shadow:3px 3px 0 var(--stroke);
+}
+.net-badge.off{background:var(--stroke);color:var(--primary)}
+.net-badge[hidden]{display:none}
+
+/* ===== Prix réel automatique (tuile « Y aller ») ===== */
+.rp-load,.rp-idle{font-size:.7rem;font-weight:700;color:var(--txt-2);font-style:italic}
+.rp-ok{font-size:.72rem;font-weight:700;line-height:1.4;display:block;margin-top:2px}
+.rp-ok em{font-weight:600;color:var(--txt-2);font-style:normal}
+
 /* ===== Journal des nouveautés ===== */
 .news-entry{padding:14px 0;border-bottom:2px solid var(--stroke)}
 .news-entry:last-child{border-bottom:0;padding-bottom:0}
@@ -382,6 +399,23 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .ph-card{margin-top:18px;padding:16px;text-align:center;background:var(--secondary);
   border:3px solid var(--stroke);border-radius:var(--r-md);box-shadow:4px 4px 0 var(--stroke)}
 .ph-card img{max-width:100%;height:auto;display:inline-block}
+
+/* ===== Mini-carte du trajet (en tête de la vue 3) ===== */
+.trip-route{
+  display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;
+  background:var(--secondary);border:3px solid var(--stroke);border-radius:var(--r-md);
+  box-shadow:4px 4px 0 var(--stroke);
+}
+.tr-mode{font-size:2rem;line-height:1;flex-shrink:0}
+.tr-body{flex:1;min-width:0}
+.tr-line{display:flex;align-items:center;gap:10px}
+.tr-pt{font-family:'Sora',sans-serif;font-weight:900;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-dash{flex:1;min-width:20px;height:0;border-top:3px dashed var(--stroke);opacity:.55}
+.tr-meta{font-size:.72rem;font-weight:800;color:var(--txt-2);letter-spacing:.04em;margin-top:3px}
+.tr-real{margin-top:3px;min-height:1em}
+
+/* ===== Logements réels ===== */
+.stay-list{margin-top:10px}
 
 /* ===== Vue « Ton voyage » : hiérarchie claire ===== */
 .plan-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}
@@ -1208,29 +1242,61 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 .stop:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--stroke)}
 
 
-/* ===== Carnet de voyage : visible uniquement à l'impression ===== */
+/* ===== Carnet de voyage — document imprimable soigné ===== */
 #dossier{display:none}
+@page{ margin:14mm 13mm; }
 @media print{
   body > *:not(#dossier){display:none !important}
-  #dossier{display:block !important;color:#000;background:#fff;font-family:Georgia,'Times New Roman',serif;font-size:12pt;line-height:1.5}
-  #dossier header{border-bottom:3px solid #000;margin-bottom:14pt;padding-bottom:8pt}
-  #dossier h1{font-family:'Sora',Arial,sans-serif;font-size:22pt;margin:0 0 4pt}
-  #dossier header p{margin:0;font-size:10.5pt;color:#333}
-  #dossier h2{font-family:'Sora',Arial,sans-serif;font-size:13pt;margin:14pt 0 6pt;border-bottom:1.5pt solid #000;padding-bottom:2pt}
-  #dossier h3{font-size:11.5pt;margin:8pt 0 2pt}
-  #dossier section{break-inside:avoid-page}
-  #dossier .dj{break-inside:avoid-page;margin-bottom:6pt}
-  #dossier table{width:100%;border-collapse:collapse;font-size:10.5pt}
-  #dossier th{text-align:left;vertical-align:top;padding:3pt 8pt 3pt 0;width:110pt;font-family:'Sora',Arial,sans-serif;font-size:9.5pt}
-  #dossier td{padding:3pt 0;border-bottom:.5pt solid #999}
-  #dossier ul{margin:2pt 0 0;padding-left:16pt}
-  #dossier .heures{font-size:10pt;margin-top:2pt}
-  #dossier .lieux{margin:0;font-size:10pt;color:#333}
-  #dossier .lnk{font-size:9pt;color:#555;word-break:break-all}
-  #dossier footer{margin-top:16pt;padding-top:6pt;border-top:1.5pt solid #000;font-size:8.5pt;color:#555}
-}
-
-/* carte du jour dans le carnet imprimé */
-@media print{
-  #dossier .djmap{display:block;width:88%;max-width:420pt;margin:4pt 0 8pt;border:1.5pt solid #000}
+  #dossier{
+    display:block !important;color:#111;background:#fff;
+    font-family:'Inter',Helvetica,Arial,sans-serif;font-size:10.5pt;line-height:1.55;
+  }
+  /* ---- couverture ---- */
+  #dossier .cover{
+    border:2.5pt solid #111;border-radius:6pt;padding:16pt 18pt;margin-bottom:16pt;
+    background:#FFE600;break-inside:avoid;
+  }
+  #dossier .cover .brand{font-family:'Sora',Arial,sans-serif;font-weight:900;font-size:9pt;letter-spacing:.16em;margin:0 0 6pt}
+  #dossier h1{font-family:'Sora',Arial,sans-serif;font-weight:900;font-size:27pt;line-height:1.05;margin:0}
+  #dossier .cover .meta{margin:10pt 0 0;font-size:11pt;font-weight:600}
+  #dossier .cover .rule{height:3pt;background:#111;width:64pt;margin:9pt 0 0;border-radius:2pt}
+  /* ---- sections ---- */
+  #dossier section{break-inside:avoid;margin-bottom:15pt}
+  #dossier h2{
+    font-family:'Sora',Arial,sans-serif;font-weight:900;font-size:12pt;
+    margin:0 0 7pt;padding:4pt 8pt;background:#111;color:#fff;border-radius:3pt;
+  }
+  #dossier h3{font-family:'Sora',Arial,sans-serif;font-size:11pt;margin:0 0 2pt}
+  /* ---- tableaux clé/valeur ---- */
+  #dossier table{width:100%;border-collapse:collapse;font-size:10pt}
+  #dossier th{
+    text-align:left;vertical-align:top;width:96pt;padding:5pt 10pt 5pt 0;
+    font-family:'Sora',Arial,sans-serif;font-size:8.5pt;text-transform:uppercase;
+    letter-spacing:.06em;color:#555;font-weight:800;
+  }
+  #dossier td{padding:5pt 0;border-bottom:.75pt solid #ddd;vertical-align:top}
+  #dossier tr:last-child td{border-bottom:0}
+  /* ---- journées ---- */
+  #dossier .dj{
+    break-inside:avoid;margin-bottom:9pt;padding-left:9pt;border-left:2.5pt solid #FFE600;
+  }
+  #dossier .dj h3{display:flex;gap:6pt;align-items:baseline}
+  #dossier .dj h3 small{font-weight:600;color:#666;font-size:9pt}
+  #dossier .lieux{margin:1pt 0 0;font-size:9.5pt;color:#444}
+  #dossier .heures{margin:4pt 0 0;padding-left:13pt;font-size:9.5pt}
+  #dossier .heures li{margin-bottom:2.5pt}
+  #dossier .heures strong{font-family:'Sora',Arial,sans-serif;font-size:9pt}
+  #dossier ul{margin:2pt 0 0;padding-left:14pt}
+  #dossier li{margin-bottom:2pt}
+  /* ---- références de réservation : bien visibles ---- */
+  #dossier .refs td{font-size:11pt}
+  #dossier .refs strong{font-family:'Sora',Arial,sans-serif;font-size:12pt;letter-spacing:.02em}
+  #dossier .lnk{display:block;font-size:8pt;color:#666;word-break:break-all;margin-top:1pt}
+  /* ---- carte du jour ---- */
+  #dossier .djmap{display:block;width:100%;max-width:400pt;margin:5pt 0 3pt;border:1pt solid #bbb;border-radius:3pt}
+  /* ---- pied de page ---- */
+  #dossier footer{
+    margin-top:14pt;padding-top:6pt;border-top:1.5pt solid #111;
+    font-size:8pt;color:#666;break-inside:avoid;
+  }
 }

@@ -152,9 +152,8 @@
     <!-- 2 · Passer à l'action -->
     <div class="card">
       <h3 style="margin:0 0 4px">🎫 Réserver</h3>
-      <p class="sub" style="margin:0 0 12px">Tous les liens pré-remplis (billets, hôtels avec prix réels, activités) et les vrais prix des vols jour par jour.</p>
+      <p class="sub" style="margin:0 0 12px">Tous les liens de réservation, déjà pré-remplis avec ta destination et tes dates.</p>
       <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
-      <button class="btn ghost" id="btnOpenSim" style="width:100%;justify-content:center;margin-top:10px">🛫 Simulation des vols &amp; trains</button>
       <div class="btn-duo" style="margin-top:10px">
         <button class="btn ghost sm" id="btnDossier">📄 Carnet (PDF)</button>
         <button class="btn ghost sm" id="btnMaps">🗺️ Cartes hors-ligne</button>
@@ -162,12 +161,7 @@
       <p class="hint" style="margin:8px 0 0">✈️ Avant le décollage : télécharge le carnet PDF (plan + n° de réservation) et prépare les <strong>cartes de chaque journée</strong> — tout reste consultable <strong>sans connexion</strong>, réseau coupé ou pas.</p>
     </div>
 
-    <!-- 3 · Pendant le séjour -->
-    <div class="card" id="cardEvents">
-      <h3 style="margin:0 0 4px">🎉 Pendant ton séjour</h3>
-      <p class="sub" style="margin:0 0 10px">Festivals, fêtes locales, marchés et jours fériés autour de tes dates.</p>
-      <div id="zoneEvents"><button class="btn sm ghost" id="btnEvents">Voir les événements</button></div>
-    </div>
+    <!-- 3 · Avant de partir (les événements vivent désormais dans le plan) -->
     <div class="card" id="cardInfo">
       <h3 style="margin:0 0 4px">📌 À savoir avant de partir</h3>
       <p class="sub" style="margin:0 0 10px">Visa, prises électriques, urgences, pourboires, eau, décalage horaire.</p>
@@ -548,6 +542,7 @@
   </div>
 </div>
 
+<div class="net-badge" id="netBadge" hidden></div>
 <div id="toast"></div>
 
 <!-- ===== Carnet de voyage imprimable (rempli au clic, visible seulement à l'impression) ===== -->

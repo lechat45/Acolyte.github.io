@@ -132,12 +132,63 @@ const groqModel = () => localStorage.getItem(LS_GROQM) || GROQ_PREFERRED[0];
 const tpKey   = () => CFG.travelpayouts || localStorage.getItem(LS_TP) || '';
 const hasGroq = () => useBackend() || !!groqKey();
 
+/* ============================================================
+   RÉSEAU FAIBLE — le site doit rester utilisable en 2G/EDGE,
+   en tunnel, ou avec une connexion qui saute. Trois leviers :
+   1) détection (API Network Information + mesure des échecs)
+   2) délais et charges allégés quand ça rame
+   3) file de reprise : ce qui a échoué repart dès le retour du réseau
+============================================================ */
+let _netFails = 0;                       /* échecs réseau consécutifs */
+const _netQueue = [];                    /* actions à rejouer au retour du réseau */
+function netInfo(){ return navigator.connection || navigator.mozConnection || navigator.webkitConnection || null; }
+/* connexion lente : hors-ligne, 2g/slow-2g, économiseur de données, ou 3 échecs d'affilée */
+function netSlow(){
+  if(!navigator.onLine) return true;
+  const c = netInfo();
+  if(c){
+    if(c.saveData) return true;
+    if(/^(slow-2g|2g)$/.test(c.effectiveType || '')) return true;
+  }
+  return _netFails >= 3;
+}
+/* délai adapté : on laisse plus de temps quand le réseau est mauvais */
+const netTimeout = base => netSlow() ? Math.round(base * 1.8) : base;
+function netRetry(label, fn){                       /* rejoue `fn` au retour du réseau */
+  if(_netQueue.some(x => x.label === label)) return;
+  _netQueue.push({ label, fn });
+  updateNetBadge();
+}
+function flushNetQueue(){
+  if(!navigator.onLine || !_netQueue.length) return;
+  const jobs = _netQueue.splice(0, _netQueue.length);
+  updateNetBadge();
+  toast(`📶 Connexion revenue — reprise de ${jobs.length} élément(s)`);
+  jobs.forEach(j => { try{ j.fn(); }catch(e){} });
+}
+function updateNetBadge(){
+  const b = $('#netBadge'); if(!b) return;
+  const off = !navigator.onLine, slow = netSlow();
+  b.hidden = !off && !slow;
+  b.className = 'net-badge' + (off ? ' off' : '');
+  b.textContent = off
+    ? `📴 Hors connexion${_netQueue.length ? ` · ${_netQueue.length} en attente` : ''} — ton voyage reste consultable`
+    : `🐢 Réseau lent — Acolite allège les chargements`;
+}
+addEventListener('online',  () => { _netFails = 0; updateNetBadge(); flushNetQueue(); });
+addEventListener('offline', () => { updateNetBadge(); });
+netInfo()?.addEventListener?.('change', updateNetBadge);
+
 /* fetch avec délai maximal : sans ça, un appel IA qui reste bloqué fait tourner
-   le loader à l'infini. Au-delà de `ms`, on annule et l'appelant affiche l'erreur. */
+   le loader à l'infini. Au-delà de `ms`, on annule et l'appelant affiche l'erreur.
+   Compte aussi les échecs pour détecter une connexion qui rame. */
 function fetchT(url, opts = {}, ms = 45000){
   const ac = new AbortController();
-  const id = setTimeout(() => ac.abort(), ms);
-  return fetch(url, { ...opts, signal: ac.signal }).finally(() => clearTimeout(id));
+  const id = setTimeout(() => ac.abort(), netTimeout(ms));
+  return fetch(url, { ...opts, signal: ac.signal })
+    .then(r => { _netFails = 0; if(!navigator.onLine) updateNetBadge(); return r; })
+    .catch(err => { _netFails++; if(_netFails === 3) updateNetBadge(); throw err; })
+    .finally(() => clearTimeout(id));
 }
 
 /* --- Découverte automatique du modèle Gemini disponible sur la clé --- */
@@ -1055,7 +1106,6 @@ Le programme couvre toute la durée (${p.days || 'du séjour'}), 1 ligne par jou
 /* --- Concierge : remet les cartes Événements / Fiche pratique à l'état bouton
    (appelé à chaque rendu de plan → pas de contenu périmé d'un autre voyage) --- */
 function resetConcierge(){
-  const ev = $('#zoneEvents'); if(ev) ev.innerHTML = '<button class="btn sm ghost" id="btnEvents">Voir les événements</button>';
   const inf = $('#zoneInfo'); if(inf) inf.innerHTML = '<button class="btn sm ghost" id="btnInfo">Afficher la fiche pratique</button>';
 }
 
@@ -1084,11 +1134,50 @@ function renderEvents(data){
   const ev = (data?.events || []).filter(e => e && e.nom);
   const ico = { festival:'🎪', 'fête':'🎉', fete:'🎉', marché:'🛍️', marche:'🛍️', sport:'⚽', expo:'🖼️', 'férié':'📛', ferie:'📛' };
   if(!ev.length){ zone.innerHTML = `<p class="hint" style="margin:0">Rien de notable repéré à ces dates — tu auras la ville pour toi 😉</p>`; return; }
-  zone.innerHTML = ev.map(e => `<div class="item" style="align-items:flex-start">
-    <div class="emo">${ico[String(e.type||'').toLowerCase()] || '📅'}</div>
-    <div style="flex:1;min-width:0"><h4>${esc(e.nom)} ${e.quand ? `<span class="tag cyan" style="font-size:.66rem">${esc(e.quand)}</span>` : ''}</h4>
-    <p class="hint" style="margin:2px 0 0">${esc(e.note || '')}</p></div></div>`).join('');
+  const prog = state.cache.plan?.programme || [];
+  zone.innerHTML = ev.map((e, i) => {
+    const deja = prog.some(j => (j.lieux || []).some(l => String(l).toLowerCase() === String(e.nom).toLowerCase()));
+    return `<div class="item" style="align-items:flex-start">
+      <div class="emo">${ico[String(e.type||'').toLowerCase()] || '📅'}</div>
+      <div style="flex:1;min-width:0">
+        <h4>${esc(e.nom)} ${e.quand ? `<span class="tag cyan" style="font-size:.66rem">${esc(e.quand)}</span>` : ''}</h4>
+        <p class="hint" style="margin:2px 0 0">${esc(e.note || '')}</p>
+      </div>
+      <div class="side">${deja
+        ? `<span class="tag ok" style="font-size:.62rem">✔ au programme</span>`
+        : `<button class="btn sm ghost" data-addev="${i}" title="Ajouter cette visite au programme">➕ Ajouter</button>`}</div>
+    </div>`;
+  }).join('');
+  state.cache._evList = ev; save();
 }
+
+/* Ajoute un événement à une journée du programme (celle qui correspond à sa date
+   si on la reconnaît, sinon la 1ʳᵉ journée libre) */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-addev]');
+  if(!b) return;
+  const ev = (state.cache._evList || [])[+b.dataset.addev];
+  const plan = state.cache.plan;
+  if(!ev || !plan?.programme?.length){ toast('Génère d’abord le programme'); return; }
+  const dts = stayDates();
+  let cible = null;
+  /* si l'événement porte une date du séjour → on vise CE jour-là */
+  const m = String(ev.quand || '').match(/(\d{4})-(\d{2})-(\d{2})/) || String(ev.quand || '').match(/(\d{1,2})[\/\s]/);
+  if(dts && m){
+    const jourIso = m[0].length === 10 ? m[0] : null;
+    if(jourIso){
+      const idx = Math.round((new Date(jourIso) - new Date(dts.in)) / 86400000) + 1;
+      cible = plan.programme.find(j => +j.jour === idx) || null;
+    }
+  }
+  if(!cible) cible = plan.programme.reduce((a, j) => (j.lieux||[]).length < (a.lieux||[]).length ? j : a, plan.programme[0]);
+  cible.lieux = [...(cible.lieux || []), ev.nom];
+  delete state.cache.days?.[cible.jour];      /* le détail horaire doit être refait */
+  save();
+  renderPlan(plan);
+  toast(`✔ « ${String(ev.nom).slice(0, 28)} » ajouté au jour ${cible.jour}`);
+  setTimeout(() => document.querySelector(`[data-daybox="${CSS.escape(String(cible.jour))}"]`)?.closest('.day-block')?.scrollIntoView({ block:'center' }), 120);
+});
 
 /* --- Fiche pratique pays (light → Groq) --- */
 async function loadCountryInfo(){
@@ -1128,115 +1217,63 @@ document.addEventListener('click', e => {
    Endpoint cache.json : prix agrégés Booking/Expedia/Agoda.
    Repli automatique sur les liens comparateurs si indisponible.
 ============================================================ */
-/* Relais CORS : Hotellook n'envoie pas les en-têtes CORS, le navigateur
-   refuse donc de lire sa réponse. On passe par un relais qui, lui, les ajoute.
-   Ordre : ton Worker Cloudflare (config.js) → relais publics → appel direct. */
-function relays(){
-  const own = API();
-  const list = [];
-  if(own) list.push({ nom:'ton backend', wrap: u => `${own}/?url=${encodeURIComponent(u)}` });
-  list.push({ nom:'relais public 1', wrap: u => `https://corsproxy.io/?url=${encodeURIComponent(u)}` });
-  list.push({ nom:'relais public 2', wrap: u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` });
-  list.push({ nom:'direct', wrap: u => u });
-  return list;
-}
-
+/* Hotellook (Travelpayouts) a été ARRÊTÉ par son éditeur : son API renvoie 404
+   et aucun relais n'y change quoi que ce soit. On s'appuie donc sur l'IA, qui
+   connaît de vrais établissements, + des liens de réservation pré-remplis. */
 async function loadHotels(force = false){
   const zone = $('#zoneHotels');
   if(!zone) return;
   const t = state.trip;
+  if(!t){ zone.innerHTML = `<p class="hint">Choisis d'abord une destination.</p>`; return; }
   const d = stayDates();
-  const token = tpKey();
-  if(!t || !d || (!token && !useBackend())){
-    zone.innerHTML = `<p class="hint">Renseigne une date de départ à l'étape 1 pour voir les prix réels des hôtels ici.</p>`;
-    return;
-  }
-  /* multi-bases : on cherche les hôtels de la 1ʳᵉ base (un nom d'itinéraire « A → B » ne matcherait rien) */
-  const hotCity = state.cache.plan?.logement?.etapes?.[0]?.ville || cleanPlace(t.ville_aeroport) || t.nom;
-  const ck = `hot_${hotCity}_${d.in}`;
+  const lg = state.cache.plan?.logement || {};
+  const ville = lg.etapes?.[0]?.ville || cleanPlace(t.ville_aeroport) || t.nom;
+  const quartier = lg.etapes?.[0]?.quartier || lg.quartier || '';
+  const ck = `stay_${ville}_${quartier}_${d ? d.in : 'flex'}`;
   if(state.cache[ck] && !force){ renderHotels(state.cache[ck]); return; }
-  zone.innerHTML = loaderHTML('Recherche des prix réels (Booking, Expedia, Agoda…)');
+  _retryFns.hotels = () => loadHotels(true);
+  zone.innerHTML = loaderHTML('Sélection des meilleurs logements…');
   const A = state.prefs?.adults || 2, K = state.prefs?.kids || 0;
-  const qs = `location=${encodeURIComponent(hotCity)}&checkIn=${d.in}&checkOut=${d.out}`
-    + `&adults=${A}${K ? '&children=' + K : ''}&currency=eur&limit=10`;
-  /* backend : le token est ajouté côté serveur → il ne transite jamais par le navigateur */
-  if(useBackend()){
-    try{
-      const res = await fetch(`${API()}/hotels?${qs}`);
-      if(res.ok){
-        const data = await res.json();
-        const rows = (Array.isArray(data) ? data : []).filter(h => h.priceFrom || h.priceAvg);
-        if(rows.length){
-          rows.sort((a, b) => (a.priceFrom || a.priceAvg) - (b.priceFrom || b.priceAvg));
-          state.cache[ck] = rows.slice(0, 8); save();
-          renderHotels(state.cache[ck], 'ton backend');
-          return;
-        }
-      }
-    }catch(e){}
+  const nuits = d ? Math.max(1, Math.round((new Date(d.out) - new Date(d.in)) / 86400000)) : null;
+  const prompt = `Tu es Acolite, connaisseur de l'hébergement à ${ville}${quartier ? ` (quartier ${quartier})` : ''}. ${ctx()}
+Propose les 4 MEILLEURS hébergements RÉELS et vérifiables pour ce séjour${nuits ? ` de ${nuits} nuit(s)` : ''}, ${A} adulte(s)${K ? ` et ${K} enfant(s)` : ''}.
+Uniquement des établissements qui EXISTENT vraiment (nom exact tel qu'il apparaît sur Booking). Priorité au quartier conseillé${quartier ? ` (${quartier})` : ''}, puis à la proximité des lieux du programme.
+Varie les gammes en restant dans le budget. Classe-les du meilleur rapport qualité/prix au plus haut de gamme.
+Réponds UNIQUEMENT en JSON :
+{"hotels":[{"nom":"nom exact","type":"hôtel|appartement|auberge","quartier":"quartier réel","prix_nuit":"fourchette en € ex 90-130€","note":"ex 8,6/10 si connue sinon null","pourquoi":"1 phrase concrète : ce qui le rend adapté"}]}`;
+  try{
+    const { data } = await ai('light', prompt);
+    const rows = (data?.hotels || []).filter(h => h && h.nom).slice(0, 4);
+    if(!rows.length) throw new Error('vide');
+    state.cache[ck] = rows; save();
+    renderHotels(rows);
+  }catch(e){
+    if(e.message !== 'NO_KEY') zone.innerHTML = errHTML('Sélection indisponible — les comparateurs ci-dessous restent pré-remplis.', 'hotels');
   }
-  const api = `https://engine.hotellook.com/api/v2/cache.json?${qs}&token=${encodeURIComponent(token)}`;
-
-  /* on garde en mémoire le relais qui a marché → direct au but la fois suivante */
-  const memo = localStorage.getItem('acolite_relay');
-  const chain = relays();
-  const ordered = memo ? [...chain.filter(r => r.nom === memo), ...chain.filter(r => r.nom !== memo)] : chain;
-  const errs = [];
-
-  for(const r of ordered){
-    try{
-      const res = await fetch(r.wrap(api), { headers: { 'Accept':'application/json' } });
-      if(!res.ok) throw new Error('HTTP ' + res.status);
-      const txt = await res.text();
-      let data;
-      try{ data = JSON.parse(txt); }catch(e){ throw new Error('réponse illisible'); }
-      const rows = (Array.isArray(data) ? data : []).filter(h => h.priceFrom || h.priceAvg);
-      if(!rows.length) throw new Error('aucun tarif pour ces dates');
-      rows.sort((a, b) => (a.priceFrom || a.priceAvg) - (b.priceFrom || b.priceAvg));
-      state.cache[ck] = rows.slice(0, 8); save();
-      lsSet('acolite_relay', r.nom);
-      renderHotels(state.cache[ck], r.nom);
-      return;
-    }catch(e){
-      const cors = e instanceof TypeError || e.name === 'TypeError' || /failed to fetch|load failed|networkerror/i.test(e.message||'');
-      errs.push(`${r.nom} : ${cors ? 'bloqué par le navigateur (CORS)' : e.message}`);
-    }
-  }
-  localStorage.removeItem('acolite_relay');
-  zone.innerHTML = `<p class="hint">Prix en direct indisponibles (le service Hotellook a été arrêté par son éditeur). Pas de panique : les comparateurs ci-dessous sont <strong>déjà pré-remplis</strong> avec ta destination et tes dates.
-    <a href="#" id="hotRetry" style="color:var(--accent-orange);font-weight:900">Réessayer</a></p>
-    <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Détail technique</summary>
-      <p class="hint" style="margin-top:4px">${errs.map(esc).join('<br>')}</p></details>`;
 }
 
-function renderHotels(rows, via){
+function renderHotels(rows){
+  const zone = $('#zoneHotels'); if(!zone) return;
   const t = state.trip || {}, d = stayDates();
-  const nights = d ? Math.max(1, Math.round((new Date(d.out) - new Date(d.in)) / 86400000)) : 1;
-  const quartier = (state.cache.plan?.logement?.quartier || '').toLowerCase();
-  $('#zoneHotels').innerHTML = rows.map(h => {
-    const price = h.priceFrom || h.priceAvg;
-    const perNight = Math.round(price / nights);
-    const stars = '★'.repeat(Math.min(5, h.stars || 0));
-    const near = quartier && (h.location?.name||'').toLowerCase().includes(quartier);
-    const link = `https://search.hotellook.com/?destination=${encodeURIComponent(t.nom)}&checkIn=${d.in}&checkOut=${d.out}&adults=${state.prefs?.adults||2}&hotelName=${encodeURIComponent(h.hotelName||'')}`;
-    return `<div class="item">
-      <div class="emo">🏨</div>
+  const A = state.prefs?.adults || 2;
+  const ICO = { hôtel:'🏨', hotel:'🏨', appartement:'🏠', auberge:'🎒', villa:'🏡' };
+  zone.innerHTML = rows.map((h, i) => {
+    /* lien Booking pré-rempli avec le NOM exact + tes dates → l'utilisateur voit le vrai prix du jour */
+    const q = `${h.nom} ${h.quartier || ''} ${t.nom || ''}`.trim();
+    const book = `https://www.booking.com/searchresults.fr.html?ss=${encodeURIComponent(q)}`
+      + (d ? `&checkin=${d.in}&checkout=${d.out}` : '') + `&group_adults=${A}`;
+    return `<div class="item" style="align-items:flex-start">
+      <div class="emo">${ICO[String(h.type||'').toLowerCase()] || '🏨'}</div>
       <div style="flex:1;min-width:0">
-        <h4>${esc(h.hotelName||'Hôtel')} ${stars ? `<span style="color:var(--accent-orange)">${stars}</span>` : ''}</h4>
-        <p>${h.location?.name ? esc(h.location.name) : ''}${near ? ' · <strong>quartier conseillé ✔</strong>' : ''}${h.stars ? ' · ' + h.stars + '★' : ''}</p>
-        <a class="tl-loc" href="${esc(link)}" target="_blank" rel="noopener" style="margin-top:8px">🎫 Voir cette offre</a>
+        <h4>${esc(h.nom)}${i === 0 ? ' <span class="tag ok" style="font-size:.6rem">meilleur choix</span>' : ''}</h4>
+        <p>${esc(h.pourquoi || '')}</p>
+        <p class="hint" style="margin:3px 0 0">📍 ${esc(h.quartier || '—')}${h.note ? ` · ⭐ ${esc(String(h.note))}` : ''}</p>
+        <a class="tl-loc" href="${esc(book)}" target="_blank" rel="noopener" style="margin-top:8px">🎫 Voir le prix &amp; réserver</a>
       </div>
-      <div class="side">
-        <span class="tag money">💶 ${perNight} €/nuit</span>
-        <span class="tag">${Math.round(price)} € total</span>
-      </div>
+      <div class="side"><span class="tag money">💶 ${esc(h.prix_nuit || '?')}</span></div>
     </div>`;
-  }).join('') + `<p class="hint">Prix réels agrégés (Booking, Expedia, Agoda…) pour ${nights} nuit(s), ${state.prefs?.adults||2} adulte(s)${via && via !== 'direct' ? ` · via ${esc(via)}` : ''}. Vérifie le tarif final sur le site avant de réserver.</p>`;
+  }).join('') + `<p class="hint">Établissements réels sélectionnés pour ton quartier et ton budget. <strong>Le prix exact du jour s'affiche sur Booking</strong> (dates déjà pré-remplies) — vérifie avant de réserver.</p>`;
 }
-
-document.addEventListener('click', e => {
-  if(e.target.id === 'hotRetry'){ e.preventDefault(); loadHotels(true); }
-});
 
 /* --- Liens logement pré-remplis (comparateurs + sites directs) --- */
 function stayDates(){
@@ -1326,8 +1363,23 @@ function renderPlan(d){
   const dts = stayDates();
   const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : null;
 
+  const modeLabel = { avion:'en avion', train:'en train', voiture:'en voiture' }[tr.mode] || '';
   let html = `
     ${todayHTML()}
+
+    <!-- ═══ MINI-CARTE DU TRAJET : le mode choisi, en un coup d'œil ═══ -->
+    <div class="trip-route">
+      <div class="tr-mode">${icons[tr.mode]||'✈️'}</div>
+      <div class="tr-body">
+        <div class="tr-line">
+          <span class="tr-pt">${esc(cleanPlace(state.prefs?.from || 'Départ') || 'Départ')}</span>
+          <span class="tr-dash"></span>
+          <span class="tr-pt">${esc(String(state.trip?.nom || '').split('→').pop().trim() || '—')}</span>
+        </div>
+        <div class="tr-meta">${esc(String(tr.mode||'').toUpperCase())}${tr.prix_estime ? ` · ${esc(tr.prix_estime)}` : ''}${nuits ? ` · ${nuits} nuit(s)` : ''}</div>
+        <div class="tr-real" id="realPrice"></div>
+      </div>
+    </div>
 
     <!-- 1 · L'ESSENTIEL — visible d'un coup d'œil -->
     <div class="plan-head">
@@ -1342,10 +1394,29 @@ function renderPlan(d){
       ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Météo</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
     </div>
 
-    <!-- 2 · LE CONSEIL CLÉ — une seule phrase, impossible à rater -->
     ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}
 
-    <!-- 3 · LE PROGRAMME — le cœur, remonté avant les justifications -->
+    <!-- ═══ BLOC 1 · LE LOGEMENT ═══ -->
+    <div class="divider"></div>
+    <div class="plan-head"><h3>🏨 Ton logement</h3></div>
+    <div class="item" style="align-items:flex-start">
+      <div class="emo">🏨</div>
+      <div style="flex:1;min-width:0">
+        <h4>${(lg.etapes||[]).length ? 'Voyage en étapes' : esc(String(lg.type||'Logement')) + (lg.quartier ? ' à ' + esc(lg.quartier) : '')}</h4>
+        <p>${esc(lg.pourquoi||'—')}</p>
+        ${(lg.etapes||[]).map(e=>`<p class="hint" style="margin:4px 0 0">🛏 <strong>${esc(e.ville||'')}</strong> — ${esc(e.quartier||'')} · ${esc(String(e.nuits??'?'))} nuit(s)${e.prix_nuit ? ' · ' + esc(e.prix_nuit) + '/nuit' : ''}</p>`).join('')}
+        ${!(lg.etapes||[]).length && lg.prix_nuit ? `<p class="hint" style="margin:4px 0 0">💶 ${esc(lg.prix_nuit)} / nuit</p>` : ''}
+      </div>
+    </div>
+    <div id="zoneHotels" class="stay-list"></div>
+
+    <!-- ═══ BLOC 2 · LES ÉVÉNEMENTS ═══ -->
+    <div class="divider"></div>
+    <div class="plan-head"><h3>🎉 Pendant ton séjour</h3></div>
+    <p class="hint" style="margin:0 0 10px">Festivals, fêtes, marchés et jours fériés à tes dates — ajoute ceux qui te tentent au programme.</p>
+    <div id="zoneEvents"><button class="btn sm ghost" id="btnEvents">Voir les événements</button></div>
+
+    <!-- ═══ BLOC 3 · LE PROGRAMME ═══ -->
     <div class="divider"></div>
     <div class="plan-head">
       <h3>📆 Ton programme</h3>
@@ -1393,21 +1464,14 @@ function renderPlan(d){
       </div>
     </div>`;
 
-  if(qs.length){
-    html += `<div class="divider"></div><h3 style="margin:0 0 4px">🤔 Affine encore</h3>
-      <p class="hint" style="margin:0 0 10px">Réponds et Acolite adapte le voyage.</p>`;
-    qs.forEach(q=>{
-      html += `<h4 style="margin:10px 0 6px;font-family:'Sora'">${esc(q.texte)}</h4>
-      <div class="chips even">${q.options.map(o=>`<div class="chip planq" data-q="${esc(q.texte)}" data-a="${esc(o)}">${esc(o)}</div>`).join('')}</div>`;
-    });
-  }
-
-  /* (les boutons Réserver / Gérer vivent désormais dans leurs propres cartes sous le plan) */
+  /* (« Affine encore » retiré : l'IA pose ses questions au moment du plan, pas après) */
   $('#zonePlan').innerHTML = html;
   fitStats();
   refreshPasses();
   startWx();
-  resetConcierge();   /* cartes Événements / Fiche pratique à l'état bouton pour ce voyage */
+  resetConcierge();          /* fiche pratique à l'état bouton pour ce voyage */
+  autoRealPrices(tr.mode);   /* prix réel du transport, en tâche de fond */
+  loadHotels();              /* vrais logements du quartier, sans clic */
 }
 addEventListener('resize', () => { if($('#zonePlan')?.querySelector('.plan-stat')) fitStats(); });
 
@@ -1937,6 +2001,79 @@ function renderTransport(d){
       <button class="btn sm" id="btnDb">🔍 Chercher les trains</button>
       <div id="zoneDb" style="margin-top:14px"></div>`;
   }
+}
+
+/* ============================================================
+   PRIX RÉELS AUTOMATIQUES — se lancent seuls au rendu du plan,
+   sans que le voyageur ait à cliquer sur quoi que ce soit.
+   ✈️ Ryanair farfnd · 🚄 Deutsche Bahn · 🚗 calcul carburant+péage
+============================================================ */
+const FUEL_L100 = 6.5, FUEL_EUR_L = 1.85, TOLL_EUR_KM = 0.09;   /* moyennes Europe 2026 */
+
+/* prix voiture : carburant + péages, aller-retour, divisé par les passagers */
+function carPriceAuto(){
+  const dist = state.cache._real?.dist;
+  if(!dist) return null;
+  const route = dist * 1.25;                       /* vol d'oiseau → route réelle */
+  const A = Math.max(1, (state.prefs?.adults || 1) + (state.prefs?.kids || 0));
+  const total = route * 2 * (FUEL_L100 / 100 * FUEL_EUR_L + TOLL_EUR_KM);
+  return { total: Math.round(total), perPax: Math.round(total / A), km: Math.round(route) };
+}
+
+/* vol le moins cher (Ryanair, API publique sans clé) */
+async function planePriceAuto(){
+  const t = state.trip, p = state.prefs || {};
+  const to = (t?.iata || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if(to.length !== 3 || !p.depart) return null;
+  const AIRPORTS = { paris:'BVA', lyon:'LYS', marseille:'MRS', bordeaux:'BOD', nantes:'NTE', toulouse:'TLS',
+                     lille:'LIL', nice:'NCE', bruxelles:'CRL', 'genève':'GVA', geneve:'GVA' };
+  const from = AIRPORTS[cleanPlace(p.from || 'Paris').toLowerCase()] || 'BVA';
+  const stay = Math.max(2, Math.min(21, daysFromPrefs ? daysFromPrefs() : 7));
+  const url = `https://services-api.ryanair.com/farfnd/v4/roundTripFares?departureAirportIataCode=${from}&arrivalAirportIataCode=${to}`
+    + `&outboundDepartureDateFrom=${p.depart}&outboundDepartureDateTo=${addDays(p.depart, 3)}`
+    + `&inboundDepartureDateFrom=${addDays(p.depart, Math.max(1, stay - 1))}&inboundDepartureDateTo=${addDays(p.depart, stay + 3)}`
+    + `&market=fr-fr&adultPaxCount=${p.adults || 1}&currency=EUR&limit=6&durationFrom=1&durationTo=${stay + 3}`;
+  try{
+    const r = await fetchT(url, {}, 9000);
+    if(!r.ok) return null;
+    const d = await r.json();
+    const f = (d.fares || []).filter(x => x?.summary?.price?.value).sort((a, b) => a.summary.price.value - b.summary.price.value)[0];
+    if(!f) return null;
+    return { prix: Math.round(f.summary.price.value), from, to,
+             aller: f.outbound?.departureDate?.slice(0, 10), retour: f.inbound?.departureDate?.slice(0, 10) };
+  }catch(e){ return null; }
+}
+
+/* Charge en tâche de fond le prix réel du mode choisi, puis met à jour la tuile
+   « Y aller » sans re-rendre tout le plan. Silencieux si indisponible. */
+async function autoRealPrices(mode){
+  const slot = $('#realPrice');
+  if(!slot) return;
+  const ck = `rp_${mode}_${state.trip?.nom}_${state.prefs?.depart || 'flex'}`;
+  if(state.cache[ck]){ slot.innerHTML = state.cache[ck]; return; }
+  let html = '';
+  /* voiture et train ne demandent AUCUN réseau (calcul local / données déjà en cache) :
+     ils s'affichent même en connexion dégradée. */
+  if(mode === 'voiture'){
+    const c = carPriceAuto();
+    if(c) html = `<span class="rp-ok">🚗 <strong>≈ ${c.perPax} €/pers</strong> A/R · ${c.km} km · carburant + péages</span>`;
+  }else if(mode === 'train'){
+    const tr = state.cache._real?.train;
+    if(tr) html = `<span class="rp-ok">🚄 <strong>${esc(tr)}</strong></span>`;
+  }else{
+    /* l'avion exige un appel réseau → on s'abstient si la connexion rame, et on rejoue plus tard */
+    if(netSlow()){
+      slot.innerHTML = `<span class="rp-idle">réseau limité — prix chargé au retour du réseau</span>`;
+      netRetry('prix-avion', () => autoRealPrices(mode));
+      return;
+    }
+    slot.innerHTML = `<span class="rp-load">recherche du prix réel…</span>`;
+    const f = await planePriceAuto();
+    if(f) html = `<span class="rp-ok">✈️ <strong>dès ${f.prix} € A/R</strong> · ${esc(f.from)}→${esc(f.to)}${f.aller ? ` · ${esc(f.aller)}` : ''} <em>(Ryanair, aujourd'hui)</em></span>`;
+  }
+  if(!html){ slot.innerHTML = `<span class="rp-idle">prix du jour à vérifier sur les liens de réservation</span>`; return; }
+  state.cache[ck] = html; save();
+  slot.innerHTML = html;
 }
 
 /* ============================================================
@@ -2898,8 +3035,12 @@ function buildDossierHTML(){
   const esc2 = esc;
   const dates = d ? `${d.in} → ${d.out}` : (p.when || 'dates flexibles');
   const A = `${p.adults || 2} adulte(s)${p.kids ? ' + ' + p.kids + ' enfant(s)' : ''}`;
-  let h = `<header><h1>✈️ ${esc2(t.nom)}${t.pays ? ', ' + esc2(t.pays) : ''}</h1>
-    <p>${esc2(dates)} · ${esc2(A)} · départ de ${esc2(p.from || '—')} — Carnet généré par Acolite</p></header>`;
+  let h = `<div class="cover">
+    <p class="brand">ACOLITE · CARNET DE VOYAGE</p>
+    <h1>${esc2(t.nom)}</h1>
+    <div class="rule"></div>
+    <p class="meta">${esc2(t.pays || '')}${t.pays ? ' · ' : ''}${esc2(dates)}<br>${esc2(A)} · départ de ${esc2(p.from || '—')}</p>
+  </div>`;
   h += `<section><h2>L'essentiel</h2><table>
     <tr><th>Transport</th><td>${esc2(pl.transport?.mode || '—')} · ${esc2(pl.transport?.prix_estime || '')}<br>${esc2(pl.transport?.details || '')}</td></tr>
     <tr><th>Logement</th><td>${(pl.logement?.etapes || []).length
@@ -2909,15 +3050,15 @@ function buildDossierHTML(){
     ${pl.sur_place ? `<tr><th>Sur place</th><td>${esc2(pl.sur_place)}</td></tr>` : ''}
   </table></section>`;
   if(state.resas?.length){
-    h += `<section><h2>📎 Réservations & références</h2><table>` +
-      state.resas.map(r => `<tr><th>${esc2(r.type)}</th><td><strong>${esc2(r.ref)}</strong>${r.link ? `<br><span class="lnk">${esc2(r.link)}</span>` : ''}</td></tr>`).join('') +
+    h += `<section><h2>Réservations &amp; références</h2><table class="refs">` +
+      state.resas.map(r => `<tr><th>${esc2(r.type)}</th><td><strong>${esc2(r.ref)}</strong>${r.link ? `<span class="lnk">${esc2(r.link)}</span>` : ''}</td></tr>`).join('') +
       `</table></section>`;
   }
   if((pl.a_reserver || []).length){
-    h += `<section><h2>🎟️ À réserver à l'avance</h2><ul>` + pl.a_reserver.map(r => `<li>${esc2(r)}</li>`).join('') + `</ul></section>`;
+    h += `<section><h2>À réserver à l'avance</h2><ul>` + pl.a_reserver.map(r => `<li>${esc2(r)}</li>`).join('') + `</ul></section>`;
   }
   if((pl.programme || []).length){
-    h += `<section><h2>📆 Programme jour par jour</h2>`;
+    h += `<section><h2>Programme jour par jour</h2>`;
     pl.programme.forEach(j => {
       h += `<div class="dj"><h3>Jour ${esc2(String(j.jour))} — ${esc2(j.resume || '')}${j.base ? ` <small>(${esc2(j.base)})</small>` : ''}</h3>`;
       if((j.lieux || []).length) h += `<p class="lieux">📍 ${j.lieux.map(esc2).join(' · ')}</p>`;
@@ -2937,11 +3078,11 @@ function buildDossierHTML(){
   if(info){
     const rows = [['🛂 Formalités', info.visa], ['🔌 Prises', info.prise], ['🚨 Urgences', info.urgence], ['💶 Pourboire', info.pourboire],
                   ['🚰 Eau', info.eau], ['🕐 Décalage', info.decalage], ['💉 Santé', info.sante]].filter(r => r[1]);
-    if(rows.length) h += `<section><h2>📌 Infos pratiques</h2><table>` +
+    if(rows.length) h += `<section><h2>Infos pratiques</h2><table>` +
       rows.map(r => `<tr><th>${r[0]}</th><td>${esc2(String(r[1]))}</td></tr>`).join('') + `</table></section>`;
   }
-  if(pl.conseil_cle) h += `<section><h2>💡 Le conseil à retenir</h2><p>${esc2(pl.conseil_cle)}</p></section>`;
-  if((state.notes || '').trim()) h += `<section><h2>📝 Mes notes</h2><p>${esc2(state.notes).replace(/\n/g, '<br>')}</p></section>`;
+  if(pl.conseil_cle) h += `<section><h2>Le conseil à retenir</h2><p>${esc2(pl.conseil_cle)}</p></section>`;
+  if((state.notes || '').trim()) h += `<section><h2>Mes notes</h2><p>${esc2(state.notes).replace(/\n/g, '<br>')}</p></section>`;
   h += `<footer>Ticket souvenir — ne permet pas d'embarquer. Prix et horaires : estimations à vérifier. acolite</footer>`;
   return h;
 }
@@ -2960,7 +3101,6 @@ const _eDos = $('#btnDossier'); if(_eDos) _eDos.onclick = openDossier;
 
 /* --- Signal hors-ligne : rassure le voyageur, son plan reste là --- */
 window.addEventListener('offline', () => toast('📴 Hors connexion — ton plan reste consultable dans Acolite'));
-window.addEventListener('online',  () => toast('📶 Connexion retrouvée'));
 
 /* --- Sauvegarde / restauration du voyage complet (fichier .json) ---
    Sécurise les données contre un vidage du localStorage / changement d'appareil. */
@@ -3381,6 +3521,14 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'1.5', date:'2026-07-21', titre:'Prix réels automatiques et vue voyage épurée', items:[
+    '💶 Prix réels du transport chargés tout seuls — plus aucun bouton « simuler »',
+    '🏨 Vrais logements sélectionnés pour ton quartier, avec lien de réservation pré-rempli',
+    '🧭 Vue « Ton voyage » en 3 blocs clairs : logement · événements · programme',
+    '➕ Ajoute un événement à ton programme en un clic',
+    '🐢 Mode réseau faible : chargements allégés et reprise automatique au retour du réseau',
+    '📄 Carnet PDF entièrement redessiné'
+  ]},
   { v:'1.4', date:'2026-07-20', titre:'Hors-ligne, multi-pays et voyage à plusieurs', items:[
     '🗺️ Cartes de chaque journée téléchargeables : consultables sans réseau',
     '📄 Carnet de voyage en PDF : plan complet + n° de réservation, à emporter',
