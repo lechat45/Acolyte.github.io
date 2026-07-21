@@ -1328,38 +1328,29 @@ function renderPlan(d){
 
   let html = `
     ${todayHTML()}
-    <p class="sub" style="margin:-4px 0 12px">Le voyage qu'Acolite a construit pour toi${nuits ? `, sur ${nuits} nuit(s)` : ''}${A > 1 ? `, pour ${A} personnes` : ''}. ${d._checked === 'fixed' ? '⚠️ Une seconde IA a relu le plan et corrigé des incohérences.' : d._checked ? '✔ Budget, durée et transport relus par une seconde IA.' : ''}</p>
 
-    <h3 style="margin:0 0 10px">📋 L'essentiel</h3>
+    <!-- 1 · L'ESSENTIEL — visible d'un coup d'œil -->
+    <div class="plan-head">
+      <h3>📋 L'essentiel</h3>
+      ${d._checked === 'fixed' ? `<span class="tag warn" title="Une 2ᵉ IA a relu le plan et corrigé des incohérences">✔ relu &amp; corrigé</span>`
+        : d._checked ? `<span class="tag ok" title="Budget, durée et transport relus par une 2ᵉ IA">✔ relu par une 2ᵉ IA</span>` : ''}
+    </div>
     <div class="plan-grid">
-      <div class="plan-stat"><div class="k">Comment y aller</div><div class="v">${icons[tr.mode]||'✈️'} ${esc(tr.mode||'?')}</div><div class="s">${esc(tr.prix_estime||'')}</div></div>
-      <div class="plan-stat"><div class="k">Où dormir</div><div class="v">🏨 ${(lg.etapes||[]).length ? esc(lg.etapes.length + ' étapes') : esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${(lg.etapes||[]).length ? esc(lg.etapes.map(e=>`${e.ville} (${e.nuits}n)`).join(' · ')) : esc(lg.quartier||'') + (lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : '')}</div></div>
-      <div class="plan-stat"><div class="k">Ce que ça coûte</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">par personne${A > 1 && btNum ? ` · ${btNum * A} € au total` : ''}</div></div>
-      ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Le temps qu'il fera</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
+      <div class="plan-stat"><div class="k">Y aller</div><div class="v">${icons[tr.mode]||'✈️'} ${esc(tr.mode||'?')}</div><div class="s">${esc(tr.prix_estime||'')}</div></div>
+      <div class="plan-stat"><div class="k">Dormir</div><div class="v">🏨 ${(lg.etapes||[]).length ? esc(lg.etapes.length + ' étapes') : esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${(lg.etapes||[]).length ? esc(lg.etapes.map(e=>`${e.ville} (${e.nuits}n)`).join(' · ')) : esc(lg.quartier||'') + (lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : '')}</div></div>
+      <div class="plan-stat"><div class="k">Budget</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">/ pers.${A > 1 && btNum ? ` · ${btNum * A} € au total` : ''}${nuits ? ` · ${nuits} nuit(s)` : ''}</div></div>
+      ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Météo</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
     </div>
 
-    <div class="divider"></div>
-    <h3 style="margin:0 0 10px">🧠 Pourquoi ces choix</h3>
-    <div class="item" style="align-items:flex-start"><div class="emo">${icons[tr.mode]||'✈️'}</div>
-      <div style="flex:1"><h4>Y aller en ${esc(tr.mode||'transport')}</h4><p>${esc(tr.pourquoi||'—')}</p>
-      ${tr.details ? `<p class="hint" style="margin-top:4px">${esc(tr.details)}</p>` : ''}</div></div>
-    <div class="item" style="align-items:flex-start"><div class="emo">🏨</div>
-      <div style="flex:1"><h4>${(lg.etapes||[]).length ? 'Dormir — voyage en étapes' : 'Dormir à ' + esc(lg.quartier||'—')}</h4><p>${esc(lg.pourquoi||'—')}</p>
-      ${(lg.etapes||[]).map(e=>`<p class="hint" style="margin:3px 0 0">🛏 <strong>${esc(e.ville||'')}</strong> — ${esc(e.quartier||'')} · ${esc(String(e.nuits??'?'))} nuit(s)${e.prix_nuit ? ' · ' + esc(e.prix_nuit) + '/nuit' : ''}</p>`).join('')}</div></div>
-    ${bd.repartition ? `<div class="item" style="align-items:flex-start"><div class="emo">💶</div>
-      <div style="flex:1"><h4>Le budget en détail</h4><p>${esc(bd.repartition)}</p></div></div>` : ''}
-    ${d.sur_place ? `<div class="item" style="align-items:flex-start"><div class="emo">🚇</div>
-      <div style="flex:1"><h4>Se déplacer sur place</h4><p>${esc(d.sur_place)}</p></div></div>` : ''}
-    ${(d.a_reserver||[]).length ? `<div class="item" style="align-items:flex-start"><div class="emo">🎟️</div>
-      <div style="flex:1"><h4>À réserver à l'avance</h4>${d.a_reserver.map(r=>`<p class="hint" style="margin:2px 0 0">· ${esc(r)}</p>`).join('')}</div></div>` : ''}
-    ${d.conseil_cle ? `<div class="item" style="align-items:flex-start;background:var(--primary)"><div class="emo">💡</div>
-      <div style="flex:1"><h4 style="color:#101010">Le conseil à retenir</h4><p style="color:#101010">${esc(d.conseil_cle)}</p></div></div>` : ''}
+    <!-- 2 · LE CONSEIL CLÉ — une seule phrase, impossible à rater -->
+    ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}
 
-    ${carbonHTML(tr.mode)}
-
+    <!-- 3 · LE PROGRAMME — le cœur, remonté avant les justifications -->
     <div class="divider"></div>
-    <h3 style="margin:0 0 4px">📆 Ton programme, jour par jour</h3>
-    <p class="hint" style="margin:0 0 12px">Une journée ne te convient pas ? Le bouton 🔄 la refait à elle seule (pluie, fatigue, budget…).</p>
+    <div class="plan-head">
+      <h3>📆 Ton programme</h3>
+      <span class="plan-legend">🕘 détailler · 🔄 refaire</span>
+    </div>
     ${(d.programme||[]).map(jr=>`
       <div class="day-block">
         <div class="item" style="align-items:flex-start">
@@ -1376,7 +1367,31 @@ function renderPlan(d){
         ${state.cache.maps?.[jr.jour] ? `<img class="daymap" src="${state.cache.maps[jr.jour]}" alt="Carte du jour ${esc(String(jr.jour))} (hors-ligne)">` : ''}
         ${collabBarHTML(jr.jour)}
         <div class="day-detail" data-daybox="${esc(String(jr.jour))}"></div>
-      </div>`).join('')}`;
+      </div>`).join('')}
+
+    <!-- 4 · À FAIRE MAINTENANT — actionnable, donc visible -->
+    ${(d.a_reserver||[]).length ? `
+      <div class="divider"></div>
+      <div class="plan-head"><h3>🎟️ À réserver tôt</h3></div>
+      <div class="todo-list">${d.a_reserver.map(r=>`<div class="todo"><span>🎟️</span><p>${esc(r)}</p></div>`).join('')}</div>` : ''}
+
+    <!-- 5 · LE DÉTAIL — replié : consultable, mais n'encombre plus -->
+    <div class="acc" id="accWhy" style="margin-top:18px">
+      <div class="acc-head" data-acc>🧠 POURQUOI CES CHOIX &amp; INFOS PRATIQUES <span class="arr">›</span></div>
+      <div class="acc-body">
+        <div class="item" style="align-items:flex-start"><div class="emo">${icons[tr.mode]||'✈️'}</div>
+          <div style="flex:1"><h4>Y aller en ${esc(tr.mode||'transport')}</h4><p>${esc(tr.pourquoi||'—')}</p>
+          ${tr.details ? `<p class="hint" style="margin-top:4px">${esc(tr.details)}</p>` : ''}</div></div>
+        <div class="item" style="align-items:flex-start"><div class="emo">🏨</div>
+          <div style="flex:1"><h4>${(lg.etapes||[]).length ? 'Dormir — voyage en étapes' : 'Dormir à ' + esc(lg.quartier||'—')}</h4><p>${esc(lg.pourquoi||'—')}</p>
+          ${(lg.etapes||[]).map(e=>`<p class="hint" style="margin:3px 0 0">🛏 <strong>${esc(e.ville||'')}</strong> — ${esc(e.quartier||'')} · ${esc(String(e.nuits??'?'))} nuit(s)${e.prix_nuit ? ' · ' + esc(e.prix_nuit) + '/nuit' : ''}</p>`).join('')}</div></div>
+        ${bd.repartition ? `<div class="item" style="align-items:flex-start"><div class="emo">💶</div>
+          <div style="flex:1"><h4>Le budget en détail</h4><p>${esc(bd.repartition)}</p></div></div>` : ''}
+        ${d.sur_place ? `<div class="item" style="align-items:flex-start"><div class="emo">🚇</div>
+          <div style="flex:1"><h4>Se déplacer sur place</h4><p>${esc(d.sur_place)}</p></div></div>` : ''}
+        ${carbonHTML(tr.mode)}
+      </div>
+    </div>`;
 
   if(qs.length){
     html += `<div class="divider"></div><h3 style="margin:0 0 4px">🤔 Affine encore</h3>
@@ -3271,21 +3286,31 @@ async function issueCode(u){
 
 async function sendVerifyEmail(email, code){
   const ej = CFG.emailjs || {};
-  if(ej.publicKey && ej.serviceId && ej.templateId){
+  const configured = !!(ej.publicKey && ej.serviceId && ej.templateId);
+  let why = '';   /* raison exacte de l'échec, pour ne pas laisser l'utilisateur deviner */
+  if(configured){
     try{
-      const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      const r = await fetchT('https://api.emailjs.com/api/v1.0/email/send', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           service_id: ej.serviceId, template_id: ej.templateId, user_id: ej.publicKey,
           template_params: { to_email: email, code: code }
         })
-      });
+      }, 12000);
       if(r.ok){ $('#vfDemo').textContent = ''; toast('📬 Code envoyé à ' + email); return true; }
-    }catch(e){}
-    toast('⚠️ Envoi email échoué — mode démo activé');
+      /* EmailJS renvoie un message clair en texte brut (clé invalide, template introuvable…) */
+      why = (await r.text().catch(() => '')).slice(0, 160) || `erreur HTTP ${r.status}`;
+    }catch(e){
+      why = e.name === 'AbortError' ? 'délai dépassé (serveur EmailJS injoignable)' : 'connexion impossible';
+    }
+    toast('⚠️ Envoi email impossible — code affiché à l’écran');
   }
-  /* Mode démo : pas de service email configuré → code affiché */
-  $('#vfDemo').textContent = '🧪 Mode démo (EmailJS non configuré dans config.js) — ton code : ' + code;
+  /* Repli : le code s'affiche directement — l'inscription reste possible */
+  $('#vfDemo').innerHTML = configured
+    ? `⚠️ <strong>L’envoi par email a échoué</strong> — ton code : <strong>${esc(code)}</strong>`
+      + `<br><span style="opacity:.75">Cause renvoyée par EmailJS : ${esc(why)}</span>`
+      + `<br><span style="opacity:.75">Vérifie <code>emailjs</code> dans <code>config.js</code> (Public Key sur dashboard.emailjs.com/admin/account).</span>`
+    : `🧪 <strong>Mode démo</strong> (EmailJS non renseigné dans config.js) — ton code : <strong>${esc(code)}</strong>`;
   return false;
 }
 
@@ -3348,7 +3373,79 @@ const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
   toast('Re-bonjour ' + email.split('@')[0] + ' 👋');
 };
 
-function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); renderGallery(); showOnboard(); }
+function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); renderGallery(); showOnboard(); checkNews(); }
+
+/* ============================================================
+   NOUVEAUTÉS — journal des mises à jour.
+   Pour publier une màj : ajoute une entrée EN HAUT de CHANGELOG
+   (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
+============================================================ */
+const CHANGELOG = [
+  { v:'1.4', date:'2026-07-20', titre:'Hors-ligne, multi-pays et voyage à plusieurs', items:[
+    '🗺️ Cartes de chaque journée téléchargeables : consultables sans réseau',
+    '📄 Carnet de voyage en PDF : plan complet + n° de réservation, à emporter',
+    '🌍 Voyages multi-pays : découpage en étapes, logement et jours par ville',
+    '👍 Tableau partagé : votes et commentaires sur chaque journée',
+    '🧭 Vue « Ton voyage » réorganisée : le programme d’abord, le détail replié'
+  ]},
+  { v:'1.3', date:'2026-07-19', titre:'L’IA raisonne dans l’ordre', items:[
+    '🧠 Nouveau pipeline : ville → transport (CO₂, temps, prix) → lieux → logement → jours',
+    '🕘 Programme heure par heure pour chaque journée',
+    '🌍 Empreinte carbone du trajet avec l’alternative plus sobre',
+    '📍 Mode « Jour J » : ta journée en cours mise en avant pendant le voyage'
+  ]},
+  { v:'1.2', date:'2026-07-18', titre:'Souvenirs et personnalisation', items:[
+    '🖼️ Carte postale : 8 modèles, 6 styles, tes photos ou celles du web',
+    '🎫 Ticket d’embarquement souvenir avec code-barres',
+    '🎨 Thème clair / sombre / système et valeurs par défaut du questionnaire'
+  ]},
+  { v:'1.1', date:'2026-07-17', titre:'Comparer et retrouver ses voyages', items:[
+    '📊 Comparatif des propositions côte à côte',
+    '🧳 Galerie « Mes voyages » pour rouvrir un voyage passé',
+    '💾 Sauvegarde et import du voyage en fichier'
+  ]}
+];
+const APP_VERSION = CHANGELOG[0].v;
+const LS_SEEN_V = 'acolite_seen_version';
+/* date longue « 20 juillet 2026 » (distincte de frDate, utilisée pour les vols) */
+const newsDate = iso => { const d = new Date(iso + 'T12:00:00');
+  return isNaN(d) ? iso : d.toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' }); };
+
+function newsHTML(list){
+  return list.map((e, i) => `<div class="news-entry${i === 0 ? ' latest' : ''}">
+    <div class="news-head">
+      <span class="news-v">v${esc(e.v)}</span>
+      <span class="news-date">${esc(newsDate(e.date))}</span>
+      ${i === 0 ? '<span class="tag ok" style="font-size:.6rem">nouveau</span>' : ''}
+    </div>
+    <h4>${esc(e.titre)}</h4>
+    <ul>${e.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+  </div>`).join('');
+}
+function openNews(all){
+  const seen = localStorage.getItem(LS_SEEN_V);
+  /* à l'ouverture auto : seulement les versions non vues ; sinon tout l'historique */
+  const list = all ? CHANGELOG : CHANGELOG.slice(0, Math.max(1, CHANGELOG.findIndex(e => e.v === seen)));
+  const body = $('#newsBody');
+  if(body) body.innerHTML = (all ? '' : `<p class="sub" style="margin:0 0 12px">Acolite a été mis à jour — voici ce qui change.</p>`) + newsHTML(list);
+  $('#ovNews')?.classList.add('show');
+}
+function closeNews(){
+  lsSet(LS_SEEN_V, APP_VERSION);
+  $('#ovNews')?.classList.remove('show');
+}
+/* à l'ouverture : si la version a changé depuis la dernière visite → on annonce */
+function checkNews(){
+  const seen = localStorage.getItem(LS_SEEN_V);
+  if(seen === APP_VERSION) return;
+  if(!seen){ lsSet(LS_SEEN_V, APP_VERSION); return; }   /* 1ʳᵉ visite : l'onboarding suffit */
+  openNews(false);
+}
+{
+  const ok = $('#newsOk'); if(ok) ok.onclick = closeNews;
+  const pf = $('#pfNews'); if(pf) pf.onclick = () => openNews(true);
+  const v = $('#pfVersion'); if(v) v.textContent = `· version ${APP_VERSION}`;
+}
 
 /* --- Onboarding première visite (3 slides, mémorisé) --- */
 const ONB_KEY = 'acolite_onboarded';

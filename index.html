@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com https://upload.wikimedia.org https://tile.openstreetmap.org; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev https://*.deno.dev https://*.val.run; frame-src https://www.openstreetmap.org https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://pics.avs.io https://photo.hotellook.com https://upload.wikimedia.org https://tile.openstreetmap.org https://api.producthunt.com; connect-src 'self' https://generativelanguage.googleapis.com https://api.groq.com https://api.travelpayouts.com https://services-api.ryanair.com https://v6.db.transport.rest https://geocoding-api.open-meteo.com https://api.open-meteo.com https://archive-api.open-meteo.com https://fr.wikipedia.org https://fr.wikivoyage.org https://date.nager.at https://api.frankfurter.dev https://api.emailjs.com https://engine.hotellook.com https://corsproxy.io https://api.allorigins.win https://*.workers.dev https://*.deno.dev https://*.val.run; frame-src https://www.openstreetmap.org https://maps.google.com https://www.google.com; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="theme-color" content="#FFE600" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0B0B10" media="(prefers-color-scheme: dark)">
@@ -330,6 +330,10 @@
       <div class="acc-head" data-acc>⚡ ACTIONS <span class="arr">›</span></div>
       <div class="acc-body">
       <div class="item act">
+        <div class="head"><div class="emo">✨</div><h4>Nouveautés <span id="pfVersion" class="hint" style="margin:0"></span></h4></div>
+        <div class="side"><button class="btn sm ghost" id="pfNews">Voir</button></div>
+      </div>
+      <div class="item act">
         <div class="head"><div class="emo">⬇</div><h4>Exporter mon voyage</h4></div>
         <div class="side"><button class="btn sm ghost" id="pfExport">Exporter</button></div>
       </div>
@@ -377,6 +381,15 @@
       <h3>⚠️ Zone sensible</h3>
       <p>La suppression est <strong>définitive</strong> : compte, voyages, notes et souvenirs seront perdus. Aucun retour possible.</p>
       <button class="btn danger" id="pfDelete">🗑 Supprimer définitivement mon compte</button>
+    </div>
+
+    <!-- ===== Product Hunt ===== -->
+    <div class="ph-card">
+      <p class="sub" style="margin:0 0 10px">Acolite te plaît ? Laisse un avis 💛</p>
+      <a href="https://www.producthunt.com/products/acolite/reviews/new?utm_source=badge-product_review&amp;utm_medium=badge&amp;utm_source=badge-acolite" target="_blank" rel="noopener">
+        <img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1273558&amp;theme=light"
+             alt="Acolite — Ton copilote de voyage | Product Hunt" width="250" height="54" style="width:250px;height:54px">
+      </a>
     </div>
 
   </section>
@@ -539,6 +552,18 @@
 
 <!-- ===== Carnet de voyage imprimable (rempli au clic, visible seulement à l'impression) ===== -->
 <div id="dossier" hidden></div>
+
+<!-- ===== Nouveautés de la mise à jour ===== -->
+<div class="overlay" id="ovNews">
+  <div class="modal" style="max-height:88vh;overflow-y:auto">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0">✨ Quoi de neuf ?</h2>
+      <button class="close-btn" data-close="ovNews" aria-label="Fermer">✕</button>
+    </div>
+    <div id="newsBody"></div>
+    <button class="btn" id="newsOk" style="width:100%;justify-content:center;margin-top:14px">👍 J'ai vu</button>
+  </div>
+</div>
 
 <!-- ================= ONBOARDING (première visite) ================= -->
 <div class="onboard" id="onboard" hidden>

@@ -363,6 +363,47 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 }
 .tag.money{background:var(--primary)}
 .tag.cyan{background:var(--accent-cyan)}
+.tag.ok{background:var(--ok);color:#fff}
+.tag.warn{background:var(--accent-orange);color:#fff}
+
+/* ===== Journal des nouveautés ===== */
+.news-entry{padding:14px 0;border-bottom:2px solid var(--stroke)}
+.news-entry:last-child{border-bottom:0;padding-bottom:0}
+.news-entry.latest{background:var(--bg);margin:0 -14px;padding:14px;border-radius:10px;border-bottom:0}
+.news-head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.news-v{font-family:'Sora',sans-serif;font-weight:900;font-size:.72rem;background:var(--primary);color:#101010;
+  padding:2px 9px;border:2px solid var(--stroke);border-radius:10px}
+.news-date{font-size:.72rem;font-weight:700;color:var(--txt-2)}
+.news-entry h4{margin:0 0 7px;font-size:1rem}
+.news-entry ul{margin:0;padding-left:18px}
+.news-entry li{font-size:.88rem;line-height:1.55;margin-bottom:3px}
+
+/* ===== Badge Product Hunt (bas du profil) ===== */
+.ph-card{margin-top:18px;padding:16px;text-align:center;background:var(--secondary);
+  border:3px solid var(--stroke);border-radius:var(--r-md);box-shadow:4px 4px 0 var(--stroke)}
+.ph-card img{max-width:100%;height:auto;display:inline-block}
+
+/* ===== Vue « Ton voyage » : hiérarchie claire ===== */
+.plan-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.plan-head h3{margin:0}
+.plan-head .tag{margin-left:auto;font-size:.62rem}
+.plan-legend{margin-left:auto;font-size:.7rem;font-weight:700;color:var(--txt-2);white-space:nowrap}
+/* le conseil clé : une bande jaune impossible à rater */
+.key-tip{
+  display:flex;align-items:flex-start;gap:12px;margin:16px 0 0;padding:14px 16px;
+  background:var(--primary);border:3px solid var(--stroke);border-radius:var(--r-md);
+  box-shadow:5px 5px 0 var(--stroke);
+}
+.key-tip .kt-emo{font-size:1.5rem;line-height:1;flex-shrink:0}
+.key-tip p{margin:0;color:#101010;font-weight:800;font-size:.95rem;line-height:1.45}
+/* à réserver : des lignes courtes et actionnables */
+.todo-list{display:flex;flex-direction:column;gap:8px}
+.todo{
+  display:flex;align-items:flex-start;gap:10px;padding:11px 13px;
+  background:var(--secondary);border:2px solid var(--stroke);border-radius:10px;box-shadow:2px 2px 0 var(--stroke);
+}
+.todo span{flex-shrink:0}
+.todo p{margin:0;font-size:.88rem;font-weight:700;line-height:1.4}
 .dest .pick{
   font-size:.85rem;font-weight:900;color:var(--txt);text-transform:uppercase;
   font-family:'Sora',sans-serif;text-decoration:underline;
