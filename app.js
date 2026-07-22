@@ -105,6 +105,10 @@ function save(){
       toast('⚠️ Sauvegarde impossible (stockage plein ou désactivé)');
     }
   }
+  /* Envoi vers le compte, groupé et silencieux. Placé APRÈS le try/catch
+     local : la sauvegarde dans le navigateur doit réussir même sans réseau,
+     et une panne de synchronisation ne doit jamais bloquer l'utilisateur. */
+  try{ if(typeof pushSync === 'function') pushSync(); }catch(e3){}
 }
 function load(){
   try{ const s = JSON.parse(localStorage.getItem(LS_TRIP)); if(s) state = {...state, ...s}; }catch(e){}
@@ -3494,51 +3498,78 @@ function authShow(which){
     : which==='authLogin' ? 'Content de te revoir !' : 'Dernière étape : vérifie ton email.';
 }
 
-async function issueCode(u){
-  const code = String(Math.floor(100000 + Math.random()*900000));
-  u.codeH = await sha('code::' + code);
-  u.codeAt = Date.now();
-  u.tries = 0;
-  delete u.code; /* plus jamais de code en clair dans le stockage */
-  setUser(u);
-  return code;
+
+/* ============================================================
+   COMPTES CÔTÉ SERVEUR
+   Le navigateur ne génère plus aucun code et n'envoie plus aucun email :
+   il demande, le serveur décide. C'est ce qui empêche de s'approprier
+   l'adresse d'un autre en lisant le code dans la console.
+============================================================ */
+const LS_TOKEN = 'acolite_token';
+const authToken = () => { try{ return localStorage.getItem(LS_TOKEN) || ''; }catch(e){ return ''; } };
+const setToken = t => lsSet(LS_TOKEN, t);
+const clearToken = () => { try{ localStorage.removeItem(LS_TOKEN); }catch(e){} };
+
+/* Appel au backend. Renvoie toujours { ok, data } — jamais d'exception,
+   pour qu'un réseau coupé n'interrompe pas l'action en cours. */
+async function srvFetch(path, { method = 'GET', body = null, auth = false } = {}){
+  const base = (CFG.proxy || '').replace(/\/+$/, '');
+  if(!base) return { ok:false, data:{ error:"Le serveur n'est pas configuré" } };
+  const headers = {};
+  if(body) headers['Content-Type'] = 'application/json';
+  if(auth) headers.Authorization = 'Bearer ' + authToken();
+  try{
+    const r = await fetchT(base + path, {
+      method, headers, body: body ? JSON.stringify(body) : undefined,
+    }, netTimeout(15000));
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, data };
+  }catch(e){
+    return { ok:false, data:{ error:'Serveur injoignable — vérifie ta connexion' } };
+  }
 }
 
-async function sendVerifyEmail(email, code){
-  const ej = CFG.emailjs || {};
-  const configured = !!(ej.publicKey && ej.serviceId && ej.templateId);
-  let why = '';   /* raison exacte de l'échec, pour ne pas laisser l'utilisateur deviner */
-  if(configured){
-    try{
-      const r = await fetchT('https://api.emailjs.com/api/v1.0/email/send', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          service_id: ej.serviceId, template_id: ej.templateId, user_id: ej.publicKey,
-          template_params: { to_email: email, code: code }
-        })
-      }, 12000);
-      if(r.ok){ $('#vfDemo').textContent = ''; toast('📬 Code envoyé à ' + email); return true; }
-      /* EmailJS renvoie un message clair en texte brut (clé invalide, template introuvable…) */
-      why = (await r.text().catch(() => '')).slice(0, 160) || `erreur HTTP ${r.status}`;
-    }catch(e){
-      why = e.name === 'AbortError' ? 'délai dépassé (serveur EmailJS injoignable)' : 'connexion impossible';
-    }
-    toast('⚠️ Envoi email impossible — code affiché à l’écran');
-  }
-  /* Repli : le code s'affiche directement — l'inscription reste possible */
-  $('#vfDemo').innerHTML = configured
-    ? `⚠️ <strong>L’envoi par email a échoué</strong> — ton code : <strong>${esc(code)}</strong>`
-      + `<br><span style="opacity:.75">Cause renvoyée par EmailJS : ${esc(why)}</span>`
-      + `<br><span style="opacity:.75">Vérifie <code>emailjs</code> dans <code>config.js</code> (Public Key sur dashboard.emailjs.com/admin/account).</span>`
-    : `🧪 <strong>Mode démo</strong> (EmailJS non renseigné dans config.js) — ton code : <strong>${esc(code)}</strong>`;
-  return false;
+/* --- Synchronisation des voyages --- */
+function syncPayload(){
+  return { trip: state, history: (() => { try{ return JSON.parse(localStorage.getItem('acolite_history')) || []; }catch(e){ return []; } })() };
 }
+let _syncT = null;
+function pushSync(){
+  if(!authToken()) return;
+  clearTimeout(_syncT);                       /* on groupe les rafales de save() */
+  _syncT = setTimeout(async () => {
+    await srvFetch('/sync', { method:'POST', body:{ payload: syncPayload() }, auth:true });
+  }, 1500);
+}
+/* Première connexion : si le compte est vide et que l'appareil a des voyages,
+   on ENVOIE le local. Sinon le serveur fait foi. On n'efface jamais un
+   travail existant sans qu'il ait été sauvegardé d'abord. */
+async function pullSync(){
+  if(!authToken()) return;
+  const r = await srvFetch('/sync', { auth:true });
+  if(!r.ok) return;
+  const dist = r.data && r.data.payload;
+  const localVide = !state.trip && !(state.destinations || []).length;
+  if(!dist){
+    if(!localVide) await srvFetch('/sync', { method:'POST', body:{ payload: syncPayload() }, auth:true });
+    return;
+  }
+  if(dist.trip) { state = dist.trip; save(); }
+  if(Array.isArray(dist.history)) lsSet('acolite_history', JSON.stringify(dist.history));
+}
+
 
 const _e17 = $('#goLogin'); if(_e17) _e17.onclick  = () => authShow('authLogin');
 const _e18 = $('#goSignup'); if(_e18) _e18.onclick = () => authShow('authSignup');
 const _e19 = $('#vfBack'); if(_e19) _e19.onclick   = () => { localStorage.removeItem(LS_USER); authShow('authSignup'); };
 
+/* garde anti double-clic : une inscription lancée deux fois enverrait
+   deux codes et déclencherait l'anti-spam du serveur */
+let authBusy = false;
+const authWait = (btn, on) => { authBusy = on; if(btn) btn.disabled = on; };
+
 const _e20 = $('#btnSignup'); if(_e20) _e20.onclick = async () => {
+  if(authBusy) return;
   const email = $('#auEmail').value.trim().toLowerCase();
   const pseudo = $('#auPseudo').value.trim();
   const p1 = $('#auPass').value, p2 = $('#auPass2').value;
@@ -3546,49 +3577,63 @@ const _e20 = $('#btnSignup'); if(_e20) _e20.onclick = async () => {
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return authErr('Adresse email invalide.');
   if(p1.length < 8) return authErr('Mot de passe : 8 caractères minimum.');
   if(p1 !== p2) return authErr('Les deux mots de passe ne correspondent pas.');
-  const u = { email, pseudo, hash: await sha(email + '::' + p1), verified:false, created: Date.now() };
-  const code = await issueCode(u);
+  authErr(''); authWait(_e20, true);
+  const r = await srvFetch('/auth/signup', { method:'POST', body:{ email, password:p1 } });
+  authWait(_e20, false);
+  if(!r.ok) return authErr(r.data.error || 'Inscription impossible.');
+  /* le pseudo reste local : le serveur n'en a pas besoin */
+  setUser({ email, pseudo, created: Date.now() });
   $('#vfEmail').textContent = email;
   authShow('authVerify');
-  sendVerifyEmail(email, code);
+  toast('📬 Code envoyé — pense à regarder tes indésirables');
 };
 
 const _e21 = $('#btnResend'); if(_e21) _e21.onclick = async () => {
+  if(authBusy) return;
   const u = getUser(); if(!u) return;
-  const code = await issueCode(u);
-  sendVerifyEmail(u.email, code);
+  authWait(_e21, true);
+  const r = await srvFetch('/auth/forgot', { method:'POST', body:{ email:u.email } });
+  authWait(_e21, false);
+  authErr(r.ok ? '' : (r.data.error || 'Envoi impossible.'));
+  if(r.ok) toast('📬 Nouveau code envoyé');
 };
 
 const _e22 = $('#btnVerify'); if(_e22) _e22.onclick = async () => {
+  if(authBusy) return;
   const u = getUser(); if(!u) return;
-  if(u.codeAt && Date.now() - u.codeAt > 15*60*1000)
-    return authErr('Code expiré (15 min) — clique sur "Renvoyer le code".');
-  const input = $('#vfCode').value.trim();
-  const okPlain = u.code && input === u.code; /* compat anciens comptes */
-  const okHash  = u.codeH && (await sha('code::' + input)) === u.codeH;
-  if(!okPlain && !okHash){
-    u.tries = (u.tries||0) + 1; setUser(u);
-    if(u.tries >= 5){ u.codeH = null; u.code = null; setUser(u); return authErr('Trop d\'essais — code invalidé. Clique sur "Renvoyer le code".'); }
-    return authErr(`Code incorrect (${5 - u.tries} essai${5-u.tries>1?'s':''} restant) — vérifie tes emails et les spams.`);
-  }
-  u.verified = true; delete u.code; delete u.codeH; delete u.tries; delete u.codeAt; setUser(u);
+  const code = $('#vfCode').value.trim();
+  authErr(''); authWait(_e22, true);
+  const r = await srvFetch('/auth/verify', { method:'POST', body:{ email:u.email, code } });
+  authWait(_e22, false);
+  if(!r.ok) return authErr(r.data.error || 'Code incorrect.');
+  setToken(r.data.token);
   lsSet(LS_AUTH, '1');
-  authErr('');
+  await pullSync();
   enterApp();
   toast('Compte vérifié — bienvenue ! 🎉');
 };
 
 const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
-  const u = getUser();
+  if(authBusy) return;
   const email = $('#loEmail').value.trim().toLowerCase();
-  if(!u || u.email !== email) return authErr('Aucun compte avec cet email sur cet appareil.');
-  if(await sha(email + '::' + $('#loPass').value) !== u.hash) return authErr('Mot de passe incorrect.');
-  if(!u.verified){
-    const code = await issueCode(u);
-    $('#vfEmail').textContent = u.email; authShow('authVerify'); sendVerifyEmail(u.email, code);
-    return;
+  const pass = $('#loPass').value;
+  authErr(''); authWait(_e23, true);
+  const r = await srvFetch('/auth/login', { method:'POST', body:{ email, password:pass } });
+  authWait(_e23, false);
+  /* compte existant mais adresse jamais confirmée : le serveur a renvoyé
+     un code, on bascule sur l'écran de vérification */
+  if(!r.ok && r.data && r.data.etape === 'verification'){
+    setUser({ ...(getUser() || {}), email });
+    $('#vfEmail').textContent = email;
+    authShow('authVerify');
+    return authErr(r.data.error || '');
   }
+  if(!r.ok) return authErr(r.data.error || 'Connexion impossible.');
+  setToken(r.data.token);
+  const prev = getUser() || {};
+  setUser({ ...prev, email, pseudo: prev.email === email ? prev.pseudo : (prev.pseudo || email.split('@')[0]) });
   lsSet(LS_AUTH, '1');
+  await pullSync();
   enterApp();
   toast('Re-bonjour ' + email.split('@')[0] + ' 👋');
 };
@@ -3768,11 +3813,17 @@ function closeOnboard(){ try{ localStorage.setItem(ONB_KEY, '1'); }catch(e){} co
 }
 function requireAuth(){
   const u = getUser();
-  if(u && u.verified && localStorage.getItem(LS_AUTH) === '1'){ enterApp(); return; }
+  /* la présence d'un jeton fait foi : c'est le serveur qui tranchera à la
+     première synchronisation si la session est encore valable */
+  if(u && authToken() && localStorage.getItem(LS_AUTH) === '1'){
+    enterApp();
+    pullSync();
+    return;
+  }
   $('#authWrap').classList.remove('hidden');
   if(!u) authShow('authSignup');
-  else if(!u.verified){ $('#vfEmail').textContent = u.email; authShow('authVerify'); }
-  else authShow('authLogin');
+  else if(u.email && !authToken()) authShow('authLogin');
+  else authShow('authSignup');
 }
 
 /* ============================================================
@@ -4126,7 +4177,10 @@ function renderProfile(){
   const pseudo = u.pseudo || u.email.split('@')[0];
   $('#pfAvatar').textContent = pseudo;
   $('#pfEmail').innerHTML = `${esc(pseudo)} <span style="cursor:pointer;font-size:.9rem" id="pfEditPseudo" title="Changer de pseudo">✏️</span>`;
-  $('#pfMeta').innerHTML = `${esc(u.email)} · ${u.verified ? '✅ vérifié' : '⚠️ non vérifié'} · membre depuis le ${new Date(u.created).toLocaleDateString('fr-FR')}`;
+  /* connecté = vérifié : le serveur refuse la connexion tant que l'adresse
+     n'est pas confirmée, il n'y a donc plus d'état intermédiaire à afficher */
+  $('#pfMeta').innerHTML = `${esc(u.email)} · ${authToken() ? '☁️ synchronisé' : '📴 hors ligne'}`
+    + (u.created ? ` · membre depuis le ${new Date(u.created).toLocaleDateString('fr-FR')}` : '');
   const _e24 = $('#pfEditPseudo'); if(_e24) _e24.onclick = () => {
     const np = prompt('Ton nouveau pseudo :', pseudo);
     if(np && np.trim()){ u.pseudo = np.trim().slice(0,20); setUser(u); renderProfile(); toast('Pseudo mis à jour ✔'); }
@@ -4134,7 +4188,11 @@ function renderProfile(){
 }
 const _e25 = $('#pfExport'); if(_e25) _e25.onclick = () => $('#btnExport').click();
 const _e26 = $('#pfNewTrip'); if(_e26) _e26.onclick = () => $('#btnReset').click();
-const _e27 = $('#pfLogout'); if(_e27) _e27.onclick = () => {
+const _e27 = $('#pfLogout'); if(_e27) _e27.onclick = async () => {
+  /* on ferme la session côté serveur AVANT d'oublier le jeton, sinon elle
+     resterait ouverte jusqu'à son expiration */
+  await srvFetch('/auth/logout', { method:'POST', auth:true });
+  clearToken();
   localStorage.removeItem(LS_AUTH);
   toast('À bientôt 👋');
   requireAuth();
@@ -4167,32 +4225,32 @@ const _e28 = $('#pfTheme'); if(_e28) _e28.onclick = () => {
 };
 applyTheme();
 
+/* Changement de mot de passe : on passe par un code envoyé à l'adresse.
+   Plus sûr que l'ancien mot de passe seul — si quelqu'un s'installe sur une
+   session ouverte, il ne peut pas verrouiller le compte sans accès à l'email.
+   Le serveur ferme d'ailleurs toutes les autres sessions au passage. */
 const _e29 = $('#pfChangePass'); if(_e29) _e29.onclick = async () => {
   const u = getUser(); if(!u) return;
-  const cur = prompt('Mot de passe actuel :'); if(cur === null) return;
-  if(await sha(u.email + '::' + cur) !== u.hash){ toast('❌ Mot de passe actuel incorrect'); return; }
+  if(!confirm(`Un code va être envoyé à ${u.email} pour confirmer le changement. Continuer ?`)) return;
+  const r0 = await srvFetch('/auth/forgot', { method:'POST', body:{ email:u.email } });
+  if(!r0.ok) return toast('❌ ' + (r0.data.error || 'Envoi impossible'));
+  toast('📬 Code envoyé — regarde tes indésirables');
+  const code = (prompt('Code reçu par email (6 chiffres) :') || '').trim();
+  if(!code) return;
   const np = prompt('Nouveau mot de passe (8 caractères minimum) :'); if(np === null) return;
   if(np.length < 8){ toast('❌ 8 caractères minimum'); return; }
-  u.hash = await sha(u.email + '::' + np); setUser(u);
+  const r = await srvFetch('/auth/reset', { method:'POST', body:{ email:u.email, code, password:np } });
+  if(!r.ok) return toast('❌ ' + (r.data.error || 'Changement impossible'));
+  setToken(r.data.token);          /* l'ancienne session vient d'être fermée */
   toast('🔑 Mot de passe changé ✔');
 };
 
-const _e30 = $('#pfChangeEmail'); if(_e30) _e30.onclick = async () => {
-  const u = getUser(); if(!u) return;
-  const ne = (prompt('Nouvelle adresse email :') || '').trim().toLowerCase();
-  if(!ne) return;
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ne)){ toast('❌ Email invalide'); return; }
-  const pw = prompt('Confirme ton mot de passe :'); if(pw === null) return;
-  if(await sha(u.email + '::' + pw) !== u.hash){ toast('❌ Mot de passe incorrect'); return; }
-  u.email = ne;
-  u.hash = await sha(ne + '::' + pw);
-  u.verified = false;
-  const code = await issueCode(u);
-  localStorage.removeItem(LS_AUTH);
-  $('#vfEmail').textContent = ne;
-  sendVerifyEmail(ne, code);
-  requireAuth();
-  toast('📧 Vérifie ta nouvelle adresse');
+/* Le changement d'adresse reposait sur le mot de passe stocké dans le
+   navigateur. Les comptes vivant désormais sur le serveur, il faudra une
+   route dédiée (vérifier l'ancienne adresse, puis la nouvelle). En
+   attendant on le dit franchement plutôt que de laisser un bouton mort. */
+const _e30 = $('#pfChangeEmail'); if(_e30) _e30.onclick = () => {
+  toast('✉️ Changement d’adresse bientôt disponible');
 };
 
 const _e31 = $('#pfClearCache'); if(_e31) _e31.onclick = () => {
@@ -4227,10 +4285,16 @@ document.addEventListener('input', e => {
   const attendu = ($('#delPseudo').textContent || '').trim();
   $('#delGo').disabled = e.target.value.trim() !== attendu;
 });
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   if(e.target.id !== 'delGo') return;
   const attendu = ($('#delPseudo').textContent || '').trim();
   if(($('#delConfirm').value || '').trim() !== attendu){ toast('❌ Pseudo incorrect'); return; }
+  /* on efface d'abord le compte SUR LE SERVEUR : effacer le navigateur en
+     premier ferait perdre le jeton, et les données resteraient en base */
+  if(authToken()){
+    const r = await srvFetch('/account', { method:'DELETE', auth:true });
+    if(!r.ok){ toast('❌ ' + (r.data.error || 'Suppression impossible — réessaie')); return; }
+  }
   Object.keys(localStorage)
     .filter(k => k.startsWith('acolite_'))
     .forEach(k => localStorage.removeItem(k));

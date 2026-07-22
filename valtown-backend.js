@@ -147,8 +147,41 @@ function mailReady(env) {
   return !!(env('EMAILJS_PUBLIC') && env('EMAILJS_PRIVATE')
          && env('EMAILJS_SERVICE') && env('EMAILJS_TEMPLATE'));
 }
+/* Trace du dernier envoi, pour /maildiag.
+   ÉCRITE EN BASE et non en mémoire : Val Town est sans état, chaque requête
+   repart d'un environnement neuf — une variable de module serait toujours
+   vide au moment où on la lit depuis une AUTRE requête. */
+async function diagTable() {
+  await sqlite.execute(
+    `CREATE TABLE IF NOT EXISTS aco_diag(k TEXT PRIMARY KEY, v TEXT NOT NULL, ts INTEGER NOT NULL)`);
+}
+async function noteMail(msg) {
+  try {
+    await diagTable();
+    await sqlite.execute({
+      sql: `INSERT INTO aco_diag(k, v, ts) VALUES('mail', ?, ?)
+            ON CONFLICT(k) DO UPDATE SET v = excluded.v, ts = excluded.ts`,
+      args: [String(msg).slice(0, 300), Date.now()],
+    });
+  } catch (e) { /* le diagnostic ne doit jamais faire échouer un envoi */ }
+}
+async function readMail() {
+  try {
+    await diagTable();
+    const r = await sqlite.execute({ sql: `SELECT v, ts FROM aco_diag WHERE k = 'mail'`, args: [] });
+    if (!r.rows || !r.rows[0]) return 'aucun envoi enregistré';
+    const row = r.rows[0];
+    /* selon la version, les lignes sont des tableaux OU des objets */
+    const v = row.v ?? row[0], ts = Number(row.ts ?? row[1]);
+    return `${v}  (il y a ${Math.round((Date.now() - ts) / 1000)} s)`;
+  } catch (e) {
+    /* on montre la panne au lieu de l'avaler : c'est tout l'intérêt d'un diagnostic */
+    return 'ERREUR DE LECTURE → ' + String(e && e.message || e).slice(0, 200);
+  }
+}
+
 async function sendCodeMail(env, email, code) {
-  if (!mailReady(env)) return false;
+  if (!mailReady(env)) { await noteMail('variables EMAILJS_* incomplètes'); return false; }
   try {
     const r = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
@@ -161,8 +194,17 @@ async function sendCodeMail(env, email, code) {
         template_params: { to_email: email, email, code },
       }),
     });
+    const txt = await r.text().catch(() => '');
+    const why = `HTTP ${r.status} · ${txt.slice(0, 200) || '(corps vide)'}`;
+    console.log('[acolite] EmailJS →', why);        /* visible dans les logs Val Town */
+    await noteMail(why);
     return r.ok;
-  } catch (e) { return false; }
+  } catch (e) {
+    const why = 'appel impossible : ' + String(e).slice(0, 120);
+    console.log('[acolite] EmailJS →', why);
+    await noteMail(why);
+    return false;
+  }
 }
 
 export default async function (request) {
@@ -199,6 +241,21 @@ export default async function (request) {
     }
 
     /* ---- Liste des modèles Gemini disponibles ---- */
+    /* ---- Diagnostic email : dit CE QU'EMAILJS A RÉPONDU au dernier envoi.
+       N'expose aucune clé — seulement les identifiants publics (déjà connus
+       du navigateur) et le message d'erreur renvoyé. ---- */
+    if (path === '/maildiag') {
+      return json({
+        variables: {
+          EMAILJS_PUBLIC: !!env('EMAILJS_PUBLIC'),
+          EMAILJS_PRIVATE: !!env('EMAILJS_PRIVATE'),
+          EMAILJS_SERVICE: env('EMAILJS_SERVICE') || '(vide)',
+          EMAILJS_TEMPLATE: env('EMAILJS_TEMPLATE') || '(vide)',
+        },
+        derniereReponseEmailJS: await readMail(),
+      });
+    }
+
     /* --- outils partagés par les routes d'authentification --- */
     const newSession = async (email) => {
       const token = randomHex(32);

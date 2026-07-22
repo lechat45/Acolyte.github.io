@@ -1,78 +1,114 @@
 <!-- ============================================================
-  ACOLITE - Template EmailJS (code de verification)
-  A coller dans EmailJS : ton template, onglet "Code" (icone </>)
-  Variables utilisees par l'app : {{to_email}} et {{code}}
-  Reglages du template EmailJS :
-    - Subject  : Ton code Acolite : {{code}}
-    - To Email : {{to_email}}
+     ACOLITE — email du code de vérification
+     À coller dans EmailJS → ton template → Content → Edit Content (mode HTML)
+     Variable utilisée dans le corps : {{code}}
+     Réglages du template EmailJS :
+       · Subject  : Ton code Acolite : {{code}}
+       · To Email : {{email}}      (le serveur envoie aussi {{to_email}})
+       · From Name: Acolite        (avec un i — pas "Acolyte")
+     ------------------------------------------------------------
+     Contraintes email respectées :
+     · mise en page en <table> (Outlook ignore flex et grid)
+     · styles en ligne uniquement (les blocs <style> sont souvent supprimés)
+     · AUCUNE image : Gmail supprime les SVG et bloque les images distantes
+       par défaut. La mascotte est donc dessinée en CSS — rien à héberger,
+       rien à débloquer côté destinataire.
+     · sur Outlook, border-radius est ignoré → la mascotte devient carrée.
+       C'est assumé : ça reste dans le langage néo-brutaliste du site.
 ============================================================ -->
-<div style="margin:0;padding:0;background-color:#F4F3EF;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F3EF;padding:32px 12px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+       style="background:#F4F3EF;margin:0;padding:24px 12px;font-family:Helvetica,Arial,sans-serif;">
   <tr>
     <td align="center">
 
-      <table role="presentation" width="440" cellpadding="0" cellspacing="0" border="0" style="max-width:440px;width:100%;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600"
+             style="width:600px;max-width:100%;background:#FFFFFF;border:3px solid #000000;">
 
-        <!-- En-tete jaune -->
+        <!-- ---------- Bandeau ---------- -->
         <tr>
-          <td style="background-color:#FFE600;border:3px solid #000000;box-shadow:6px 6px 0 #000000;padding:20px 24px;">
+          <td style="background:#FFE600;border-bottom:3px solid #000000;padding:22px 26px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td style="width:40px;height:40px;border:3px solid #000000;vertical-align:middle;">
-                  <img src="https://lechat45.github.io/Acolyte.github.io/icon-maskable-192.png" width="40" height="40" alt="A" style="display:block;width:40px;height:40px;border:0;">
+                <!-- mascotte : globe + deux grands yeux, en CSS -->
+                <td width="54" valign="middle" style="width:54px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+                         style="width:48px;height:48px;background:#3E93C9;border:3px solid #1C5A78;border-radius:50%;">
+                    <tr>
+                      <td align="center" valign="middle" style="line-height:0;padding:0;">
+                        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                          <tr>
+                            <td align="center" valign="middle"
+                                style="width:15px;height:15px;background:#FFFFFF;border:2px solid #1C5A78;border-radius:50%;line-height:0;">
+                              <div style="width:6px;height:6px;background:#0C0C0C;border-radius:50%;margin:0 auto;"></div>
+                            </td>
+                            <td style="width:4px;line-height:0;">&nbsp;</td>
+                            <td align="center" valign="middle"
+                                style="width:15px;height:15px;background:#FFFFFF;border:2px solid #1C5A78;border-radius:50%;line-height:0;">
+                              <div style="width:6px;height:6px;background:#0C0C0C;border-radius:50%;margin:0 auto;"></div>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
-                <td style="padding-left:12px;">
-                  <span style="font-family:Arial Black,Arial,sans-serif;font-weight:900;font-size:24px;letter-spacing:-1px;color:#000000;text-transform:uppercase;">Acolite</span><br>
-                  <span style="font-family:Arial,sans-serif;font-weight:700;font-size:10px;letter-spacing:3px;color:#000000;text-transform:uppercase;">Copilote de voyage</span>
+                <td valign="middle" style="padding-left:14px;">
+                  <div style="font-family:Helvetica,Arial,sans-serif;font-weight:bold;font-size:26px;
+                              letter-spacing:-0.5px;color:#101010;line-height:1;">ACOLITE</div>
+                  <div style="font-family:Helvetica,Arial,sans-serif;font-weight:bold;font-size:10px;
+                              letter-spacing:2.5px;color:#101010;padding-top:5px;">COPILOTE DE VOYAGE</div>
                 </td>
               </tr>
             </table>
           </td>
         </tr>
 
-        <!-- Espace -->
-        <tr><td style="height:22px;line-height:22px;font-size:0;">&nbsp;</td></tr>
-
-        <!-- Carte principale -->
+        <!-- ---------- Corps ---------- -->
         <tr>
-          <td style="background-color:#FFFFFF;border:3px solid #000000;box-shadow:6px 6px 0 #000000;padding:28px 26px;">
+          <td style="padding:30px 26px 6px;">
+            <div style="font-family:Helvetica,Arial,sans-serif;font-weight:bold;font-size:21px;
+                        color:#101010;line-height:1.25;">Ton code d'embarquement</div>
+            <div style="font-family:Helvetica,Arial,sans-serif;font-size:15px;color:#2A2A2A;
+                        line-height:1.55;padding-top:10px;">
+              Entre ce code dans Acolite pour vérifier ton adresse et commencer l'aventure.
+            </div>
+          </td>
+        </tr>
 
-            <p style="margin:0 0 6px;font-family:Arial Black,Arial,sans-serif;font-weight:900;font-size:20px;color:#000000;">
-              Ton code d'embarquement &#127915;
-            </p>
-            <p style="margin:0 0 22px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#2A2A2A;">
-              Entre ce code dans l'application pour v&eacute;rifier ton adresse et commencer l'aventure.
-            </p>
-
-            <!-- Le code -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <!-- ---------- Le code ---------- -->
+        <tr>
+          <td style="padding:22px 26px 6px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td align="center" style="background-color:#FFE600;border:3px solid #000000;box-shadow:4px 4px 0 #000000;padding:18px 10px;">
-                  <span style="font-family:Courier New,Courier,monospace;font-weight:700;font-size:34px;letter-spacing:10px;color:#000000;">{{code}}</span>
+                <td align="center" style="background:#FFE600;border:3px solid #000000;padding:22px 10px;">
+                  <div style="font-family:'Courier New',Courier,monospace;font-weight:bold;
+                              font-size:40px;letter-spacing:12px;color:#101010;line-height:1;
+                              text-indent:12px;">{{code}}</div>
                 </td>
               </tr>
             </table>
-
-            <p style="margin:22px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#2A2A2A;">
-              &#9201; Ce code est personnel &#8212; ne le partage avec personne.<br>
-              Si tu n'as pas cr&eacute;&eacute; de compte Acolite, ignore simplement cet email.
-            </p>
-
           </td>
         </tr>
 
-        <!-- Espace -->
-        <tr><td style="height:22px;line-height:22px;font-size:0;">&nbsp;</td></tr>
-
-        <!-- Pied de page -->
         <tr>
-          <td align="center" style="padding:0 10px;">
-            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-weight:700;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#2A2A2A;">
-              &#9992;&#65039; Acolite &#8212; ton copilote de voyage
-            </p>
-            <p style="margin:6px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#9EA0B0;">
-              Email envoy&eacute; &agrave; {{to_email}} suite &agrave; une cr&eacute;ation de compte.
-            </p>
+          <td style="padding:16px 26px 30px;">
+            <div style="font-family:Helvetica,Arial,sans-serif;font-size:13px;color:#2A2A2A;line-height:1.6;">
+              Ce code est valable <strong>10 minutes</strong>.
+            </div>
+            <div style="font-family:Helvetica,Arial,sans-serif;font-size:13px;color:#666666;
+                        line-height:1.6;padding-top:6px;">
+              Si tu n'as pas demandé à créer de compte, ignore simplement ce message —
+              personne ne peut aller plus loin sans ce code.
+            </div>
+          </td>
+        </tr>
+
+        <!-- ---------- Pied ---------- -->
+        <tr>
+          <td style="background:#F4F3EF;border-top:3px solid #000000;padding:16px 26px;">
+            <div style="font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#666666;line-height:1.6;">
+              Acolite — ton copilote de voyage. Gratuit, sans abonnement, sans publicité.
+            </div>
           </td>
         </tr>
 
@@ -81,4 +117,3 @@
     </td>
   </tr>
 </table>
-</div>
