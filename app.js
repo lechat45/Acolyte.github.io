@@ -3592,6 +3592,18 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'1.8', date:'2026-07-22', titre:'Une barre en haut, et un mode sombre qui ne pique plus les yeux', items:[
+    '🧭 Sur ordinateur, Carte · Voyage · Profil passent dans une barre en haut du site',
+    '🌙 Mode sombre : quand tu écris dans une case, le texte reste lisible — la case ne vire plus au blanc',
+    '🌙 L’étape verrouillée et les cartes survolées ne s’éclairent plus en blanc non plus',
+    '📱 Sur téléphone, la barre reste en bas, à portée de pouce'
+  ]},
+  { v:'1.7', date:'2026-07-22', titre:'Acolite s’installe enfin sur grand écran', items:[
+    '🖥️ Sur ordinateur, la barre du bas devient un petit îlot posé au centre — fini le bandeau qui traverse tout l’écran',
+    '🧳 Dans « Ton voyage », « Réserver » et « À savoir avant de partir » se placent côte à côte : deux fois moins à faire défiler',
+    '💶 Le budget s’affiche sur une seule ligne au lieu de deux',
+    '📱 Rien ne change sur téléphone'
+  ]},
   { v:'1.6', date:'2026-07-22', titre:'Une mascotte pendant les chargements', items:[
     '🌍 Le globe d’Acolite tourne les yeux partout pendant que l’IA réfléchit',
     '✨ Il remplace l’ancien rond qui tournait, sur tous les écrans de chargement',

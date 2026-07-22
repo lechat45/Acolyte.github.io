@@ -10,6 +10,15 @@
   --txt: #F4F3EF;           /* encre claire */
   --txt-2: #9EA0B0;
   --stroke: #F4F3EF;        /* bordures dures en clair */
+  /* Fonds « état » : ils doivent rester SOUS l'encre claire, jamais au-dessus.
+     Un champ qui vire au crème en mode sombre rend la frappe illisible. */
+  --field-focus: #24243A;   /* champ en cours de saisie */
+  --card-hover: #1E1E2B;    /* carte survolée */
+  --locked: #22222C;        /* étape verrouillée */
+  /* La pastille d'onglet actif reste CLAIRE même en sombre : elle est
+     posée sur la barre jaune, et une règle plus haut force son texte
+     en foncé. Un fond sombre ici donnerait du noir sur noir. */
+  --tab-on: #F4F3EF;
   color-scheme: dark;
 }
 :root[data-theme="dark"] body{
@@ -34,12 +43,15 @@
   color: #0B0B10;
 }
 :root[data-theme="dark"] .pass-tear{background:var(--secondary)}
-:root[data-theme="dark"] 
 :root[data-theme="dark"] input,
 :root[data-theme="dark"] select,
 :root[data-theme="dark"] textarea{background:var(--secondary);color:var(--txt);border-color:var(--stroke)}
 :root[data-theme="dark"] input::placeholder,
 :root[data-theme="dark"] textarea::placeholder{color:var(--txt-2)}
+/* le champ actif s'entoure de jaune : sans le fond crème, il faut un autre repère */
+:root[data-theme="dark"] input:focus,
+:root[data-theme="dark"] select:focus,
+:root[data-theme="dark"] textarea:focus{border-color:var(--primary);color:var(--txt)}
 /* halo néon : c'est ça, "Vol de nuit" */
 :root[data-theme="dark"] .btn:not(.ghost){box-shadow:4px 4px 0 var(--stroke), 0 0 18px rgba(255,230,0,.28)}
 :root[data-theme="dark"] .catnav button.on{box-shadow:0 0 22px rgba(255,230,0,.35)}
@@ -57,6 +69,10 @@
   --txt: #000000;
   --txt-2: #2A2A2A;
   --stroke: #000000;
+  --field-focus: #FFFEE0;
+  --card-hover: #FFFEE8;
+  --locked: #E5E5E0;
+  --tab-on: #FFFFFF;
   --r-lg: 4px;
   --r-md: 4px;
   --r-sm: 2px;
@@ -185,7 +201,7 @@ header{
 }
 .step.active{background:var(--primary);transform:translate(-2px,-2px);box-shadow:5px 5px 0px var(--stroke)}
 .step.active .n{background:var(--accent-cyan);color:var(--txt)}
-.step.locked{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none;background:#E5E5E0}
+.step.locked{opacity:.5;cursor:not-allowed;box-shadow:none;transform:none;background:var(--locked)}
 .step:not(.locked):not(.active):hover{background:var(--bg);transform:translate(-1px,-1px);box-shadow:4px 4px 0px var(--stroke)}
 
 /* ===== Brutalist card ===== */
@@ -210,7 +226,7 @@ input,select,textarea{
   color:var(--txt);padding:12px;font-size:.95rem;font-weight:600;font-family:inherit;outline:none;
   transition:all .1s ease;box-shadow:3px 3px 0px var(--stroke);
 }
-input:focus,select:focus,textarea:focus{background:#FFFEE0;transform:translate(-1px,-1px);box-shadow:4px 4px 0px var(--stroke)}
+input:focus,select:focus,textarea:focus{background:var(--field-focus);transform:translate(-1px,-1px);box-shadow:4px 4px 0px var(--stroke)}
 textarea{resize:vertical;min-height:80px}
 select option{background:var(--secondary);color:var(--txt)}
 
@@ -249,6 +265,10 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .btn.violet{background:var(--accent-violet);color:#FFFFFF}
 
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+/* Actions de la vue 1 : empilées et pleine largeur sur téléphone
+   (le bureau les remet en ligne, voir le bloc ≥900 px). */
+.go-acts > .btn{width:100%;justify-content:center}
 
 /* ===== Badges IA ===== */
 .ai-badge{
@@ -386,7 +406,7 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 }
 .dest:nth-child(2){animation-delay:.06s}.dest:nth-child(3){animation-delay:.12s}.dest:nth-child(4){animation-delay:.18s}
 .dest:nth-child(5){animation-delay:.24s}.dest:nth-child(6){animation-delay:.3s}
-.dest:hover{border-color:var(--stroke);transform:translate(-3px,-3px);box-shadow:7px 7px 0px var(--stroke);background:#FFFEE8}
+.dest:hover{border-color:var(--stroke);transform:translate(-3px,-3px);box-shadow:7px 7px 0px var(--stroke);background:var(--card-hover)}
 .dest .flag{font-size:2.2rem;margin-bottom:8px}
 .dest h3{font-size:1.25rem;margin-bottom:4px}
 .dest .country{font-size:.85rem;font-weight:700;color:var(--txt-2);margin-bottom:10px;text-transform:uppercase}
@@ -431,9 +451,26 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .news-entry li{font-size:.88rem;line-height:1.55;margin-bottom:3px}
 
 /* ===== Badge Product Hunt (bas du profil) ===== */
-.ph-card{margin-top:18px;padding:16px;text-align:center;background:var(--secondary);
-  border:3px solid var(--stroke);border-radius:var(--r-md);box-shadow:4px 4px 0 var(--stroke)}
-.ph-card img{max-width:100%;height:auto;display:inline-block}
+.ph-card{
+  margin:18px 0;padding:18px;
+  background:var(--primary);
+  border:3px solid var(--stroke);border-radius:var(--r-md);
+  box-shadow:5px 5px 0 var(--stroke);
+  display:flex;flex-direction:column;gap:14px;
+}
+/* fond jaune dans les deux thèmes : l'encre reste donc foncée */
+.ph-card h3{margin:0 0 6px;font-size:1.05rem;color:#101010}
+.ph-card p{margin:0;font-size:.86rem;font-weight:600;line-height:1.5;color:#101010;opacity:.82}
+/* le badge officiel est un SVG clair : on lui donne une plaque claire
+   pour qu'il reste lisible en « Vol de nuit » aussi */
+.ph-link{
+  align-self:flex-start;display:inline-flex;padding:8px 10px;
+  background:var(--tab-on);border:3px solid var(--stroke);border-radius:var(--r-sm);
+  box-shadow:3px 3px 0 var(--stroke);transition:all .1s ease;
+}
+.ph-link:hover{transform:translate(-2px,-2px);box-shadow:5px 5px 0 var(--stroke)}
+.ph-link:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--stroke)}
+.ph-card img{display:block;width:250px;max-width:100%;height:auto}
 
 /* ===== Mini-carte du trajet (en tête de la vue 3) ===== */
 .trip-route{
@@ -1316,6 +1353,105 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 }
 .stop:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--stroke)}
 
+
+/* ============================================================
+   ORDINATEUR (≥ 900 px)
+   Le design mobile est la référence : on ne le redessine pas, on
+   arrête juste de faire croire à un téléphone étiré. Trois idées —
+   la nav basse redevient un îlot posé, la vue 3 se met sur deux
+   colonnes (moins de défilement), les gros boutons pleine largeur
+   reprennent une taille de bouton.
+============================================================ */
+@media (min-width:900px){
+
+  /* --- l'en-tête devient la barre du site, avec les onglets dedans ---
+     Barre pleine largeur, mais texte aligné sur la colonne de contenu
+     grâce au padding calculé : le logo et les onglets tombent pile
+     au bord des cartes. */
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:40;
+    max-width:none;margin:0;
+    /* 100% et non 100vw : 100vw inclut la barre de défilement et
+       décalerait le logo de ~10 px par rapport aux cartes. Le +18px
+       reprend le padding intérieur de .wrap. */
+    padding:10px max(24px, calc((100% - 1060px)/2 + 18px));
+    border-width:0 0 3px;border-radius:0;
+    box-shadow:0 3px 0 rgba(0,0,0,.10);
+    /* les onglets se rangent juste après le logo : poussés au bord
+       opposé, ils donnaient l'impression de deux barres séparées */
+    justify-content:flex-start;gap:34px;flex-wrap:nowrap;
+  }
+  /* on libère la hauteur de la barre en haut de la page */
+  .wrap{padding-top:90px}
+
+  /* la nav quitte le bas de l'écran et se range dans la barre */
+  .catnav{
+    position:static;
+    width:auto;
+    grid-template-columns:repeat(3,auto);gap:6px;
+    background:transparent;
+    border:0;border-radius:0;padding:0;box-shadow:none;
+  }
+  /* icône à côté du mot : plus compact, plus « barre d'outils » */
+  .catnav button{flex-direction:row;gap:8px;padding:9px 16px;font-size:.72rem}
+  .catnav button .ico{font-size:1.15rem}
+  /* sur l'aplat jaune de la barre, l'onglet inactif doit rester lisible */
+  .catnav button{color:#101010;opacity:.62}
+  .catnav button:not(.on):hover{opacity:1;background:rgba(0,0,0,.07)}
+  .catnav button.on{
+    opacity:1;background:var(--tab-on);color:#101010;
+    border-color:var(--stroke);box-shadow:3px 3px 0 var(--stroke);
+  }
+
+  /* la barre « l'IA cherche » remplace la nav : même gabarit d'îlot */
+  .searchbar{
+    left:0;right:0;margin:0 auto;
+    bottom:20px;width:min(560px,calc(100vw - 40px));
+    padding:12px 16px;
+    border:3px solid var(--stroke);border-radius:18px;
+    box-shadow:5px 5px 0 var(--stroke);
+  }
+
+  /* le bandeau réseau se replace au-dessus de l'îlot de recherche */
+  .net-badge{bottom:96px}
+
+  /* plus rien n'occupe le bas en permanence */
+  .wrap{padding-bottom:48px}
+
+  /* la carte plein écran s'arrête sous la barre du haut */
+  #catMap{top:76px;bottom:0}
+  #catMap iframe{height:calc(100% - 96px)}
+
+  /* --- les 3 étapes se serrent au lieu de s'étirer sur toute la largeur --- */
+  .steps{gap:8px;justify-content:flex-start}
+  .step{flex:0 0 auto;min-width:0;padding:11px 18px}
+
+  /* --- vue 1 : les boutons se rangent en ligne au lieu d'empiler
+     quatre barres pleine largeur dans une colonne étroite --- */
+  .go-acts{flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px;max-width:none}
+  .go-acts > .btn{width:auto}
+  .go-acts .btn-duo{display:contents}
+  .go-acts .btn-duo .btn{width:auto;padding:12px 18px}
+
+  /* --- vue 3 : « Réserver » et « À savoir » côte à côte --- */
+  #view3{
+    display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start;
+  }
+  #view3 > *{grid-column:1 / -1;margin-bottom:0}
+  #view3 > #cardResa,
+  #view3 > #cardInfo{grid-column:auto}
+
+  /* les stats budget passent de 2 à 4 de front : une ligne au lieu de deux */
+  .plan-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+
+/* Grand écran : on laisse la colonne respirer un peu, sans plus —
+   au-delà, les lignes deviennent trop longues à lire. */
+@media (min-width:1400px){
+  .wrap{max-width:1160px}
+  /* la barre du haut suit l'élargissement de la colonne */
+  header{padding-inline:max(24px, calc((100% - 1160px)/2 + 18px))}
+}
 
 /* ===== Carnet de voyage — document imprimable soigné ===== */
 #dossier{display:none}

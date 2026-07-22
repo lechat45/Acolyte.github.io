@@ -39,8 +39,14 @@
 <div class="wrap">
   <header>
     <div class="logo"><div class="dot"></div><span>Acolite</span></div>
-    <div class="row">
-    </div>
+    <!-- La nav vit ici dans le HTML, mais sur téléphone elle est en
+         position:fixed en bas : le parent n'a alors aucun effet sur elle.
+         Sur ordinateur elle repasse en flux et devient la barre du haut. -->
+    <nav class="catnav">
+      <button data-cat="map"><span class="ico">🗺️</span>Carte</button>
+      <button data-cat="trip" class="on"><span class="ico">✈️</span>Voyage</button>
+      <button data-cat="profile"><span class="ico">👤</span>Profil</button>
+    </nav>
   </header>
 
   <div id="catTrip">
@@ -121,9 +127,9 @@
       <div class="field" style="margin-top:14px"><label for="fFree">Tes limites & conditions</label>
         <textarea id="fFree" placeholder="Ex : max 3h de trajet, pas d'auberge, je pars avec un bébé, je veux la plage, budget serré sur le logement…"></textarea>
       </div>
-      <div style="margin-top:18px;display:flex;flex-direction:column;gap:12px">
-        <button class="btn" id="btnGo" style="width:100%;justify-content:center">✨ Propose-moi des voyages</button>
-        <button class="btn ghost" id="btnCountry" style="width:100%;justify-content:center">🎯 Choisis un pays, l'IA trouve le lieu</button>
+      <div class="go-acts" style="margin-top:18px;display:flex;flex-direction:column;gap:12px">
+        <button class="btn" id="btnGo">✨ Propose-moi des voyages</button>
+        <button class="btn ghost" id="btnCountry">🎯 Choisis un pays, l'IA trouve le lieu</button>
         <div class="btn-duo">
           <button class="btn ghost" id="btnLucky">🎲 Surprends-moi</button>
           <button class="btn ghost" id="btnScanTicket">📷 Scanner un ticket</button>
@@ -150,7 +156,7 @@
     </div>
 
     <!-- 2 · Passer à l'action -->
-    <div class="card">
+    <div class="card" id="cardResa">
       <h3 style="margin:0 0 4px">🎫 Réserver</h3>
       <p class="sub" style="margin:0 0 12px">Tous les liens de réservation, déjà pré-remplis avec ta destination et tes dates.</p>
       <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
@@ -371,30 +377,27 @@
       </div><!-- /acc -->
     </div>
 
+    <!-- ===== Product Hunt — placé AVANT la zone sensible : demander un
+         avis juste après « supprimer mon compte » tombait très mal. ===== -->
+    <div class="ph-card">
+      <div class="ph-txt">
+        <h3>💛 Ça t'a été utile ?</h3>
+        <p>Acolite est gratuit, sans compte payant et sans pub — et le restera. La seule chose qui l'aide à exister, c'est ton avis.</p>
+      </div>
+      <a class="ph-link" href="https://www.producthunt.com/products/acolite/reviews/new?utm_source=badge-product_review&amp;utm_medium=badge&amp;utm_source=badge-acolite" target="_blank" rel="noopener">
+        <img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1273558&amp;theme=light"
+             alt="Donner son avis sur Acolite — Product Hunt" width="250" height="54" loading="lazy">
+      </a>
+    </div>
+
     <div class="danger-zone">
       <h3>⚠️ Zone sensible</h3>
       <p>La suppression est <strong>définitive</strong> : compte, voyages, notes et souvenirs seront perdus. Aucun retour possible.</p>
       <button class="btn danger" id="pfDelete">🗑 Supprimer définitivement mon compte</button>
     </div>
 
-    <!-- ===== Product Hunt ===== -->
-    <div class="ph-card">
-      <p class="sub" style="margin:0 0 10px">Acolite te plaît ? Laisse un avis 💛</p>
-      <a href="https://www.producthunt.com/products/acolite/reviews/new?utm_source=badge-product_review&amp;utm_medium=badge&amp;utm_source=badge-acolite" target="_blank" rel="noopener">
-        <img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1273558&amp;theme=light"
-             alt="Acolite — Ton copilote de voyage | Product Hunt" width="250" height="54" style="width:250px;height:54px">
-      </a>
-    </div>
-
   </section>
 </div>
-
-<!-- ===== Nav catégories ===== -->
-<nav class="catnav">
-  <button data-cat="map"><span class="ico">🗺️</span>Carte</button>
-  <button data-cat="trip" class="on"><span class="ico">✈️</span>Voyage</button>
-  <button data-cat="profile"><span class="ico">👤</span>Profil</button>
-</nav>
 
 <!-- ===== Auth (création de compte / connexion / vérification) ===== -->
 <div class="auth-wrap hidden" id="authWrap">
