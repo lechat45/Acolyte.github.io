@@ -3599,6 +3599,10 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'2.1', date:'2026-07-22', titre:'Des boutons et des cartes bien alignés', items:[
+    '🔘 Les 4 boutons du questionnaire font tous la même taille — plus aucun tout seul sur sa ligne',
+    '🧱 « Réserver » et « À savoir avant de partir » ont désormais la même hauteur'
+  ]},
   { v:'2.0', date:'2026-07-22', titre:'La mascotte prend la place du logo', items:[
     '🌍 Le globe aux grands yeux remplace le carré orange, en haut à gauche',
     '🧭 Carte · Voyage · Profil filent tout au bout de la barre',

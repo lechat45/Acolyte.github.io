@@ -1478,20 +1478,28 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   .steps{gap:18px}
   .step{flex:1;padding:13px 20px}
 
-  /* --- vue 1 : les boutons se rangent en ligne au lieu d'empiler
-     quatre barres pleine largeur dans une colonne étroite --- */
-  .go-acts{flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px;max-width:none}
-  .go-acts > .btn{width:auto}
+  /* --- vue 1 : grille à colonnes égales plutôt qu'un flux qui s'enroule.
+     En flux libre, le 4ᵉ bouton se retrouvait seul sur sa ligne et
+     chaque bouton avait une largeur différente. 2 ou 4 colonnes : jamais
+     de reste, les 4 boutons tombent toujours juste. --- */
+  .go-acts{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px;max-width:none;
+  }
+  .go-acts > .btn,
+  .go-acts .btn-duo .btn{width:100%;justify-content:center;text-align:center}
   .go-acts .btn-duo{display:contents}
-  .go-acts .btn-duo .btn{width:auto;padding:12px 18px}
+  .go-acts .btn-duo .btn{padding:14px 18px;font-size:1rem}
 
   /* --- vue 3 : « Réserver » et « À savoir » côte à côte --- */
   #view3{
     display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start;
   }
   #view3 > *{grid-column:1 / -1;margin-bottom:0}
+  /* les deux cartes voisines s'alignent sur la plus haute : deux blocs
+     de tailles différentes côte à côte donnaient un bas de page bancal */
   #view3 > #cardResa,
-  #view3 > #cardInfo{grid-column:auto}
+  #view3 > #cardInfo{grid-column:auto;align-self:stretch}
 
   /* les stats budget passent de 2 à 4 de front : une ligne au lieu de deux */
   .plan-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -1499,6 +1507,14 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 
 /* Grand écran : on laisse la colonne respirer un peu, sans plus —
    au-delà, les lignes deviennent trop longues à lire. */
+/* Écran large : les 4 boutons tiennent sur une seule ligne. On garde un
+   diviseur de 4 pour ne jamais laisser un bouton seul sur sa ligne. */
+@media (min-width:1250px){
+  .go-acts{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .go-acts .btn,
+  .go-acts .btn-duo .btn{font-size:.86rem;padding:14px 12px}
+}
+
 @media (min-width:1400px){
   .wrap{max-width:1160px}
 }
