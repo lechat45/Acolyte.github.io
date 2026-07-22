@@ -879,6 +879,70 @@ async function geoPlace(name, cc){
     return res[0];
   }catch(e){ return null; }
 }
+/* ---- Hébergements RÉELS via OpenStreetMap (Overpass) ----
+   Gratuit, sans clé, sans conditions restrictives — contrairement à Airbnb,
+   dont l'API est fermée aux partenaires. On n'a pas les prix, mais on a des
+   établissements qui existent vraiment et leur position exacte. L'IA choisit
+   alors DANS cette liste au lieu de puiser dans sa mémoire. */
+/* Deux serveurs : l'instance publique limite le débit (429) dès qu'on
+   enchaîne les requêtes. On bascule sur le miroir avant d'abandonner. */
+const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter',
+                       'https://overpass.kumi.systems/api/interpreter'];
+const OSM_STAY_KINDS = 'hotel|guest_house|hostel|apartment|chalet|motel';
+const OSM_STAY_FR = { hotel:'hôtel', guest_house:'chambre d’hôtes', hostel:'auberge',
+                      apartment:'appartement', chalet:'chalet', motel:'motel' };
+async function osmStays(lat, lon, radiusM = 3500){
+  const ck = `osm_stay_${lat.toFixed(3)}_${lon.toFixed(3)}_${radiusM}`;
+  if(state.cache[ck]) return state.cache[ck];
+  /* ce chemin touche RÉELLEMENT le réseau : c'est ici, et seulement ici,
+     qu'on renonce en connexion dégradée. Le reste de loadHotels continue. */
+  if(netSlow()) return [];
+  const q = `[out:json][timeout:20];nwr(around:${radiusM},${lat},${lon})`
+    + `[tourism~"^(${OSM_STAY_KINDS})$"][name];out center 60;`;
+  let d = null;
+  for(const url of OVERPASS_URLS){
+    try{
+      const r = await fetchT(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(q)
+      }, netTimeout(12000));
+      /* 429 = quota, pas panne réseau : on essaie le miroir SANS compter
+         d'échec réseau, sinon netSlow() basculerait et couperait le prix
+         des vols alors que la connexion va très bien. */
+      if(r.status === 429 || r.status >= 500) continue;
+      if(!r.ok) return [];
+      d = await r.json();
+      break;
+    }catch(e){ _netFails++; }
+  }
+  if(!d) return [];
+  try{
+    const ref = { latitude: lat, longitude: lon };
+    const rows = (d.elements || []).map(e => {
+      const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon;
+      if(la == null || lo == null || !e.tags?.name) return null;
+      return {
+        nom: String(e.tags.name).slice(0, 80),
+        type: OSM_STAY_FR[e.tags.tourism] || e.tags.tourism,
+        etoiles: e.tags.stars ? +e.tags.stars : null,
+        km: +havKm(ref, { latitude: la, longitude: lo }).toFixed(2)
+      };
+    }).filter(Boolean)
+      .sort((a, b) => a.km - b.km)
+      .slice(0, 22);
+    state.cache[ck] = rows; save();
+    return rows;
+  }catch(e){ return []; }
+}
+/* met la liste OSM en forme pour le prompt (vide = on n'ajoute rien) */
+function osmStayCtx(rows){
+  if(!rows || !rows.length) return '';
+  const l = rows.map(h => `- ${h.nom} (${h.type}${h.etoiles ? `, ${h.etoiles}★` : ''}, à ${h.km} km du centre du quartier)`).join('\n');
+  return `\nHÉBERGEMENTS RÉELS relevés sur OpenStreetMap autour du quartier visé (données vérifiées, pas d'invention) :\n${l}\n`
+    + `Choisis EN PRIORITÉ dans cette liste. Tu ne peux proposer un établissement absent de la liste que si aucun ne convient au budget ou au type demandé — dans ce cas il doit être tout aussi réel et vérifiable.\n`;
+}
+
 /* code pays ISO à partir du nom FR du pays (pour biaiser le géocodage) */
 function ccFor(pays){ return COUNTRY_CC[String(pays || '').trim().toLowerCase()] || ''; }
 /* nettoie un libellé de lieu pour le géocodeur : « Washington D.C. (Dulles) » → « Washington » */
@@ -1268,7 +1332,14 @@ async function loadHotels(force = false){
   zone.innerHTML = loaderHTML('Sélection des meilleurs logements…');
   const A = state.prefs?.adults || 2, K = state.prefs?.kids || 0;
   const nuits = d ? Math.max(1, Math.round((new Date(d.out) - new Date(d.in)) / 86400000)) : null;
-  const prompt = `Tu es Acolite, connaisseur de l'hébergement à ${ville}${quartier ? ` (quartier ${quartier})` : ''}. ${ctx()}
+  /* on ancre l'IA sur des établissements réels avant de lui demander de choisir.
+     Si le géocodage ou Overpass échoue, osmCtx reste vide et rien ne change. */
+  let osmCtx = '';
+  try{
+    const g = await geoPlace(quartier ? `${quartier} ${ville}` : ville, ccFor(t.pays)) || await geoPlace(ville, ccFor(t.pays));
+    if(g) osmCtx = osmStayCtx(await osmStays(+g.latitude, +g.longitude));
+  }catch(e){}
+  const prompt = `Tu es Acolite, connaisseur de l'hébergement à ${ville}${quartier ? ` (quartier ${quartier})` : ''}. ${ctx()}${osmCtx}
 Propose les 4 MEILLEURS hébergements RÉELS et vérifiables pour ce séjour${nuits ? ` de ${nuits} nuit(s)` : ''}, ${A} adulte(s)${K ? ` et ${K} enfant(s)` : ''}.
 Uniquement des établissements qui EXISTENT vraiment (nom exact tel qu'il apparaît sur Booking). Priorité au quartier conseillé${quartier ? ` (${quartier})` : ''}, puis à la proximité des lieux du programme.
 Varie les gammes en restant dans le budget. Classe-les du meilleur rapport qualité/prix au plus haut de gamme.
@@ -3599,9 +3670,15 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'2.2', date:'2026-07-22', titre:'Des logements qui existent vraiment', items:[
+    '🏨 Acolite relève les hébergements réels autour de ton quartier sur OpenStreetMap, puis choisit dedans',
+    '📍 Chaque proposition existe donc pour de vrai, avec sa distance au quartier conseillé',
+    '🔗 Les liens Airbnb, Booking et Abritel restent pré-remplis avec tes dates pour voir les prix du jour'
+  ]},
   { v:'2.1', date:'2026-07-22', titre:'Des boutons et des cartes bien alignés', items:[
     '🔘 Les 4 boutons du questionnaire font tous la même taille — plus aucun tout seul sur sa ligne',
-    '🧱 « Réserver » et « À savoir avant de partir » ont désormais la même hauteur'
+    '🧱 « Réserver » et « À savoir avant de partir » ont désormais la même hauteur',
+    '📌 Le bouton « fiche pratique » se cale en bas de sa carte, sur toute la largeur'
   ]},
   { v:'2.0', date:'2026-07-22', titre:'La mascotte prend la place du logo', items:[
     '🌍 Le globe aux grands yeux remplace le carré orange, en haut à gauche',

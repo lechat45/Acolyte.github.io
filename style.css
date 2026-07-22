@@ -1500,6 +1500,12 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
      de tailles différentes côte à côte donnaient un bas de page bancal */
   #view3 > #cardResa,
   #view3 > #cardInfo{grid-column:auto;align-self:stretch}
+  /* « À savoir » a moins de contenu que « Réserver » : à hauteur égale,
+     son bouton flottait au milieu d'un grand vide. On le cale en pied de
+     carte, pleine largeur — le vide devient une respiration voulue. */
+  #cardInfo{display:flex;flex-direction:column}
+  #cardInfo #zoneInfo{margin-top:auto}
+  #cardInfo #zoneInfo > .btn{width:100%;justify-content:center}
 
   /* les stats budget passent de 2 à 4 de front : une ligne au lieu de deux */
   .plan-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
