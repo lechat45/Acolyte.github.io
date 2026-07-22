@@ -114,6 +114,14 @@
             <option value="entre collègues">💼 Entre collègues</option>
           </select>
         </div>
+        <div class="field"><label id="lblTransport">Comment tu veux voyager</label>
+          <div class="chips even" id="fTransport" role="group" aria-labelledby="lblTransport">
+            <span class="chip on" role="button" tabindex="0" data-tr="">🤷 Peu importe</span>
+            <span class="chip" role="button" tabindex="0" data-tr="train">🚆 Train</span>
+            <span class="chip" role="button" tabindex="0" data-tr="voiture">🚗 Voiture</span>
+            <span class="chip" role="button" tabindex="0" data-tr="avion">✈️ Avion</span>
+          </div>
+        </div>
         <div class="field"><label for="fStay">Style d'hébergement</label>
           <select id="fStay">
             <option value="" selected>Peu importe</option>
@@ -167,14 +175,7 @@
       <p class="hint" style="margin:8px 0 0">✈️ Avant le décollage : télécharge le carnet PDF (plan + n° de réservation) et prépare les <strong>cartes de chaque journée</strong> — tout reste consultable <strong>sans connexion</strong>, réseau coupé ou pas.</p>
     </div>
 
-    <!-- 3 · Avant de partir (les événements vivent désormais dans le plan) -->
-    <div class="card" id="cardInfo">
-      <h3 style="margin:0 0 4px">📌 À savoir avant de partir</h3>
-      <p class="sub" style="margin:0 0 10px">Visa, prises électriques, urgences, pourboires, eau, décalage horaire.</p>
-      <div id="zoneInfo"><button class="btn sm ghost" id="btnInfo">Afficher la fiche pratique</button></div>
-    </div>
-
-    <!-- 4 · Gestion du voyage (replié : actions rares) -->
+    <!-- 3 · Gestion du voyage (replié : actions rares) -->
     <div class="acc" id="accManage">
       <div class="acc-head" data-acc>🧰 GÉRER CE VOYAGE <span class="arr">›</span></div>
       <div class="acc-body">

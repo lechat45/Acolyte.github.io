@@ -166,17 +166,17 @@ header{
   margin-bottom: 24px;
 }
 .logo{
-  font-family:'Sora',sans-serif;font-weight:900;font-size:1.75rem;
+  font-family:'Sora',sans-serif;font-weight:900;font-size:2.15rem;
   letter-spacing:-.03em;display:flex;align-items:center;gap:10px;text-transform:uppercase;
 }
 /* La mascotte remplace l'ancien carré orange. Elle garde le regard et
    le clignement — sa signature — mais pas le balancement : un logo qui
    tangue en permanence fatigue l'œil. */
 .logo-mark{
-  width:36px;height:36px;flex-shrink:0;
+  width:52px;height:52px;flex-shrink:0;
   display:grid;place-items:center;
 }
-.logo-mark .mascot{width:36px;height:36px;animation:none}
+.logo-mark .mascot{width:52px;height:52px;animation:none}
 .logo span{color:var(--txt)}
 
 .icon-btn{
@@ -1433,8 +1433,9 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
     /* les onglets sont poussés tout au bout de la barre */
     justify-content:space-between;flex-wrap:nowrap;
   }
-  /* on libère la hauteur de la barre en haut de la page */
-  .wrap{padding-top:90px}
+  /* on libère la hauteur de la barre en haut de la page
+     (75 px depuis que le logo a grossi, + une respiration) */
+  .wrap{padding-top:104px}
 
   /* la nav quitte le bas de l'écran et se range dans la barre */
   .catnav{
@@ -1471,7 +1472,7 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   .wrap{padding-bottom:48px}
 
   /* la carte plein écran s'arrête sous la barre du haut */
-  #catMap{top:76px;bottom:0}
+  #catMap{top:89px;bottom:0}
   #catMap iframe{height:calc(100% - 96px)}
 
   /* --- les 3 étapes occupent la largeur, bien détachées les unes des autres --- */
@@ -1491,21 +1492,23 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   .go-acts .btn-duo{display:contents}
   .go-acts .btn-duo .btn{padding:14px 18px;font-size:1rem}
 
-  /* --- vue 3 : « Réserver » et « À savoir » côte à côte --- */
-  #view3{
-    display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start;
+  /* La vue 3 était sur deux colonnes pour apparier « Réserver » et
+     « À savoir ». Cette dernière ayant été retirée, il ne reste que des
+     blocs pleine largeur : la grille n'a plus d'objet, on revient au flux. */
+
+  /* --- proposition unique : le voyage se déploie en longueur --- */
+  .dest-grid > .dest:only-child{
+    grid-column:1 / -1;
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
+    column-gap:28px;align-items:start;
   }
-  #view3 > *{grid-column:1 / -1;margin-bottom:0}
-  /* les deux cartes voisines s'alignent sur la plus haute : deux blocs
-     de tailles différentes côte à côte donnaient un bas de page bancal */
-  #view3 > #cardResa,
-  #view3 > #cardInfo{grid-column:auto;align-self:stretch}
-  /* « À savoir » a moins de contenu que « Réserver » : à hauteur égale,
-     son bouton flottait au milieu d'un grand vide. On le cale en pied de
-     carte, pleine largeur — le vide devient une respiration voulue. */
-  #cardInfo{display:flex;flex-direction:column}
-  #cardInfo #zoneInfo{margin-top:auto}
-  #cardInfo #zoneInfo > .btn{width:100%;justify-content:center}
+  .dest:only-child .dest-main{grid-column:1}
+  .dest:only-child .dest-facts{grid-column:2;grid-row:1;margin-top:0}
+  .dest:only-child .hint,
+  .dest:only-child .tags,
+  .dest:only-child > .btn{grid-column:1 / -1}
+  .dest:only-child .flag{font-size:2.8rem}
+  .dest:only-child h3{font-size:1.5rem}
 
   /* les stats budget passent de 2 à 4 de front : une ligne au lieu de deux */
   .plan-grid{grid-template-columns:repeat(4,minmax(0,1fr))}

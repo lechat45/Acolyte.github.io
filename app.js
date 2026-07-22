@@ -487,7 +487,7 @@ CONTEXTE VOYAGEUR :
 - Destination choisie : ${t.nom || '?'}, ${t.pays || ''}
 - Durée : ${p.days || '?'} · Période : ${p.when || 'flexible'}
 - Budget/pers : ${p.budget || '?'} · Voyageurs : ${p.adults||2} adulte(s)${p.kids ? ' + ' + p.kids + ' enfant(s)' : ''}
-- Destination souhaitée : ${p.dest || 'libre, à proposer'}${p.vibe ? `\n- Ambiance recherchée : ${p.vibe}` : ''}${p.withWho ? `\n- Voyage ${p.withWho}` : ''}${p.stay ? `\n- Style d'hébergement préféré : ${p.stay}` : ''}
+- Destination souhaitée : ${p.dest || 'libre, à proposer'}${p.vibe ? `\n- Ambiance recherchée : ${p.vibe}` : ''}${p.withWho ? `\n- Voyage ${p.withWho}` : ''}${p.stay ? `\n- Style d'hébergement préféré : ${p.stay}` : ''}${p.transport ? `\n- MOYEN DE TRANSPORT IMPOSÉ par le voyageur : ${p.transport}. Construis le trajet avec ce mode, même s'il n'est pas le plus rapide. S'il est réellement impossible (mer à traverser, distance absurde), dis-le franchement et explique pourquoi avant de proposer autre chose.` : ''}
 - Limites & conditions : ${p.free || 'aucune'}
 ${prefsBlock()}
 RÈGLES DE QUALITÉ (toujours valables) :
@@ -513,8 +513,34 @@ function readPrefs(extra){
     vibe:  $('#fVibe')?.value || '',
     withWho:$('#fWith')?.value || '',
     stay:  $('#fStay')?.value || '',
+    transport: $('#fTransport .chip.on')?.dataset.tr || '',
     free:  $('#fFree').value.trim().slice(0,600) + (extra ? ' | Affinage : ' + String(extra).slice(0,600) : '')
   };
+}
+
+/* --- Choix du transport : un seul actif à la fois. Le clic et le clavier
+   passent par la même fonction pour qu'aucun des deux ne dérive. --- */
+function setTransportChip(val){
+  const box = $('#fTransport'); if(!box) return;
+  box.querySelectorAll('.chip').forEach(c => {
+    const on = (c.dataset.tr || '') === (val || '');
+    c.classList.toggle('on', on);
+    c.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+{
+  const box = $('#fTransport');
+  if(box){
+    box.addEventListener('click', e => {
+      const c = e.target.closest('.chip'); if(c) setTransportChip(c.dataset.tr || '');
+    });
+    box.addEventListener('keydown', e => {
+      if(e.key !== 'Enter' && e.key !== ' ') return;
+      const c = e.target.closest('.chip'); if(!c) return;
+      e.preventDefault();                 /* l'espace ferait défiler la page */
+      setTransportChip(c.dataset.tr || '');
+    });
+  }
 }
 
 let _genBusy = false;   /* garde anti double-appel des générations IA */
@@ -625,9 +651,11 @@ function renderDestinations(d){
   (d.destinations||[]).forEach((x,i)=>{
     const tIco = ({avion:'✈️',train:'🚆',voiture:'🚗'})[x.transport_conseille]||'✈️';
     html += `<div class="dest" data-i="${i}">
-      <div class="flag">${esc(x.drapeau||'📍')}</div>
-      <h3>${esc(x.nom)}</h3><div class="country">${esc(x.pays)}</div>
-      <p>${esc(x.resume)}</p>
+      <div class="dest-main">
+        <div class="flag">${esc(x.drapeau||'📍')}</div>
+        <h3>${esc(x.nom)}</h3><div class="country">${esc(x.pays)}</div>
+        <p>${esc(x.resume)}</p>
+      </div>
       <div class="dest-facts">
         <div class="fact"><span class="fk">💶 Budget</span><span class="fv">${esc(x.budget_estime)}</span></div>
         <div class="fact"><span class="fk">${tIco} ${esc(x.transport_conseille||'avion')}</span><span class="fv">${esc(x.transport_prix||'—')}${x.transport_duree ? ` · ${esc(x.transport_duree)}` : ''}</span></div>
@@ -1200,12 +1228,6 @@ Le programme couvre toute la durée (${p.days || 'du séjour'}), 1 ligne par jou
   }
 }
 
-/* --- Concierge : remet les cartes Événements / Fiche pratique à l'état bouton
-   (appelé à chaque rendu de plan → pas de contenu périmé d'un autre voyage) --- */
-function resetConcierge(){
-  const inf = $('#zoneInfo'); if(inf) inf.innerHTML = '<button class="btn sm ghost" id="btnInfo">Afficher la fiche pratique</button>';
-}
-
 /* --- Événements & festivals aux dates du voyage (light → Groq) --- */
 async function loadEvents(){
   const zone = $('#zoneEvents'), t = state.trip;
@@ -1276,37 +1298,8 @@ document.addEventListener('click', e => {
   setTimeout(() => document.querySelector(`[data-daybox="${CSS.escape(String(cible.jour))}"]`)?.closest('.day-block')?.scrollIntoView({ block:'center' }), 120);
 });
 
-/* --- Fiche pratique pays (light → Groq) --- */
-async function loadCountryInfo(){
-  const zone = $('#zoneInfo'), t = state.trip;
-  if(!zone || !t) return;
-  const ck = `cinfo_${t.pays || t.nom}`;
-  if(state.cache[ck]){ renderCountryInfo(state.cache[ck]); return; }
-  _retryFns.info = loadCountryInfo;
-  zone.innerHTML = loaderHTML('Préparation de la fiche pratique…');
-  const from = state.prefs?.from || 'France';
-  const prompt = `Tu es Acolite. Fiche pratique concise et FIABLE pour un voyageur partant de ${from} vers ${t.nom} (${t.pays}). ${ctx()}
-Réponds UNIQUEMENT en JSON, chaque valeur = 1 phrase courte et concrète (n'invente rien ; si incertain, conseille de vérifier) :
-{"visa":"formalités d'entrée pour un voyageur français","prise":"type de prise + voltage, adaptateur nécessaire ?","urgence":"numéros d'urgence locaux","pourboire":"usage du pourboire","eau":"eau du robinet potable ?","decalage":"décalage horaire vs France","sante":"vaccin/précaution santé notable ou 'aucune particulière'","astuce":"1 astuce locale utile"}`;
-  try{
-    const { data } = await ai('light', prompt);
-    state.cache[ck] = data; save();
-    renderCountryInfo(data);
-  }catch(e){ if(e.message !== 'NO_KEY') zone.innerHTML = errHTML('Fiche indisponible pour le moment.', 'info'); }
-}
-function renderCountryInfo(d){
-  const zone = $('#zoneInfo'); if(!zone || !d) return;
-  const rows = [
-    ['🛂 Formalités', d.visa], ['🔌 Prises', d.prise], ['🚨 Urgences', d.urgence],
-    ['💶 Pourboire', d.pourboire], ['🚰 Eau', d.eau], ['🕐 Décalage', d.decalage],
-    ['💉 Santé', d.sante], ['💡 Astuce', d.astuce]
-  ].filter(r => r[1]);
-  zone.innerHTML = rows.map(r => `<div class="item" style="padding:9px 12px">
-    <div style="flex:1;min-width:0"><h4 style="margin:0">${r[0]}</h4><p class="hint" style="margin:2px 0 0">${esc(String(r[1]))}</p></div></div>`).join('');
-}
 document.addEventListener('click', e => {
   if(e.target.id === 'btnEvents') loadEvents();
-  if(e.target.id === 'btnInfo') loadCountryInfo();
 });
 
 /* ============================================================
@@ -1582,7 +1575,6 @@ function renderPlan(d){
 
   refreshPasses();
   startWx();
-  resetConcierge();
   autoRealPrices(tr.mode);
   if(_planTab === 'logement') loadHotels();
 }
@@ -2968,42 +2960,6 @@ document.addEventListener('click', e => {
   save(); renderSpends();
 });
 
-/* ============================================================
-   INFOS UTILES (light → Groq)
-============================================================ */
-async function loadInfo(){
-  const zone = $('#zoneInfo');
-  if(state.cache.info){ renderInfo(state.cache.info, state.cache.infoVia); return; }
-  zone.innerHTML = loaderHTML('Vérification des formalités…');
-  const t = state.trip;
-  const prompt = `Tu es Acolite. Un voyageur FRANÇAIS part à ${t.nom} (${t.pays}). ${ctx()}
-Réponds UNIQUEMENT en JSON :
-{
- "formalites":"papiers nécessaires pour un français : CNI/passeport, visa oui/non, validité requise — 1-2 phrases",
- "sante":"vaccins recommandés, eau du robinet potable ou non, précautions — 1-2 phrases",
- "securite":"niveau général, arnaques classiques à touristes, quartiers à éviter — 2 phrases",
- "argent":"monnaie, taux approximatif vs euro, paiement carte accepté ?, pourboire local — 2 phrases",
- "electricite":"type de prise, adaptateur nécessaire pour un français ?",
- "telephone":"le forfait FR fonctionne-t-il ? roaming/eSIM conseillé ?",
- "urgences":"numéros d'urgence locaux (police, ambulance) + '112 si UE'",
- "meilleur_moment":"meilleure période de l'année pour visiter, en 1 phrase"
-}`;
-  try{
-    const {data, via} = await ai('light', prompt);
-    state.cache.info = data; state.cache.infoVia = via; save();
-    renderInfo(data, via);
-  }catch(e){ if(e.message!=='NO_KEY') zone.innerHTML = errHTML('Chargement impossible.'); }
-}
-function renderInfo(d, via){
-  $('#infoBadge').style.display = via==='groq' ? '' : 'none';
-  const rows = [
-    ['🛂','Formalités', d.formalites], ['💉','Santé', d.sante], ['🛡️','Sécurité', d.securite],
-    ['💱','Argent', d.argent], ['🔌','Électricité', d.electricite], ['📱','Téléphone', d.telephone],
-    ['🚨','Urgences', d.urgences], ['📅','Meilleur moment', d.meilleur_moment]
-  ];
-  $('#zoneInfo').innerHTML = rows.filter(r=>r[2]).map(r=>`
-    <div class="item"><div class="emo">${r[0]}</div><div><h4>${r[1]}</h4><p>${esc(r[2])}</p></div></div>`).join('');
-}
 
 
 /* ============================================================
@@ -3670,6 +3626,12 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'2.3', date:'2026-07-22', titre:'Tu choisis comment tu voyages', items:[
+    '🚆 Nouveau choix dans le questionnaire : train, voiture, avion ou peu importe — Acolite construit le trajet avec ce que tu as choisi',
+    '🌍 Le logo est plus grand, la mascotte se voit enfin',
+    '🧳 Quand Acolite ne propose qu’un seul voyage, il se déploie en largeur sur ordinateur',
+    '🧹 La fiche pratique a été retirée'
+  ]},
   { v:'2.2', date:'2026-07-22', titre:'Des logements qui existent vraiment', items:[
     '🏨 Acolite relève les hébergements réels autour de ton quartier sur OpenStreetMap, puis choisit dedans',
     '📍 Chaque proposition existe donc pour de vrai, avec sa distance au quartier conseillé',
@@ -5295,6 +5257,7 @@ if(state.prefs){
   if(state.prefs.adults) $('#fAdults').value = state.prefs.adults;
   if(state.prefs.kids !== undefined) $('#fKids').value = state.prefs.kids;
   if(state.prefs.free) $('#fFree').value = (state.prefs.free||'').split(' | Affinage :')[0];
+  setTransportChip(state.prefs.transport || '');
 }else{
   applyTripDefaults();   /* pas encore de voyage → on pré-remplit avec les valeurs par défaut */
 }
