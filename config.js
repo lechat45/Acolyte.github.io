@@ -19,7 +19,7 @@ window.ACOLITE_KEYS = {
 
   /* ▸ MODE SÉCURISÉ : backend Val Town — les clés sont dans ses
      variables d'environnement (val.town → Env vars), jamais ici */
-  proxy: 'https://lechat45--367075ba811e11f1afca1607ee4eb77e.web.val.run',
+  proxy: 'https://lechat45--2ec0f9a6860b11f183cf1607ee4eb77e.web.val.run',
 
   /* ▸ MODE TEST uniquement : à VIDER dès que le proxy est en place */
   gemini: '',
