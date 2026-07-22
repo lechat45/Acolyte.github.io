@@ -146,7 +146,7 @@
     <div class="card">
       <h2>Ton voyage 🧳</h2>
       <p class="sub">Le transport, le logement, le budget et le programme — construits par Acolite.</p>
-      <div id="zonePlan"><div class="loader"><div class="orbit"></div>Organisation du voyage…</div></div>
+      <div id="zonePlan"></div>
     </div>
 
     <!-- 2 · Passer à l'action -->
@@ -502,14 +502,14 @@
       <button id="tgTrain">🚆 Train</button>
     </div>
     <div id="priceAlert" style="display:none;margin-bottom:10px"></div>
-    <div id="zoneTransport"><div class="loader"><div class="orbit"></div>Analyse du meilleur trajet…</div></div>
+    <div id="zoneTransport"></div>
     <button class="modal-close" data-close="ovSim">Fermer</button>
   </div>
 </div>
 
 <!-- ===== Barre "l'IA cherche" : remplace la nav du bas pendant la réflexion ===== -->
 <div class="searchbar" id="searchBar" hidden>
-  <div class="sb-mark"><span>A</span></div>
+  <div class="sb-mark" id="sbMascot"></div>
   <div class="sb-body">
     <div class="sb-text" id="sbText">Acolite explore le monde…</div>
     <div class="sb-track"><i></i></div>

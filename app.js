@@ -403,7 +403,33 @@ async function ai(kind, prompt, expectJson = true, maxTok = 4096){
   return { data, via:'gemini' };
 }
 
-function loaderHTML(msg){ return `<div class="loader"><div class="orbit"></div><span class="loader-msg">${esc(msg)}</span></div>`; }
+/* ---- Mascotte Acolite : la Terre aux grands yeux, qui regarde autour d'elle
+   pendant que l'IA réfléchit. SVG inline → net partout, zéro fichier, hors-ligne. ---- */
+function mascotSVG(cls = ''){
+  return `<svg class="mascot ${cls}" viewBox="0 0 100 100" role="img" aria-label="Acolite réfléchit">
+    <defs><clipPath id="mGlobeClip"><circle cx="50" cy="50" r="45"/></clipPath></defs>
+    <circle class="m-ocean" cx="50" cy="50" r="45"/>
+    <g clip-path="url(#mGlobeClip)" class="m-land">
+      <ellipse cx="24" cy="29" rx="14" ry="10" transform="rotate(-20 24 29)"/>
+      <ellipse cx="29" cy="67" rx="9"  ry="14" transform="rotate(14 29 67)"/>
+      <ellipse cx="71" cy="24" rx="17" ry="9"  transform="rotate(8 71 24)"/>
+      <ellipse cx="68" cy="66" rx="11" ry="14" transform="rotate(-10 68 66)"/>
+      <ellipse cx="50" cy="12" rx="20" ry="6"/>
+    </g>
+    <circle class="m-rim" cx="50" cy="50" r="45"/>
+    <g class="m-eyes">
+      <ellipse class="m-white" cx="36" cy="46" rx="15" ry="19"/>
+      <ellipse class="m-white" cx="66" cy="46" rx="14" ry="18"/>
+      <g class="m-pupils">
+        <circle class="m-pupil" cx="38" cy="48" r="8"/>
+        <circle class="m-pupil" cx="68" cy="48" r="7.5"/>
+        <circle class="m-shine" cx="41.5" cy="43.5" r="2.4"/>
+        <circle class="m-shine" cx="71"   cy="43.5" r="2.1"/>
+      </g>
+    </g>
+  </svg>`;
+}
+function loaderHTML(msg){ return `<div class="loader">${mascotSVG()}<span class="loader-msg">${esc(msg)}</span></div>`; }
 /* errHTML(msg, retryId?) : si un retryId est fourni ET enregistré dans _retryFns,
    un bouton « Réessayer » relance l'action fautive. */
 const _retryFns = {};
@@ -1352,127 +1378,166 @@ function todayHTML(){
   </div>`;
 }
 
-function renderPlan(d){
-  const icons = {avion:'✈️', train:'🚆', voiture:'🚗'};
-  const tr = d.transport||{}, lg = d.logement||{}, bd = d.budget||{};
-  /* même règle que les propositions : nombre de choix toujours pair (2 ou 4) */
-  const qs = (d.questions||[]).filter(q=>q && q.texte).map(q=>({...q, options: evenOptions(q.options)})).filter(q=>q.options.length>=2);
+/* ============================================================
+   VUE « TON VOYAGE » — une barre d'onglets, un panneau à la fois.
+   Fini le mur qui défile : chaque écran tient et se lit d'un coup.
+============================================================ */
+let _planTab = 'programme';                     /* onglet actif, mémorisé entre les rendus */
+const _openDays = new Set();                    /* journées dépliées : survivent au changement d'onglet */
+const _comDrafts = {};                          /* commentaires en cours de frappe, par journée */
+const PLAN_TABS = [
+  { id:'programme', ico:'📆', nom:'Programme' },
+  { id:'logement',  ico:'🏨', nom:'Logement'  },
+  { id:'events',    ico:'🎉', nom:'Événements'},
+  { id:'infos',     ico:'💶', nom:'Budget' }
+];
+
+/* ---- Panneau 1 : le programme jour par jour ---- */
+function panProgramme(d){
+  const jours = d.programme || [];
+  if(!jours.length) return `<p class="hint">Aucune journée planifiée pour l'instant.</p>`;
+  return `
+    <p class="pan-intro">Une journée ne te va pas ? <strong>🕘</strong> la détaille heure par heure, <strong>🔄</strong> la refait entièrement.</p>
+    ${jours.map(jr => `
+      <div class="day-block">
+        <div class="day-row">
+          <span class="day-num">J${esc(String(jr.jour))}</span>
+          <div class="day-txt">
+            <h4>${esc(jr.resume || '')}</h4>
+            ${jr.base ? `<span class="day-base">📍 ${esc(jr.base)}</span>` : ''}
+            ${(jr.lieux||[]).length ? `<p>${jr.lieux.map(esc).join(' · ')}</p>` : ''}
+          </div>
+          <div class="day-acts">
+            <button class="ico-btn" data-daydetail="${esc(String(jr.jour))}" title="Détailler heure par heure">🕘</button>
+            <button class="ico-btn" data-planb="${esc(String(jr.jour))}" title="Refaire cette journée">🔄</button>
+          </div>
+        </div>
+        ${state.cache.maps?.[jr.jour] ? `<img class="daymap" src="${state.cache.maps[jr.jour]}" alt="Carte du jour ${esc(String(jr.jour))}">` : ''}
+        ${collabBarHTML(jr.jour)}
+        ${(() => {
+          /* une journée dépliée le reste : on la ré-affiche depuis le cache */
+          const ouvert = _openDays.has(String(jr.jour)) && state.cache.days?.[jr.jour];
+          return `<div class="day-detail" data-daybox="${esc(String(jr.jour))}" data-open="${ouvert ? '1' : '0'}">${
+            ouvert ? timelineHTML(state.cache.days[jr.jour]) : ''}</div>`;
+        })()}
+      </div>`).join('')}`;
+}
+
+/* ---- Panneau 2 : le logement ---- */
+function panLogement(d){
+  const lg = d.logement || {};
+  return `
+    <div class="pan-lead">
+      <h4>${(lg.etapes||[]).length ? 'Voyage en étapes' : esc(String(lg.type||'Logement')) + (lg.quartier ? ' · ' + esc(lg.quartier) : '')}</h4>
+      <p>${esc(lg.pourquoi || '—')}</p>
+      ${(lg.etapes||[]).length
+        ? `<div class="etapes">${lg.etapes.map(e=>`<div class="etape"><b>${esc(e.ville||'')}</b><span>${esc(e.quartier||'')} · ${esc(String(e.nuits??'?'))} nuit(s)${e.prix_nuit ? ' · ' + esc(e.prix_nuit) : ''}</span></div>`).join('')}</div>`
+        : (lg.prix_nuit ? `<p class="pan-price">💶 ${esc(lg.prix_nuit)} / nuit</p>` : '')}
+    </div>
+    <h5 class="pan-sub">Où dormir concrètement</h5>
+    <div id="zoneHotels"></div>`;
+}
+
+/* ---- Panneau 3 : les événements ---- */
+function panEvents(){
+  return `
+    <p class="pan-intro">Festivals, fêtes, marchés et jours fériés pendant ton séjour. Ajoute ceux qui te tentent à ton programme.</p>
+    <div id="zoneEvents"><button class="btn sm ghost" id="btnEvents">Voir les événements</button></div>`;
+}
+
+/* ---- Panneau 4 : budget, transport détaillé, sur place, à réserver ---- */
+function panInfos(d){
+  const tr = d.transport || {}, bd = d.budget || {}, lg = d.logement || {};
+  const icons = { avion:'✈️', train:'🚆', voiture:'🚗' };
   const A = (state.prefs?.adults||1) + (state.prefs?.kids||0);
-  /* budget total en nombre (l'IA renvoie parfois « 1 300 » ou « 1200-1500 ») → évite NaN */
   const btNum = parseInt((String(bd.total).replace(/\s/g,'').match(/\d+/)||[])[0], 10) || 0;
+  return `
+    <div class="info-card">
+      <div class="ic-head"><span>💶</span><h4>Budget</h4><b>${esc(String(bd.total||'?'))} € / pers.</b></div>
+      ${A > 1 && btNum ? `<p class="ic-note">${btNum * A} € au total pour ${A} personnes</p>` : ''}
+      ${bd.repartition ? `<p>${esc(bd.repartition)}</p>` : ''}
+    </div>
+    <div class="info-card">
+      <div class="ic-head"><span>${icons[tr.mode]||'✈️'}</span><h4>Pourquoi ${esc(tr.mode||'ce transport')}</h4></div>
+      <p>${esc(tr.pourquoi || '—')}</p>
+      ${tr.details ? `<p class="ic-note">${esc(tr.details)}</p>` : ''}
+    </div>
+    ${d.sur_place ? `<div class="info-card">
+      <div class="ic-head"><span>🚇</span><h4>Se déplacer sur place</h4></div><p>${esc(d.sur_place)}</p></div>` : ''}
+    ${(d.a_reserver||[]).length ? `<div class="info-card">
+      <div class="ic-head"><span>🎟️</span><h4>À réserver tôt</h4></div>
+      ${d.a_reserver.map(r=>`<p class="ic-todo">${esc(r)}</p>`).join('')}</div>` : ''}
+    ${carbonHTML(tr.mode)}`;
+}
+
+function renderPlan(d){
+  const icons = { avion:'✈️', train:'🚆', voiture:'🚗' };
+  const tr = d.transport || {}, bd = d.budget || {};
   const dts = stayDates();
   const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : null;
+  const dep = cleanPlace(state.prefs?.from || '') || 'Départ';
+  const arr = String(state.trip?.nom || '').split('→').pop().trim() || '—';
+  const panels = { programme: panProgramme, logement: panLogement, events: panEvents, infos: panInfos };
 
-  const modeLabel = { avion:'en avion', train:'en train', voiture:'en voiture' }[tr.mode] || '';
-  let html = `
+  $('#zonePlan').innerHTML = `
     ${todayHTML()}
 
-    <!-- ═══ MINI-CARTE DU TRAJET : le mode choisi, en un coup d'œil ═══ -->
+    <!-- Bandeau trajet : compact, toujours visible -->
     <div class="trip-route">
       <div class="tr-mode">${icons[tr.mode]||'✈️'}</div>
       <div class="tr-body">
-        <div class="tr-line">
-          <span class="tr-pt">${esc(cleanPlace(state.prefs?.from || 'Départ') || 'Départ')}</span>
-          <span class="tr-dash"></span>
-          <span class="tr-pt">${esc(String(state.trip?.nom || '').split('→').pop().trim() || '—')}</span>
-        </div>
-        <div class="tr-meta">${esc(String(tr.mode||'').toUpperCase())}${tr.prix_estime ? ` · ${esc(tr.prix_estime)}` : ''}${nuits ? ` · ${nuits} nuit(s)` : ''}</div>
+        <div class="tr-line"><span class="tr-pt">${esc(dep)}</span><span class="tr-dash"></span><span class="tr-pt">${esc(arr)}</span></div>
+        <div class="tr-meta">${esc(String(tr.mode||'').toUpperCase())}${tr.prix_estime ? ` · ${esc(tr.prix_estime)}` : ''}${nuits ? ` · ${nuits} nuit(s)` : ''}${bd.total ? ` · ${esc(String(bd.total))} €/pers` : ''}</div>
         <div class="tr-real" id="realPrice"></div>
       </div>
-    </div>
-
-    <!-- 1 · L'ESSENTIEL — visible d'un coup d'œil -->
-    <div class="plan-head">
-      <h3>📋 L'essentiel</h3>
-      ${d._checked === 'fixed' ? `<span class="tag warn" title="Une 2ᵉ IA a relu le plan et corrigé des incohérences">✔ relu &amp; corrigé</span>`
-        : d._checked ? `<span class="tag ok" title="Budget, durée et transport relus par une 2ᵉ IA">✔ relu par une 2ᵉ IA</span>` : ''}
-    </div>
-    <div class="plan-grid">
-      <div class="plan-stat"><div class="k">Y aller</div><div class="v">${icons[tr.mode]||'✈️'} ${esc(tr.mode||'?')}</div><div class="s">${esc(tr.prix_estime||'')}</div></div>
-      <div class="plan-stat"><div class="k">Dormir</div><div class="v">🏨 ${(lg.etapes||[]).length ? esc(lg.etapes.length + ' étapes') : esc(String(lg.type||'?').split('(')[0].trim().slice(0,26))}</div><div class="s">${(lg.etapes||[]).length ? esc(lg.etapes.map(e=>`${e.ville} (${e.nuits}n)`).join(' · ')) : esc(lg.quartier||'') + (lg.prix_nuit ? ' · ' + esc(String(lg.prix_nuit).replace(/\s*\/?\s*nuit/gi,'')) + '/nuit' : '')}</div></div>
-      <div class="plan-stat"><div class="k">Budget</div><div class="v">${esc(String(bd.total||'?'))} €</div><div class="s">/ pers.${A > 1 && btNum ? ` · ${btNum * A} € au total` : ''}${nuits ? ` · ${nuits} nuit(s)` : ''}</div></div>
-      ${state.cache._real?.mNums ? `<div class="plan-stat wx"><canvas id="wxCv" width="48" height="48"></canvas><div><div class="k">Météo</div><div class="v">${esc(String(state.cache._real.mNums.min))}–${esc(String(state.cache._real.mNums.max))}°C</div><div class="s">pluie ${esc(String(state.cache._real.mNums.rain))}%</div></div></div>` : ''}
+      ${d._checked ? `<span class="tr-check" title="Plan relu par une 2ᵉ IA">✔</span>` : ''}
     </div>
 
     ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}
 
-    <!-- ═══ BLOC 1 · LE LOGEMENT ═══ -->
-    <div class="divider"></div>
-    <div class="plan-head"><h3>🏨 Ton logement</h3></div>
-    <div class="item" style="align-items:flex-start">
-      <div class="emo">🏨</div>
-      <div style="flex:1;min-width:0">
-        <h4>${(lg.etapes||[]).length ? 'Voyage en étapes' : esc(String(lg.type||'Logement')) + (lg.quartier ? ' à ' + esc(lg.quartier) : '')}</h4>
-        <p>${esc(lg.pourquoi||'—')}</p>
-        ${(lg.etapes||[]).map(e=>`<p class="hint" style="margin:4px 0 0">🛏 <strong>${esc(e.ville||'')}</strong> — ${esc(e.quartier||'')} · ${esc(String(e.nuits??'?'))} nuit(s)${e.prix_nuit ? ' · ' + esc(e.prix_nuit) + '/nuit' : ''}</p>`).join('')}
-        ${!(lg.etapes||[]).length && lg.prix_nuit ? `<p class="hint" style="margin:4px 0 0">💶 ${esc(lg.prix_nuit)} / nuit</p>` : ''}
-      </div>
+    <!-- Onglets : un seul panneau affiché à la fois -->
+    <div class="plan-tabs" role="tablist">
+      ${PLAN_TABS.map(t => `<button class="plan-tab${t.id === _planTab ? ' on' : ''}" data-plantab="${t.id}" role="tab" aria-selected="${t.id === _planTab}">
+        <span>${t.ico}</span>${esc(t.nom)}</button>`).join('')}
     </div>
-    <div id="zoneHotels" class="stay-list"></div>
+    <div class="plan-panel">${(panels[_planTab] || panProgramme)(d)}</div>`;
 
-    <!-- ═══ BLOC 2 · LES ÉVÉNEMENTS ═══ -->
-    <div class="divider"></div>
-    <div class="plan-head"><h3>🎉 Pendant ton séjour</h3></div>
-    <p class="hint" style="margin:0 0 10px">Festivals, fêtes, marchés et jours fériés à tes dates — ajoute ceux qui te tentent au programme.</p>
-    <div id="zoneEvents"><button class="btn sm ghost" id="btnEvents">Voir les événements</button></div>
-
-    <!-- ═══ BLOC 3 · LE PROGRAMME ═══ -->
-    <div class="divider"></div>
-    <div class="plan-head">
-      <h3>📆 Ton programme</h3>
-      <span class="plan-legend">🕘 détailler · 🔄 refaire</span>
-    </div>
-    ${(d.programme||[]).map(jr=>`
-      <div class="day-block">
-        <div class="item" style="align-items:flex-start">
-          <span class="tl-time" style="flex-shrink:0">J${esc(String(jr.jour))}</span>
-          <div style="flex:1;min-width:0">
-            <h4>${esc(jr.resume)}${jr.base ? ` <span class="tag cyan" style="font-size:.64rem">📍 ${esc(jr.base)}</span>` : ''}</h4>
-            ${(jr.lieux||[]).length ? `<p class="hint" style="margin:3px 0 0">📍 ${jr.lieux.map(esc).join(' · ')}</p>` : ''}
-          </div>
-          <div class="side row" style="flex-shrink:0;gap:6px">
-            <button class="btn sm ghost" data-daydetail="${esc(String(jr.jour))}" title="Détailler cette journée heure par heure" style="padding:6px 9px">🕘</button>
-            <button class="btn sm ghost" data-planb="${esc(String(jr.jour))}" title="Refaire cette journée" style="padding:6px 9px">🔄</button>
-          </div>
-        </div>
-        ${state.cache.maps?.[jr.jour] ? `<img class="daymap" src="${state.cache.maps[jr.jour]}" alt="Carte du jour ${esc(String(jr.jour))} (hors-ligne)">` : ''}
-        ${collabBarHTML(jr.jour)}
-        <div class="day-detail" data-daybox="${esc(String(jr.jour))}"></div>
-      </div>`).join('')}
-
-    <!-- 4 · À FAIRE MAINTENANT — actionnable, donc visible -->
-    ${(d.a_reserver||[]).length ? `
-      <div class="divider"></div>
-      <div class="plan-head"><h3>🎟️ À réserver tôt</h3></div>
-      <div class="todo-list">${d.a_reserver.map(r=>`<div class="todo"><span>🎟️</span><p>${esc(r)}</p></div>`).join('')}</div>` : ''}
-
-    <!-- 5 · LE DÉTAIL — replié : consultable, mais n'encombre plus -->
-    <div class="acc" id="accWhy" style="margin-top:18px">
-      <div class="acc-head" data-acc>🧠 POURQUOI CES CHOIX &amp; INFOS PRATIQUES <span class="arr">›</span></div>
-      <div class="acc-body">
-        <div class="item" style="align-items:flex-start"><div class="emo">${icons[tr.mode]||'✈️'}</div>
-          <div style="flex:1"><h4>Y aller en ${esc(tr.mode||'transport')}</h4><p>${esc(tr.pourquoi||'—')}</p>
-          ${tr.details ? `<p class="hint" style="margin-top:4px">${esc(tr.details)}</p>` : ''}</div></div>
-        <div class="item" style="align-items:flex-start"><div class="emo">🏨</div>
-          <div style="flex:1"><h4>${(lg.etapes||[]).length ? 'Dormir — voyage en étapes' : 'Dormir à ' + esc(lg.quartier||'—')}</h4><p>${esc(lg.pourquoi||'—')}</p>
-          ${(lg.etapes||[]).map(e=>`<p class="hint" style="margin:3px 0 0">🛏 <strong>${esc(e.ville||'')}</strong> — ${esc(e.quartier||'')} · ${esc(String(e.nuits??'?'))} nuit(s)${e.prix_nuit ? ' · ' + esc(e.prix_nuit) + '/nuit' : ''}</p>`).join('')}</div></div>
-        ${bd.repartition ? `<div class="item" style="align-items:flex-start"><div class="emo">💶</div>
-          <div style="flex:1"><h4>Le budget en détail</h4><p>${esc(bd.repartition)}</p></div></div>` : ''}
-        ${d.sur_place ? `<div class="item" style="align-items:flex-start"><div class="emo">🚇</div>
-          <div style="flex:1"><h4>Se déplacer sur place</h4><p>${esc(d.sur_place)}</p></div></div>` : ''}
-        ${carbonHTML(tr.mode)}
-      </div>
-    </div>`;
-
-  /* (« Affine encore » retiré : l'IA pose ses questions au moment du plan, pas après) */
-  $('#zonePlan').innerHTML = html;
-  fitStats();
   refreshPasses();
   startWx();
-  resetConcierge();          /* fiche pratique à l'état bouton pour ce voyage */
-  autoRealPrices(tr.mode);   /* prix réel du transport, en tâche de fond */
-  loadHotels();              /* vrais logements du quartier, sans clic */
+  resetConcierge();
+  autoRealPrices(tr.mode);
+  if(_planTab === 'logement') loadHotels();
 }
+
+/* changement d'onglet : on ne re-rend que le plan, l'onglet reste mémorisé */
+function goPlanTab(id, focus){
+  if(!state.cache.plan) return;
+  _planTab = id;
+  renderPlan(state.cache.plan);
+  if(focus) $(`[data-plantab="${id}"]`)?.focus();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-plantab]');
+  if(!b) return;
+  goPlanTab(b.dataset.plantab);
+  $('.plan-tabs')?.scrollIntoView({ block:'nearest' });
+});
+/* navigation clavier ← → (promise par role="tablist", donc on la tient) */
+document.addEventListener('keydown', e => {
+  const b = e.target.closest?.('[data-plantab]');
+  if(!b) return;
+  const ids = PLAN_TABS.map(t => t.id);
+  const i = ids.indexOf(b.dataset.plantab);
+  let n = -1;
+  if(e.key === 'ArrowRight') n = (i + 1) % ids.length;
+  else if(e.key === 'ArrowLeft') n = (i - 1 + ids.length) % ids.length;
+  else if(e.key === 'Home') n = 0;
+  else if(e.key === 'End') n = ids.length - 1;
+  if(n < 0) return;
+  e.preventDefault();
+  goPlanTab(ids[n], true);
+});
+
 addEventListener('resize', () => { if($('#zonePlan')?.querySelector('.plan-stat')) fitStats(); });
 
 document.addEventListener('click', e => {
@@ -1605,7 +1670,7 @@ function collabBarHTML(jour){
   <div class="day-comments" data-combox="${esc(j)}" hidden>
     <div class="com-list">${coms.map(c => `<p><b>${esc(c.who)}</b> ${esc(c.txt)}</p>`).join('') || '<p class="hint" style="margin:0">Aucun commentaire — lance la discussion !</p>'}</div>
     <div class="com-bar">
-      <input class="com-inp" data-cominp="${esc(j)}" maxlength="180" placeholder="ex : plutôt le matin ? on ajoute un resto ?">
+      <input class="com-inp" data-cominp="${esc(j)}" maxlength="180" value="${esc(_comDrafts[j] || '')}" placeholder="ex : plutôt le matin ? on ajoute un resto ?">
       <button class="btn sm" data-comsend="${esc(j)}">Envoyer</button>
     </div>
   </div>`;
@@ -1649,6 +1714,7 @@ document.addEventListener('click', e => {
     if(!txt) return;
     const b = boardState(); b.comments[j] = b.comments[j] || [];
     b.comments[j].push({ who: voterName(), txt: txt.slice(0, 180), ts: Date.now() });
+    delete _comDrafts[j];          /* envoyé → le brouillon n'a plus lieu d'être */
     save(); refreshCollabBar(j);
     const box = document.querySelector(`[data-combox="${CSS.escape(j)}"]`); if(box) box.hidden = false;
     toast('💬 Commentaire ajouté — partage la sauvegarde à ton co-voyageur');
@@ -1659,6 +1725,10 @@ document.addEventListener('keydown', e => {
     document.querySelector(`[data-comsend="${CSS.escape(e.target.dataset.cominp)}"]`)?.click();
   }
 });
+/* garde le texte en cours de frappe même si on change d'onglet */
+document.addEventListener('input', e => {
+  if(e.target.matches?.('[data-cominp]')) _comDrafts[e.target.dataset.cominp] = e.target.value;
+});
 
 /* ============================================================
    PROGRAMME HEURE PAR HEURE — détaille une journée du plan
@@ -1667,8 +1737,9 @@ async function loadDayDetail(jour){
   const t = state.trip; if(!t) return;
   const box = document.querySelector(`[data-daybox="${jour}"]`);
   if(!box) return;
-  if(box.dataset.open === '1'){ box.innerHTML = ''; box.dataset.open = '0'; return; }  /* re-clic = replie */
+  if(box.dataset.open === '1'){ box.innerHTML = ''; box.dataset.open = '0'; _openDays.delete(String(jour)); return; }  /* re-clic = replie */
   box.dataset.open = '1';
+  _openDays.add(String(jour));   /* mémorisé : survit à un changement d'onglet */
   state.cache.days = state.cache.days || {};
   if(state.cache.days[jour]){ box.innerHTML = timelineHTML(state.cache.days[jour]); return; }
   box.innerHTML = loaderHTML('Construction de la journée heure par heure…');
@@ -3521,10 +3592,15 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'1.6', date:'2026-07-22', titre:'Une mascotte pendant les chargements', items:[
+    '🌍 Le globe d’Acolite tourne les yeux partout pendant que l’IA réfléchit',
+    '✨ Il remplace l’ancien rond qui tournait, sur tous les écrans de chargement',
+    '♿ Animation coupée automatiquement si tu as réduit les animations sur ton appareil'
+  ]},
   { v:'1.5', date:'2026-07-21', titre:'Prix réels automatiques et vue voyage épurée', items:[
     '💶 Prix réels du transport chargés tout seuls — plus aucun bouton « simuler »',
     '🏨 Vrais logements sélectionnés pour ton quartier, avec lien de réservation pré-rempli',
-    '🧭 Vue « Ton voyage » en 3 blocs clairs : logement · événements · programme',
+    '🧭 Vue « Ton voyage » repensée en onglets : Programme · Logement · Événements · Budget',
     '➕ Ajoute un événement à ton programme en un clic',
     '🐢 Mode réseau faible : chargements allégés et reprise automatique au retour du réseau',
     '📄 Carnet PDF entièrement redessiné'
@@ -3828,6 +3904,8 @@ function searchBar(on, first){
   clearInterval(_sbTimer);
   if(on){
     let i = 0;
+    const mk = $('#sbMascot');
+    if(mk && !mk.querySelector('.mascot')) mk.innerHTML = mascotSVG();   /* la mascotte veille pendant la recherche */
     $('#sbText').textContent = first || SB_MSG[0];
     bar.hidden = false;
     nav.style.display = 'none';          /* les 3 boutons laissent la place à la barre */
