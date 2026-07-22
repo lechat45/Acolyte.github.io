@@ -38,7 +38,7 @@
 
 <div class="wrap">
   <header>
-    <div class="logo"><div class="dot"></div><span>Acolite</span></div>
+    <div class="logo"><span class="logo-mark"></span><span>Acolite</span></div>
     <!-- La nav vit ici dans le HTML, mais sur téléphone elle est en
          position:fixed en bas : le parent n'a alors aucun effet sur elle.
          Sur ordinateur elle repasse en flux et devient la barre du haut. -->
@@ -127,7 +127,7 @@
       <div class="field" style="margin-top:14px"><label for="fFree">Tes limites & conditions</label>
         <textarea id="fFree" placeholder="Ex : max 3h de trajet, pas d'auberge, je pars avec un bébé, je veux la plage, budget serré sur le logement…"></textarea>
       </div>
-      <div class="go-acts" style="margin-top:18px;display:flex;flex-direction:column;gap:12px">
+      <div class="go-acts">
         <button class="btn" id="btnGo">✨ Propose-moi des voyages</button>
         <button class="btn ghost" id="btnCountry">🎯 Choisis un pays, l'IA trouve le lieu</button>
         <div class="btn-duo">
@@ -402,7 +402,7 @@
 <!-- ===== Auth (création de compte / connexion / vérification) ===== -->
 <div class="auth-wrap hidden" id="authWrap">
   <div class="auth-card">
-    <div class="auth-logo"><div class="dot"></div>Acolite</div>
+    <div class="auth-logo"><span class="logo-mark"></span>Acolite</div>
     <p class="sub" id="authSub">Crée ton compte pour commencer l'aventure.</p>
 
     <div id="authSignup">

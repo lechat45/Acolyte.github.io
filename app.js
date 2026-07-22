@@ -430,6 +430,13 @@ function mascotSVG(cls = ''){
   </svg>`;
 }
 function loaderHTML(msg){ return `<div class="loader">${mascotSVG()}<span class="loader-msg">${esc(msg)}</span></div>`; }
+/* La mascotte tient lieu de logo. On masque le SVG aux lecteurs d'écran :
+   le mot « Acolite » juste à côté dit déjà de quoi il s'agit, et l'étiquette
+   par défaut du SVG (« Acolite réfléchit ») serait fausse ici. */
+document.querySelectorAll('.logo-mark').forEach(el => {
+  el.innerHTML = mascotSVG();
+  el.setAttribute('aria-hidden', 'true');
+});
 /* errHTML(msg, retryId?) : si un retryId est fourni ET enregistré dans _retryFns,
    un bouton « Réessayer » relance l'action fautive. */
 const _retryFns = {};
@@ -3592,6 +3599,17 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'2.0', date:'2026-07-22', titre:'La mascotte prend la place du logo', items:[
+    '🌍 Le globe aux grands yeux remplace le carré orange, en haut à gauche',
+    '🧭 Carte · Voyage · Profil filent tout au bout de la barre',
+    '🪜 Questions · Les choix · Ton voyage sont bien détachés les uns des autres',
+    '✨ « Quoi de neuf » se lit comme une frise : les versions s’enchaînent, la dernière est mise en avant'
+  ]},
+  { v:'1.9', date:'2026-07-22', titre:'Un écran d’ordinateur mieux rempli', items:[
+    '🎯 Les 3 étapes et les onglets ne s’étirent plus aux quatre coins de l’écran',
+    '🔘 Les boutons se rangent en ligne au lieu d’empiler quatre barres',
+    '💛 Le bloc « donne ton avis » est plus clair, et ne tombe plus juste après la suppression de compte'
+  ]},
   { v:'1.8', date:'2026-07-22', titre:'Une barre en haut, et un mode sombre qui ne pique plus les yeux', items:[
     '🧭 Sur ordinateur, Carte · Voyage · Profil passent dans une barre en haut du site',
     '🌙 Mode sombre : quand tu écris dans une case, le texte reste lisible — la case ne vire plus au blanc',
@@ -3647,23 +3665,39 @@ const LS_SEEN_V = 'acolite_seen_version';
 const newsDate = iso => { const d = new Date(iso + 'T12:00:00');
   return isNaN(d) ? iso : d.toLocaleDateString('fr-FR', { day:'numeric', month:'long', year:'numeric' }); };
 
+/* Chaque nouveauté commence par un emoji. On le détache pour qu'il serve
+   de puce : sinon on lit « • 🎯 Les 3 étapes… », deux puces pour une. */
+/* Construite via new RegExp et non en littéral : \p{...} est de l'ES2018,
+   et un littéral non supporté serait une SyntaxError qui empêcherait TOUT
+   app.js de s'exécuter. Ici, au pire, on retombe sur la puce ronde. */
+let NEWS_EMO = null;
+try { NEWS_EMO = new RegExp('^(\\p{Extended_Pictographic}\\uFE0F?)\\s*', 'u'); } catch(e){}
+function newsItemHTML(txt){
+  const m = NEWS_EMO ? txt.match(NEWS_EMO) : null;
+  const emo = m ? m[1] : '•';
+  const rest = m ? txt.slice(m[0].length) : txt;
+  return `<li><span class="ni-emo" aria-hidden="true">${esc(emo)}</span><span>${esc(rest)}</span></li>`;
+}
 function newsHTML(list){
-  return list.map((e, i) => `<div class="news-entry${i === 0 ? ' latest' : ''}">
+  return list.map((e, i) => `<article class="news-entry${i === 0 ? ' latest' : ''}">
     <div class="news-head">
       <span class="news-v">v${esc(e.v)}</span>
       <span class="news-date">${esc(newsDate(e.date))}</span>
-      ${i === 0 ? '<span class="tag ok" style="font-size:.6rem">nouveau</span>' : ''}
+      ${i === 0 ? '<span class="news-new">nouveau</span>' : ''}
     </div>
     <h4>${esc(e.titre)}</h4>
-    <ul>${e.items.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
-  </div>`).join('');
+    <ul class="news-items">${e.items.map(newsItemHTML).join('')}</ul>
+  </article>`).join('');
 }
 function openNews(all){
   const seen = localStorage.getItem(LS_SEEN_V);
   /* à l'ouverture auto : seulement les versions non vues ; sinon tout l'historique */
   const list = all ? CHANGELOG : CHANGELOG.slice(0, Math.max(1, CHANGELOG.findIndex(e => e.v === seen)));
   const body = $('#newsBody');
-  if(body) body.innerHTML = (all ? '' : `<p class="sub" style="margin:0 0 12px">Acolite a été mis à jour — voici ce qui change.</p>`) + newsHTML(list);
+  const intro = all
+    ? `<p class="news-intro">Tout ce qui a changé depuis le début, du plus récent au plus ancien.</p>`
+    : `<div class="news-hello">${mascotSVG()}<p>Acolite a été mis à jour pendant ton absence — voici ce qui change.</p></div>`;
+  if(body) body.innerHTML = intro + `<div class="news-rail">${newsHTML(list)}</div>`;
   $('#ovNews')?.classList.add('show');
 }
 function closeNews(){

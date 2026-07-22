@@ -169,11 +169,14 @@ header{
   font-family:'Sora',sans-serif;font-weight:900;font-size:1.75rem;
   letter-spacing:-.03em;display:flex;align-items:center;gap:10px;text-transform:uppercase;
 }
-.logo .dot{
-  width:16px;height:16px;border-radius:0;
-  background:var(--accent-orange);border:2px solid var(--stroke);
-  box-shadow:2px 2px 0px var(--stroke);
+/* La mascotte remplace l'ancien carré orange. Elle garde le regard et
+   le clignement — sa signature — mais pas le balancement : un logo qui
+   tangue en permanence fatigue l'œil. */
+.logo-mark{
+  width:36px;height:36px;flex-shrink:0;
+  display:grid;place-items:center;
 }
+.logo-mark .mascot{width:36px;height:36px;animation:none}
 .logo span{color:var(--txt)}
 
 .icon-btn{
@@ -268,6 +271,7 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 
 /* Actions de la vue 1 : empilées et pleine largeur sur téléphone
    (le bureau les remet en ligne, voir le bloc ≥900 px). */
+.go-acts{margin-top:18px;display:flex;flex-direction:column;gap:12px}
 .go-acts > .btn{width:100%;justify-content:center}
 
 /* ===== Badges IA ===== */
@@ -439,16 +443,65 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .rp-ok em{font-weight:600;color:var(--txt-2);font-style:normal}
 
 /* ===== Journal des nouveautés ===== */
-.news-entry{padding:14px 0;border-bottom:2px solid var(--stroke)}
-.news-entry:last-child{border-bottom:0;padding-bottom:0}
-.news-entry.latest{background:var(--bg);margin:0 -14px;padding:14px;border-radius:10px;border-bottom:0}
-.news-head{display:flex;align-items:center;gap:8px;margin-bottom:5px}
-.news-v{font-family:'Sora',sans-serif;font-weight:900;font-size:.72rem;background:var(--primary);color:#101010;
-  padding:2px 9px;border:2px solid var(--stroke);border-radius:10px}
+/* mot d'accueil : la mascotte annonce la mise à jour */
+.news-hello{
+  display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 14px;
+  background:var(--primary);border:3px solid var(--stroke);border-radius:var(--r-md);
+  box-shadow:4px 4px 0 var(--stroke);
+}
+.news-hello .mascot{width:44px;height:44px;flex-shrink:0}
+.news-hello p{margin:0;font-weight:800;font-size:.88rem;line-height:1.45;color:#101010}
+.news-intro{margin:0 0 16px;font-size:.84rem;font-weight:600;color:var(--txt-2);line-height:1.5}
+
+/* frise : un rail vertical relie les versions entre elles */
+.news-rail{position:relative;padding-left:22px}
+.news-rail::before{
+  content:'';position:absolute;left:5px;top:8px;bottom:8px;
+  border-left:3px dashed var(--stroke);opacity:.35;
+}
+.news-entry{position:relative;margin-bottom:14px}
+.news-entry:last-child{margin-bottom:0}
+/* la pastille posée sur le rail */
+.news-entry::before{
+  content:'';position:absolute;left:-22px;top:9px;
+  width:13px;height:13px;background:var(--secondary);
+  border:3px solid var(--stroke);border-radius:50%;
+}
+.news-entry.latest::before{background:var(--primary)}
+
+.news-entry .news-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.news-v{
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.72rem;
+  background:var(--secondary);color:var(--txt);
+  padding:2px 9px;border:2px solid var(--stroke);border-radius:10px;
+}
+.news-entry.latest .news-v{background:var(--primary);color:#101010}
 .news-date{font-size:.72rem;font-weight:700;color:var(--txt-2)}
-.news-entry h4{margin:0 0 7px;font-size:1rem}
-.news-entry ul{margin:0;padding-left:18px}
-.news-entry li{font-size:.88rem;line-height:1.55;margin-bottom:3px}
+.news-new{
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.6rem;text-transform:uppercase;
+  letter-spacing:.08em;background:var(--ok);color:#fff;
+  padding:3px 8px;border:2px solid var(--stroke);border-radius:10px;
+}
+.news-entry h4{margin:0 0 8px;font-size:1rem;line-height:1.3}
+
+/* l'emoji sert de puce : pas de puce système en plus */
+.news-items{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+.news-items li{
+  display:flex;align-items:flex-start;gap:9px;
+  font-size:.87rem;line-height:1.5;font-weight:600;color:var(--txt-2);
+}
+.ni-emo{flex-shrink:0;font-size:.98rem;line-height:1.35;width:1.25em;text-align:center}
+
+/* la dernière version est mise en avant, les précédentes s'effacent */
+.news-entry.latest{
+  padding:13px 14px;background:var(--bg);
+  border:3px solid var(--stroke);border-radius:var(--r-md);
+  box-shadow:3px 3px 0 var(--stroke);
+}
+.news-entry.latest::before{left:-22px;top:15px}
+.news-entry.latest h4{font-size:1.06rem}
+.news-entry.latest .news-items li{color:var(--txt)}
+.news-entry:not(.latest){opacity:.86}
 
 /* ===== Badge Product Hunt (bas du profil) ===== */
 .ph-card{
@@ -1003,7 +1056,8 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   font-family:'Sora',sans-serif;font-weight:900;font-size:2rem;text-transform:uppercase;
   letter-spacing:-.03em;margin-bottom:4px;display:flex;align-items:center;gap:10px;
 }
-.auth-logo .dot{width:18px;height:18px;background:var(--accent-orange);border:3px solid var(--stroke);box-shadow:2px 2px 0 var(--stroke)}
+.auth-logo .logo-mark{width:42px;height:42px}
+.auth-logo .logo-mark .mascot{width:42px;height:42px}
 .auth-switch{font-size:.85rem;font-weight:700;margin-top:14px}
 .auth-switch a{color:var(--accent-orange);cursor:pointer;text-decoration:underline}
 .code-inp{font-family:'Sora',sans-serif;font-weight:900;font-size:1.5rem;letter-spacing:.4em;text-align:center}
@@ -1371,15 +1425,13 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   header{
     position:fixed;top:0;left:0;right:0;z-index:40;
     max-width:none;margin:0;
-    /* 100% et non 100vw : 100vw inclut la barre de défilement et
-       décalerait le logo de ~10 px par rapport aux cartes. Le +18px
-       reprend le padding intérieur de .wrap. */
-    padding:10px max(24px, calc((100% - 1060px)/2 + 18px));
+    /* barre pleine largeur : le logo touche le bord gauche, les onglets
+       le bord droit — demandé « tout au bout de la barre » */
+    padding:10px 24px;
     border-width:0 0 3px;border-radius:0;
     box-shadow:0 3px 0 rgba(0,0,0,.10);
-    /* les onglets se rangent juste après le logo : poussés au bord
-       opposé, ils donnaient l'impression de deux barres séparées */
-    justify-content:flex-start;gap:34px;flex-wrap:nowrap;
+    /* les onglets sont poussés tout au bout de la barre */
+    justify-content:space-between;flex-wrap:nowrap;
   }
   /* on libère la hauteur de la barre en haut de la page */
   .wrap{padding-top:90px}
@@ -1422,9 +1474,9 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   #catMap{top:76px;bottom:0}
   #catMap iframe{height:calc(100% - 96px)}
 
-  /* --- les 3 étapes se serrent au lieu de s'étirer sur toute la largeur --- */
-  .steps{gap:8px;justify-content:flex-start}
-  .step{flex:0 0 auto;min-width:0;padding:11px 18px}
+  /* --- les 3 étapes occupent la largeur, bien détachées les unes des autres --- */
+  .steps{gap:18px}
+  .step{flex:1;padding:13px 20px}
 
   /* --- vue 1 : les boutons se rangent en ligne au lieu d'empiler
      quatre barres pleine largeur dans une colonne étroite --- */
@@ -1449,8 +1501,6 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
    au-delà, les lignes deviennent trop longues à lire. */
 @media (min-width:1400px){
   .wrap{max-width:1160px}
-  /* la barre du haut suit l'élargissement de la colonne */
-  header{padding-inline:max(24px, calc((100% - 1160px)/2 + 18px))}
 }
 
 /* ===== Carnet de voyage — document imprimable soigné ===== */
