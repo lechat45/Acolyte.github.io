@@ -3646,6 +3646,12 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.0', date:'2026-07-23', titre:'Ton compte te suit sur tous tes appareils', items:[
+    '☁️ Tes voyages sont enregistrés sur ton compte — retrouve-les sur ton téléphone comme sur ton ordinateur',
+    '🔐 Ton mot de passe n’est plus jamais stocké en clair, et ton code de vérification arrive par email',
+    '🔑 Mot de passe oublié : reçois un code et choisis-en un nouveau',
+    '🗑️ Supprimer ton compte efface aussi tout ce qui était enregistré côté serveur'
+  ]},
   { v:'2.4', date:'2026-07-22', titre:'Des détails plus confortables', items:[
     '🚆 Le choix du transport devient un menu déroulant, comme les autres questions',
     '👍 Les boutons j’aime, j’aime pas et commentaire sont mieux espacés dans chaque journée',
