@@ -114,13 +114,13 @@
             <option value="entre collègues">💼 Entre collègues</option>
           </select>
         </div>
-        <div class="field"><label id="lblTransport">Comment tu veux voyager</label>
-          <div class="chips even" id="fTransport" role="group" aria-labelledby="lblTransport">
-            <span class="chip on" role="button" tabindex="0" data-tr="">🤷 Peu importe</span>
-            <span class="chip" role="button" tabindex="0" data-tr="train">🚆 Train</span>
-            <span class="chip" role="button" tabindex="0" data-tr="voiture">🚗 Voiture</span>
-            <span class="chip" role="button" tabindex="0" data-tr="avion">✈️ Avion</span>
-          </div>
+        <div class="field"><label for="fTransport">Comment tu veux voyager</label>
+          <select id="fTransport">
+            <option value="" selected>🤷 Peu importe — Acolite décide</option>
+            <option value="train">🚆 Train</option>
+            <option value="voiture">🚗 Voiture</option>
+            <option value="avion">✈️ Avion</option>
+          </select>
         </div>
         <div class="field"><label for="fStay">Style d'hébergement</label>
           <select id="fStay">
@@ -382,8 +382,9 @@
          avis juste après « supprimer mon compte » tombait très mal. ===== -->
     <div class="ph-card">
       <div class="ph-txt">
-        <h3>💛 Ça t'a été utile ?</h3>
-        <p>Acolite est gratuit, sans compte payant et sans pub — et le restera. La seule chose qui l'aide à exister, c'est ton avis.</p>
+        <span class="ph-eyebrow">Acolite est gratuit</span>
+        <h3>Et il le restera.</h3>
+        <p>Pas de compte payant, pas de pub, pas de données revendues. La seule chose qui le fait exister, c'est ton avis.</p>
       </div>
       <a class="ph-link" href="https://www.producthunt.com/products/acolite/reviews/new?utm_source=badge-product_review&amp;utm_medium=badge&amp;utm_source=badge-acolite" target="_blank" rel="noopener">
         <img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1273558&amp;theme=light"

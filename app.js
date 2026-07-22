@@ -513,34 +513,9 @@ function readPrefs(extra){
     vibe:  $('#fVibe')?.value || '',
     withWho:$('#fWith')?.value || '',
     stay:  $('#fStay')?.value || '',
-    transport: $('#fTransport .chip.on')?.dataset.tr || '',
+    transport: $('#fTransport')?.value || '',
     free:  $('#fFree').value.trim().slice(0,600) + (extra ? ' | Affinage : ' + String(extra).slice(0,600) : '')
   };
-}
-
-/* --- Choix du transport : un seul actif à la fois. Le clic et le clavier
-   passent par la même fonction pour qu'aucun des deux ne dérive. --- */
-function setTransportChip(val){
-  const box = $('#fTransport'); if(!box) return;
-  box.querySelectorAll('.chip').forEach(c => {
-    const on = (c.dataset.tr || '') === (val || '');
-    c.classList.toggle('on', on);
-    c.setAttribute('aria-pressed', on ? 'true' : 'false');
-  });
-}
-{
-  const box = $('#fTransport');
-  if(box){
-    box.addEventListener('click', e => {
-      const c = e.target.closest('.chip'); if(c) setTransportChip(c.dataset.tr || '');
-    });
-    box.addEventListener('keydown', e => {
-      if(e.key !== 'Enter' && e.key !== ' ') return;
-      const c = e.target.closest('.chip'); if(!c) return;
-      e.preventDefault();                 /* l'espace ferait défiler la page */
-      setTransportChip(c.dataset.tr || '');
-    });
-  }
 }
 
 let _genBusy = false;   /* garde anti double-appel des générations IA */
@@ -3626,6 +3601,11 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'2.4', date:'2026-07-22', titre:'Des détails plus confortables', items:[
+    '🚆 Le choix du transport devient un menu déroulant, comme les autres questions',
+    '👍 Les boutons j’aime, j’aime pas et commentaire sont mieux espacés dans chaque journée',
+    '💛 Le bloc « donne ton avis » a été redessiné'
+  ]},
   { v:'2.3', date:'2026-07-22', titre:'Tu choisis comment tu voyages', items:[
     '🚆 Nouveau choix dans le questionnaire : train, voiture, avion ou peu importe — Acolite construit le trajet avec ce que tu as choisi',
     '🌍 Le logo est plus grand, la mascotte se voit enfin',
@@ -5257,7 +5237,7 @@ if(state.prefs){
   if(state.prefs.adults) $('#fAdults').value = state.prefs.adults;
   if(state.prefs.kids !== undefined) $('#fKids').value = state.prefs.kids;
   if(state.prefs.free) $('#fFree').value = (state.prefs.free||'').split(' | Affinage :')[0];
-  setTransportChip(state.prefs.transport || '');
+  if(state.prefs.transport) $('#fTransport').value = state.prefs.transport;
 }else{
   applyTripDefaults();   /* pas encore de voyage → on pré-remplit avec les valeurs par défaut */
 }

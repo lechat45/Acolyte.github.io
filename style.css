@@ -505,18 +505,32 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 
 /* ===== Badge Product Hunt (bas du profil) ===== */
 .ph-card{
-  margin:18px 0;padding:18px;
+  position:relative;overflow:hidden;
+  margin:18px 0;padding:22px;
   background:var(--primary);
   border:3px solid var(--stroke);border-radius:var(--r-md);
-  box-shadow:5px 5px 0 var(--stroke);
-  display:flex;flex-direction:column;gap:14px;
+  box-shadow:6px 6px 0 var(--stroke);
+  display:flex;flex-direction:column;gap:18px;
 }
+/* gros cœur en filigrane : occupe le vide à droite sans ajouter de texte */
+.ph-card::after{
+  content:'💛';position:absolute;right:-14px;bottom:-26px;
+  font-size:8rem;line-height:1;opacity:.14;pointer-events:none;
+  transform:rotate(-12deg);
+}
+.ph-txt{position:relative;z-index:1;max-width:46ch}
 /* fond jaune dans les deux thèmes : l'encre reste donc foncée */
-.ph-card h3{margin:0 0 6px;font-size:1.05rem;color:#101010}
-.ph-card p{margin:0;font-size:.86rem;font-weight:600;line-height:1.5;color:#101010;opacity:.82}
+.ph-eyebrow{
+  display:inline-block;margin-bottom:8px;padding:3px 10px;
+  font:900 .62rem 'Sora',sans-serif;text-transform:uppercase;letter-spacing:.1em;
+  background:#101010;color:var(--primary);border-radius:10px;
+}
+.ph-card h3{margin:0 0 8px;font-size:1.5rem;line-height:1.1;color:#101010}
+.ph-card p{margin:0;font-size:.9rem;font-weight:600;line-height:1.55;color:#101010;opacity:.8}
 /* le badge officiel est un SVG clair : on lui donne une plaque claire
    pour qu'il reste lisible en « Vol de nuit » aussi */
 .ph-link{
+  position:relative;z-index:1;
   align-self:flex-start;display:inline-flex;padding:8px 10px;
   background:var(--tab-on);border:3px solid var(--stroke);border-radius:var(--r-sm);
   box-shadow:3px 3px 0 var(--stroke);transition:all .1s ease;
@@ -624,13 +638,17 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .info-card + h3{margin-top:16px}
 
 /* ===== Tableau partagé : votes + commentaires par jour ===== */
-.day-collab{display:flex;align-items:center;gap:8px;margin:2px 0 10px;padding-left:4px}
+/* les trois réactions ont besoin d'air : collées, on ne distingue plus
+   où finit un bouton et où commence le suivant */
+.day-collab{display:flex;align-items:center;gap:14px;margin:8px 0 14px;padding-left:4px;flex-wrap:wrap}
 .cvote{
-  display:inline-flex;align-items:center;gap:5px;
+  display:inline-flex;align-items:center;gap:7px;
   font:800 .78rem 'Sora',sans-serif;color:var(--txt);
   background:var(--secondary);border:2px solid var(--stroke);border-radius:18px;
-  padding:5px 12px;cursor:pointer;box-shadow:2px 2px 0 var(--stroke);
+  padding:7px 15px;cursor:pointer;box-shadow:2px 2px 0 var(--stroke);
+  transition:transform .1s ease, box-shadow .1s ease, background .1s ease;
 }
+.cvote:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--stroke);background:var(--card-hover)}
 .cvote:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--stroke)}
 .cvote.on{background:var(--primary);color:#101010}
 .collab-hint{font-size:.68rem;font-weight:700;color:var(--txt-2);margin-left:auto;padding-right:4px}
