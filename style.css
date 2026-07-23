@@ -295,6 +295,9 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .m-shine{fill:#fff}
 /* les pupilles balaient l'horizon : c'est la signature du personnage */
 .m-pupils{animation:mLook 3.4s ease-in-out infinite}
+/* …sauf sur appareil à souris : elles suivent le curseur (piloté en JS),
+   on coupe donc le balayage auto pour ne pas écraser le transform inline */
+:root.eye-follow .m-pupils{animation:none;transition:transform .12s ease-out}
 /* clignement : on écrase les yeux une fraction de seconde */
 .m-eyes{animation:mBlink 4.8s ease-in-out infinite;transform-origin:50px 46px}
 @keyframes mBob{
@@ -334,27 +337,49 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 /* ===== Scène de chargement : la mascotte survole les monuments du monde ===== */
 .travel-scene{
   position:relative;flex-shrink:0;
-  width:104px;height:56px;overflow:hidden;border-radius:8px;
+  width:112px;height:58px;overflow:hidden;
+  border:2px solid var(--stroke);border-radius:10px;
+  /* ciel doux du jour, du haut clair vers l'horizon chaud */
+  background:linear-gradient(#dff1fb 0%, #eaf6fb 55%, #fdf3d6 100%);
 }
-/* la ligne d'horizon défile en boucle au fond (2 copies pour un défilé sans couture) */
+:root[data-theme="dark"] .travel-scene{
+  background:linear-gradient(#0e1630 0%, #1a2140 55%, #2a2140 100%);
+}
+/* nuages qui dérivent lentement */
+.cloud{
+  position:absolute;background:#fff;opacity:.85;border-radius:20px;
+  height:6px;box-shadow:0 0 0 3px #fff;
+  animation:cloudDrift 14s linear infinite;
+}
+:root[data-theme="dark"] .cloud{background:#c9d2f0;box-shadow:0 0 0 3px #c9d2f0;opacity:.25}
+.cloud.c1{top:9px;width:16px;animation-duration:16s}
+.cloud.c2{top:20px;width:11px;animation-duration:11s;animation-delay:-5s;opacity:.6}
+@keyframes cloudDrift{ from{transform:translateX(120px)} to{transform:translateX(-30px)} }
+/* le sol sous les monuments */
+.ground{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--stroke);opacity:.55}
+/* la ligne d'horizon défile en boucle (2 copies → défilé sans couture) */
 .mon-strip{
-  position:absolute;left:0;bottom:1px;display:flex;height:32px;
+  position:absolute;left:0;bottom:3px;display:flex;height:32px;
   animation:monScroll 11s linear infinite;will-change:transform;
 }
 .mon-svg{height:32px;width:auto;display:block}
-.mon{fill:var(--txt-2);opacity:.38}
-.mon-hole{fill:var(--secondary);opacity:1}   /* l'horloge de Big Ben : un trou clair */
-.mon-line{stroke:var(--txt-2);stroke-width:1.6;fill:none;opacity:.38}  /* bras de la torche */
+.mon{fill:var(--stroke);opacity:.62}
+:root[data-theme="dark"] .mon{fill:#aeb6e0;opacity:.6}
+.mon-hole{fill:#fdf3d6;opacity:.9}   /* l'horloge de Big Ben : un trou clair */
+:root[data-theme="dark"] .mon-hole{fill:#2a2140}
+.mon-line{stroke:var(--stroke);stroke-width:1.6;fill:none;opacity:.62}  /* bras de la torche */
+:root[data-theme="dark"] .mon-line{stroke:#aeb6e0}
 @keyframes monScroll{ from{transform:translateX(0)} to{transform:translateX(-50%)} }
 /* la mascotte flotte au-dessus de l'horizon, léger balancement de voyage */
 .travel-scene .mascot{
-  position:absolute;left:50%;top:3px;width:36px;height:36px;
-  margin-left:-18px;animation:mBob 2.6s ease-in-out infinite;
+  position:absolute;left:50%;top:4px;width:34px;height:34px;
+  margin-left:-17px;animation:mBob 2.6s ease-in-out infinite;
+  filter:drop-shadow(0 2px 1px rgba(0,0,0,.25));
 }
-/* réduction des animations : l'horizon se fige, plus de défilement */
-:root.no-motion .mon-strip,:root.no-motion .travel-scene .mascot{animation:none}
+/* réduction des animations : tout se fige */
+:root.no-motion .mon-strip,:root.no-motion .travel-scene .mascot,:root.no-motion .cloud{animation:none}
 @media(prefers-reduced-motion:reduce){
-  .mon-strip,.travel-scene .mascot{animation:none}
+  .mon-strip,.travel-scene .mascot,.cloud{animation:none}
 }
 /* respect des préférences : plus d'animation si l'utilisateur n'en veut pas */
 :root.no-motion .mascot,:root.no-motion .m-pupils,:root.no-motion .m-eyes{animation:none}
@@ -394,17 +419,34 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 /* ===== Destination cards ===== */
 .dest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 /* ===== Comparatif côte à côte ===== */
-.cmp-wrap{overflow-x:auto;border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);border-radius:12px;-webkit-overflow-scrolling:touch}
-.cmp{border-collapse:collapse;width:100%;min-width:420px;font-size:.82rem}
-.cmp th,.cmp td{padding:10px 12px;text-align:left;border-bottom:2px solid var(--stroke);vertical-align:top}
+.cmp-wrap{overflow-x:auto;border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);border-radius:14px;-webkit-overflow-scrolling:touch;background:var(--secondary)}
+.cmp{border-collapse:separate;border-spacing:0;width:100%;min-width:440px;font-size:.83rem}
+.cmp th,.cmp td{padding:11px 13px;text-align:left;vertical-align:middle;border-bottom:2px solid var(--stroke)}
 .cmp td+td,.cmp th+th{border-left:2px solid var(--stroke)}
-.cmp thead th{background:var(--primary);color:#101010;font-family:'Sora',sans-serif;font-weight:900;text-transform:uppercase;font-size:.74rem;cursor:pointer;text-align:center;border-bottom:3px solid var(--stroke);line-height:1.25}
-.cmp thead th:first-child{background:var(--secondary)}
-.cmp .cmp-flag{font-size:1.35rem}
-.cmp tbody th[scope="row"]{font-family:'Sora',sans-serif;font-weight:900;font-size:.72rem;white-space:nowrap;background:var(--secondary);position:sticky;left:0;z-index:1}
-.cmp td{font-weight:600;color:var(--txt)}
-.cmp tr:last-child td,.cmp tr:last-child th{border-bottom:0}
-.cmp-actions td{text-align:center;padding:12px 8px}
+/* en-tête : le drapeau en grand, le nom dessous, bien centré */
+.cmp thead th{
+  background:var(--primary);color:#101010;
+  font-family:'Sora',sans-serif;font-weight:900;text-transform:uppercase;font-size:.76rem;
+  cursor:pointer;text-align:center;border-bottom:3px solid var(--stroke);line-height:1.3;
+  transition:filter .1s ease;
+}
+.cmp thead th:hover{filter:brightness(.94)}
+.cmp thead th:first-child{background:var(--secondary);cursor:default}
+.cmp .cmp-flag{font-size:1.7rem;display:inline-block;margin-bottom:2px}
+/* colonne des critères : étiquettes claires, collées à gauche au défilement */
+.cmp tbody th[scope="row"]{
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;
+  color:var(--txt-2);background:var(--bg);position:sticky;left:0;z-index:1;
+  border-right:2px solid var(--stroke);
+}
+.cmp td{font-weight:600;color:var(--txt);line-height:1.4}
+/* lignes alternées → l'œil suit la bonne ligne d'une colonne à l'autre */
+.cmp tbody tr:nth-child(even) td{background:var(--bg)}
+.cmp tbody tr:not(.cmp-actions):hover td{background:var(--card-hover)}
+/* ligne « choisir » : détachée, mise en avant */
+.cmp-actions td,.cmp-actions th{border-bottom:0;text-align:center;padding:14px 8px;border-top:3px solid var(--stroke)}
+.cmp-actions td{background:var(--secondary) !important}
 .cmp-choose{width:100%;justify-content:center;white-space:nowrap}
 /* ===== Galerie « Mes voyages » ===== */
 .gallery{display:flex;flex-direction:column;gap:10px}
@@ -635,30 +677,33 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
    d'onglets sa présence propre — c'est « la barre en dessous du voyage ». */
 .sections-card{padding-top:8px}
 .plan-tabs{
-  display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
-  padding:5px;margin:0 0 18px;background:var(--bg);
-  border:3px solid var(--stroke);border-radius:14px;
-  box-shadow:3px 3px 0 var(--stroke);
+  display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;
+  padding:6px;margin:0 0 18px;background:var(--bg);
+  border:3px solid var(--stroke);border-radius:16px;
+  box-shadow:4px 4px 0 var(--stroke);
 }
 .plan-tabs::-webkit-scrollbar{display:none}
 .plan-tab{
-  flex:1;min-width:max-content;white-space:nowrap;cursor:pointer;
+  position:relative;flex:1;min-width:max-content;white-space:nowrap;cursor:pointer;
   display:flex;align-items:center;justify-content:center;gap:7px;
-  padding:11px 14px;border:2px solid transparent;border-radius:10px;background:transparent;
+  padding:11px 14px;border:2px solid transparent;border-radius:11px;background:transparent;
   font:900 .8rem 'Sora',sans-serif;color:var(--txt-2);
-  transition:color .12s ease, background .12s ease;
+  transition:transform .12s ease, color .12s ease, background .12s ease, box-shadow .12s ease;
 }
-.plan-tab span{font-size:1.05rem;line-height:1}
+.plan-tab span{font-size:1.1rem;line-height:1;transition:transform .15s ease}
 .plan-tab:not(.on):hover{color:var(--txt);background:var(--secondary)}
+.plan-tab:not(.on):hover span{transform:scale(1.15) translateY(-1px)}
 .plan-tab.on{
   background:var(--primary);color:#101010;
   border-color:var(--stroke);box-shadow:2px 2px 0 var(--stroke);
+  transform:translate(-1px,-1px);
 }
-/* mobile : icône au-dessus du mot → les 4 onglets tiennent sans défilement */
+.plan-tab.on span{transform:scale(1.12)}
+/* mobile : icône au-dessus du mot → les onglets tiennent sans défilement */
 @media(max-width:460px){
-  .plan-tabs{gap:4px;padding:4px}
-  .plan-tab{flex-direction:column;gap:3px;padding:8px 4px;font-size:.64rem;min-width:0}
-  .plan-tab span{font-size:1.15rem}
+  .plan-tabs{gap:3px;padding:4px}
+  .plan-tab{flex-direction:column;gap:3px;padding:8px 3px;font-size:.62rem;min-width:0}
+  .plan-tab span{font-size:1.2rem}
 }
 .plan-panel{animation:pop .25s ease both}
 .pan-intro{font-size:.82rem;font-weight:600;color:var(--txt-2);line-height:1.5;margin:0 0 14px}

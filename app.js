@@ -472,7 +472,10 @@ function monumentsSVG(){
 /* Scène de chargement : la mascotte survole les monuments du monde qui défilent. */
 function travelSceneHTML(){
   return `<div class="travel-scene" aria-hidden="true">
+    <span class="cloud c1"></span>
+    <span class="cloud c2"></span>
     <div class="mon-strip">${monumentsSVG()}${monumentsSVG()}</div>
+    <div class="ground"></div>
     ${mascotSVG('traveler')}
   </div>`;
 }
@@ -521,6 +524,31 @@ document.addEventListener('click', e => {
     mascotLife();                                   /* on relance avec un nouveau délai */
   }, wait);
 })();
+
+/* ---- Les yeux suivent la souris ----
+   Sur un appareil à souris, les pupilles regardent le curseur au lieu de
+   balayer toutes seules. Sur écran tactile (pas de souris fine), on garde
+   le balayage automatique — la signature du personnage. */
+if(window.matchMedia?.('(pointer:fine)').matches && !motionOff()){
+  document.documentElement.classList.add('eye-follow');
+  let _mx = innerWidth / 2, _my = innerHeight / 2, _eyeRaf = 0;
+  const updateEyes = () => {
+    _eyeRaf = 0;
+    document.querySelectorAll('.mascot').forEach(m => {
+      const p = m.querySelector('.m-pupils'); if(!p) return;
+      const r = m.getBoundingClientRect(); if(!r.width) return;
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      /* décalage borné, dans l'échelle du balayage d'origine (~±4.5) */
+      const dx = Math.max(-1, Math.min(1, (_mx - cx) / 170)) * 4.5;
+      const dy = Math.max(-1, Math.min(1, (_my - cy) / 170)) * 3.6;
+      p.style.transform = `translate(${dx}px, ${dy}px)`;
+    });
+  };
+  addEventListener('mousemove', e => {
+    _mx = e.clientX; _my = e.clientY;
+    if(!_eyeRaf) _eyeRaf = requestAnimationFrame(updateEyes);
+  }, { passive:true });
+}
 /* errHTML(msg, retryId?) : si un retryId est fourni ET enregistré dans _retryFns,
    un bouton « Réessayer » relance l'action fautive. */
 const _retryFns = {};
@@ -3836,6 +3864,12 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.6', date:'2026-07-23', titre:'Des détails qui prennent vie', items:[
+    '👀 Sur ordinateur, les yeux de la mascotte suivent ta souris',
+    '🌅 L’animation de chargement gagne un ciel, des nuages et un sol — la mascotte survole vraiment le monde',
+    '🎛️ La barre Programme · Logement · Transport · Événements · Budget est plus soignée',
+    '📊 Le tableau qui compare tes destinations est plus clair : lignes alternées, en-têtes nets'
+  ]},
   { v:'3.5', date:'2026-07-23', titre:'La mascotte survole les monuments du monde', items:[
     '🗼 Pendant les chargements, la mascotte survole une ligne d’horizon des grands monuments — Tour Eiffel, Pyramides, Colisée, Big Ben, Taj Mahal, Statue de la Liberté'
   ]},
