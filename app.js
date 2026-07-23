@@ -433,7 +433,28 @@ function mascotSVG(cls = ''){
     </g>
   </svg>`;
 }
-function loaderHTML(msg){ return `<div class="loader">${mascotSVG()}<span class="loader-msg">${esc(msg)}</span></div>`; }
+/* ---- Astéroïde de dessin animé : roche grise, cratères, contour bleu nuit,
+   dans l'esprit de l'image de référence. Dessiné en SVG → net partout, hors-ligne. ---- */
+function asteroidSVG(){
+  return `<svg class="asteroid-svg" viewBox="0 0 44 44" aria-hidden="true">
+    <path class="ast-body" d="M22 3c6-1 11 2 14 6 4 3 6 8 4 13 1 5-1 10-6 12-4 4-11 5-16 2-6 0-11-4-13-9-3-4-3-10 0-14 2-5 7-8 13-8z"/>
+    <ellipse class="ast-crater" cx="16" cy="17" rx="4.5" ry="3.6"/>
+    <ellipse class="ast-crater" cx="29" cy="14" rx="3.4" ry="2.8"/>
+    <ellipse class="ast-crater" cx="27" cy="28" rx="5" ry="4.2"/>
+    <circle class="ast-crater" cx="15" cy="30" r="2.6"/>
+    <circle class="ast-crater sm" cx="34" cy="24" r="1.9"/>
+  </svg>`;
+}
+/* Scène de chargement : la mascotte esquive des astéroïdes qui défilent. */
+function dodgeSceneHTML(){
+  return `<div class="dodge-scene" aria-hidden="true">
+    <span class="asteroid a1">${asteroidSVG()}</span>
+    <span class="asteroid a2">${asteroidSVG()}</span>
+    <span class="asteroid a3">${asteroidSVG()}</span>
+    ${mascotSVG('dodger')}
+  </div>`;
+}
+function loaderHTML(msg){ return `<div class="loader">${dodgeSceneHTML()}<span class="loader-msg">${esc(msg)}</span></div>`; }
 /* La mascotte tient lieu de logo. On masque le SVG aux lecteurs d'écran :
    le mot « Acolite » juste à côté dit déjà de quoi il s'agit, et l'étiquette
    par défaut du SVG (« Acolite réfléchit ») serait fausse ici. */
@@ -3793,6 +3814,9 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.5', date:'2026-07-23', titre:'La mascotte esquive des astéroïdes', items:[
+    '☄️ Pendant les chargements, la mascotte slalome entre des astéroïdes — l’attente devient un mini-spectacle'
+  ]},
   { v:'3.4', date:'2026-07-23', titre:'Mascotte joueuse, confidentialité et page épurée', items:[
     '🌍 Clique sur la mascotte : elle saute ! Et elle réagit toute seule de temps en temps',
     '🔒 Une politique de confidentialité claire, à accepter à la création du compte',
@@ -4262,7 +4286,7 @@ function searchBar(on, first){
   if(on){
     let i = 0;
     const mk = $('#sbMascot');
-    if(mk && !mk.querySelector('.mascot')) mk.innerHTML = mascotSVG();   /* la mascotte veille pendant la recherche */
+    if(mk && !mk.querySelector('.mascot')) mk.innerHTML = dodgeSceneHTML();   /* la mascotte esquive les astéroïdes pendant la recherche */
     $('#sbText').textContent = first || SB_MSG[0];
     bar.hidden = false;
     nav.style.display = 'none';          /* les 3 boutons laissent la place à la barre */

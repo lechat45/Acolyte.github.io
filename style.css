@@ -330,6 +330,54 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 @keyframes mWiggle{0%,100%{transform:translateY(0) rotate(0)}20%{transform:translateY(-4px) rotate(-10deg)}50%{transform:translateY(-2px) rotate(9deg)}80%{transform:translateY(-3px) rotate(-5deg)}}
 /* mascotte plus grande quand elle occupe une barre de chargement pleine largeur */
 .mascot.big{width:64px;height:64px}
+
+/* ===== Scène de chargement : la mascotte esquive les astéroïdes ===== */
+.dodge-scene{
+  position:relative;flex-shrink:0;
+  width:104px;height:56px;overflow:hidden;
+}
+/* la mascotte reste à gauche et monte/descend pour éviter les rochers */
+.dodge-scene .mascot{
+  position:absolute;left:2px;top:50%;width:40px;height:40px;
+  margin-top:-20px;animation:mDodge 1.15s ease-in-out infinite;
+}
+.asteroid{
+  position:absolute;right:-26px;width:22px;height:22px;
+  will-change:transform;
+}
+.asteroid-svg{width:100%;height:100%;display:block}
+.ast-body{fill:#9a978d;stroke:#17202e;stroke-width:2.5;stroke-linejoin:round}
+.ast-crater{fill:#6f6b60}
+.ast-crater.sm{fill:#585449}
+:root[data-theme="dark"] .ast-body{fill:#8f8c82}
+/* Le rocher (élément) porte le DÉPLACEMENT ; sa rotation est portée par le
+   SVG interne, sinon les deux transforms s'écraseraient l'une l'autre.
+   Trois hauteurs et cadences différentes → un défilé imprévisible. */
+.asteroid{animation:astFly 1.5s linear infinite}
+.asteroid .asteroid-svg{animation:astSpin 2.1s linear infinite}
+.asteroid.a1{top:4px}
+.asteroid.a2{top:30px}
+.asteroid.a2 .asteroid-svg{animation-duration:1.7s;animation-direction:reverse}
+.asteroid.a3{top:16px;width:16px;height:16px;animation-delay:1s}
+.asteroid.a3 .asteroid-svg{animation-duration:2.6s}
+.asteroid.a2{animation-delay:.5s}
+@keyframes astFly{ from{transform:translateX(0)} to{transform:translateX(-132px)} }
+@keyframes astSpin{ from{transform:rotate(0)} to{transform:rotate(360deg)} }
+/* le vol de la mascotte : haut/bas pour tomber pile entre les rochers */
+@keyframes mDodge{
+  0%{transform:translateY(9px) rotate(6deg)}
+  50%{transform:translateY(-9px) rotate(-6deg)}
+  100%{transform:translateY(9px) rotate(6deg)}
+}
+/* réduction des animations : plus d'esquive ni de rochers volants */
+:root.no-motion .dodge-scene .mascot,
+:root.no-motion .asteroid,
+:root.no-motion .asteroid .asteroid-svg{animation:none}
+:root.no-motion .asteroid{display:none}
+@media(prefers-reduced-motion:reduce){
+  .dodge-scene .mascot,.asteroid,.asteroid .asteroid-svg{animation:none}
+  .asteroid{display:none}
+}
 /* respect des préférences : plus d'animation si l'utilisateur n'en veut pas */
 :root.no-motion .mascot,:root.no-motion .m-pupils,:root.no-motion .m-eyes{animation:none}
 @media(prefers-reduced-motion:reduce){
@@ -1328,7 +1376,10 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 .sb-mark{
   width:42px;height:42px;flex-shrink:0;display:grid;place-items:center;
 }
-.sb-mark .mascot{width:42px;height:42px}
+/* si la scène d'astéroïdes est là, la case s'élargit et ne contraint plus la
+   mascotte (qui y est positionnée en absolu) */
+.sb-mark:has(.dodge-scene){width:auto;height:auto}
+.sb-mark .mascot:not(.dodger){width:42px;height:42px}
 .sb-mark span{font-family:'Sora',sans-serif;font-weight:900;font-size:1.15rem;color:var(--txt);line-height:1}
 .sb-body{flex:1;min-width:0}
 .sb-text{
