@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Acolite — Ton copilote de voyage</title>
-<meta name="description" content="Acolite imagine, compare et organise ton voyage de A à Z : destination, transport (CO₂, prix, durée), logement, programme jour par jour. Gratuit, hors-ligne, sans abonnement.">
+<meta name="description" content="Acolite imagine, compare et organise ton voyage de A à Z : destination, transport (CO₂, prix, durée), logement, programme jour par jour. Consultable hors-ligne.">
 <!-- Aperçu de lien (réseaux sociaux) — génère promo.png depuis promo.html et place-le à la racine -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="Acolite — Your AI travel copilot">
@@ -28,7 +28,30 @@
 <!-- ===== Écran de démarrage (HTML : un seul code, tous les écrans) ===== -->
 <div id="boot">
   <div class="boot-in">
-    <div class="boot-mark"><span>A</span></div>
+    <div class="boot-mark">
+      <svg class="mascot" viewBox="0 0 100 100" role="img" aria-label="Acolite">
+        <defs><clipPath id="mGlobeClipBoot"><circle cx="50" cy="50" r="45"/></clipPath></defs>
+        <circle class="m-ocean" cx="50" cy="50" r="45"/>
+        <g clip-path="url(#mGlobeClipBoot)" class="m-land">
+          <ellipse cx="24" cy="29" rx="14" ry="10" transform="rotate(-20 24 29)"/>
+          <ellipse cx="29" cy="67" rx="9" ry="14" transform="rotate(14 29 67)"/>
+          <ellipse cx="71" cy="24" rx="17" ry="9" transform="rotate(8 71 24)"/>
+          <ellipse cx="68" cy="66" rx="11" ry="14" transform="rotate(-10 68 66)"/>
+          <ellipse cx="50" cy="12" rx="20" ry="6"/>
+        </g>
+        <circle class="m-rim" cx="50" cy="50" r="45"/>
+        <g class="m-eyes">
+          <ellipse class="m-white" cx="36" cy="46" rx="15" ry="19"/>
+          <ellipse class="m-white" cx="66" cy="46" rx="14" ry="18"/>
+          <g class="m-pupils">
+            <circle class="m-pupil" cx="38" cy="48" r="8"/>
+            <circle class="m-pupil" cx="68" cy="48" r="7.5"/>
+            <circle class="m-shine" cx="41.5" cy="43.5" r="2.4"/>
+            <circle class="m-shine" cx="71" cy="43.5" r="2.1"/>
+          </g>
+        </g>
+      </svg>
+    </div>
     <div class="boot-word">ACOLITE</div>
     <div class="boot-sub">COPILOTE DE VOYAGE</div>
     <div class="boot-bar"><i></i></div>
@@ -38,7 +61,7 @@
 
 <div class="wrap">
   <header>
-    <div class="logo"><span class="logo-mark"></span><span class="logo-word" aria-label="Acolite"><i>A</i><i>c</i><i>o</i><i>l</i><i>i</i><i>t</i><i>e</i></span></div>
+    <div class="logo"><span class="logo-word" aria-label="Acolite"><i>A</i><i>c</i><i>o</i><i>l</i><i class="i-dot">i<span class="logo-mark"></span></i><i>t</i><i>e</i></span></div>
     <!-- La nav vit ici dans le HTML, mais sur téléphone elle est en
          position:fixed en bas : le parent n'a alors aucun effet sur elle.
          Sur ordinateur elle repasse en flux et devient la barre du haut. -->
@@ -212,6 +235,7 @@
       <button class="rt" id="mapLocate" title="Centrer sur ma position" aria-label="Centrer sur ma position">🧭</button>
       <a class="rt" id="projOpen" href="#" target="_blank" rel="noopener">↗ Maps</a>
     </div>
+    <div class="map-context" id="mapContext" hidden></div>
     <div class="mapstops" id="zoneStops"></div>
     <iframe id="projMap" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
     <div class="cat-empty" id="mapEmpty" hidden>
@@ -376,9 +400,9 @@
          avis juste après « supprimer mon compte » tombait très mal. ===== -->
     <div class="ph-card">
       <div class="ph-txt">
-        <span class="ph-eyebrow">Acolite est gratuit</span>
-        <h3>Et il le restera.</h3>
-        <p>Pas de compte payant, pas de pub, pas de données revendues. La seule chose qui le fait exister, c'est ton avis.</p>
+        <span class="ph-eyebrow">Ton avis compte</span>
+        <h3>Aide Acolite à grandir</h3>
+        <p>Pas de pub intrusive, pas de données revendues. La meilleure façon de soutenir Acolite, c'est de laisser ton avis.</p>
       </div>
       <a class="ph-link" href="https://www.producthunt.com/products/acolite/reviews/new?utm_source=badge-product_review&amp;utm_medium=badge&amp;utm_source=badge-acolite" target="_blank" rel="noopener">
         <img src="https://api.producthunt.com/widgets/embed-image/v1/product_review.svg?product_id=1273558&amp;theme=light"

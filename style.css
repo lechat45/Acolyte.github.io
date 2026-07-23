@@ -109,13 +109,11 @@ body{
 #boot.gone{opacity:0;visibility:hidden;pointer-events:none}
 .boot-in{display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px;width:min(90vw,340px)}
 .boot-mark{
-  width:88px;height:88px;flex-shrink:0;
-  background:var(--primary);
-  border:5px solid var(--stroke);
-  box-shadow:7px 7px 0 var(--stroke);
+  width:96px;height:96px;flex-shrink:0;
   display:grid;place-items:center;
   animation:bootPop .5s cubic-bezier(.2,1.4,.4,1) both;
 }
+.boot-mark .mascot{width:92px;height:92px}
 .boot-mark span{
   font-family:'Sora',sans-serif;font-weight:900;font-size:3rem;line-height:1;
   color:#101010;letter-spacing:-.04em;
@@ -172,16 +170,21 @@ header{
 /* La mascotte remplace l'ancien carré orange. Elle garde le regard et
    le clignement — sa signature — mais pas le balancement : un logo qui
    tangue en permanence fatigue l'œil. */
-.logo-mark{
-  width:52px;height:52px;flex-shrink:0;
-  display:grid;place-items:center;
-}
-.logo-mark .mascot{width:52px;height:52px;animation:none}
 .logo span{color:var(--txt)}
-/* chaque lettre du logo est un élément à part : nécessaire pour l'easter egg
-   « bowling » (les lettres s'éparpillent comme des quilles) */
-.logo-word{display:inline-flex}
-.logo-word i{display:inline-block;font-style:normal;will-change:transform}
+/* Logo intégré : le globe coiffe le « i » d'ACOLITE, comme un point animé.
+   On réserve de la place au-dessus du mot pour que le globe ne soit pas rogné. */
+.logo{padding-top:20px}
+/* Chaque lettre est un élément à part (nécessaire à l'easter egg bowling). */
+.logo-word{display:inline-flex;align-items:flex-end;position:relative}
+.logo-word i{display:inline-block;font-style:normal;will-change:transform;position:relative}
+/* la lettre « i » porte le globe au-dessus d'elle, en guise de point */
+.i-dot{overflow:visible}
+.logo-mark{
+  position:absolute;left:50%;bottom:100%;
+  width:32px;height:32px;transform:translate(-50%,20%);
+  display:grid;place-items:center;pointer-events:auto;
+}
+.logo-mark .mascot{width:32px;height:32px;animation:none}
 
 .icon-btn{
   background:var(--secondary);border:3px solid var(--stroke);color:var(--txt);
@@ -1023,7 +1026,7 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 #toast.show{transform:translateX(-50%) translateY(0)}
 
 .hidden{display:none !important}
-.view{animation:pop .3s ease}
+/* l'animation d'entrée des vues est gérée plus bas (viewSlide) */
 .divider{height:4px;background:var(--stroke);margin:24px 0}
 .hint{font-size:.8rem;font-weight:600;color:var(--txt-2);margin-top:8px;line-height:1.5}
 .err{
@@ -1036,6 +1039,20 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .err .btn{color:var(--txt);background:var(--secondary);flex-shrink:0}
 
 @keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ===== Transitions entre vues : un glissement doux plutôt qu'un saut ===== */
+@keyframes viewSlide{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+@keyframes viewFade{from{opacity:0}to{opacity:1}}
+.view:not(.hidden),
+#catProfile:not(.hidden),
+#catTrip:not(.hidden){animation:viewSlide .3s cubic-bezier(.2,.7,.3,1) both}
+/* la carte est un calque fixe plein écran : un simple fondu (pas de glissement,
+   sinon débordement horizontal) */
+#catMap:not(.hidden){animation:viewFade .3s ease both}
+:root.no-motion .view,:root.no-motion #catProfile,:root.no-motion #catTrip,:root.no-motion #catMap{animation:none}
+@media(prefers-reduced-motion:reduce){
+  .view,#catProfile,#catTrip,#catMap{animation:none}
+}
 @media (prefers-reduced-motion: reduce){
   *{transition-duration:.01ms !important;animation-duration:.01ms !important}
 }
@@ -1204,6 +1221,14 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   width:calc(100% - 24px);height:calc(100% - 80px);
   border:4px solid var(--stroke);border-radius:16px;
   box-shadow:5px 5px 0 var(--stroke);background:#fff;
+}
+/* Carte sombre en « Vol de nuit » : on inverse la carte claire d'OSM et on
+   recale les teintes (mer bleutée, terres foncées) au lieu d'un rectangle
+   blanc éblouissant. Astuce standard des cartes en mode nuit. */
+:root[data-theme="dark"] #projMap,
+:root[data-theme="dark"] .map-box iframe{
+  filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.95);
+  background:#12131a;
 }
 #catMap .maproutes{position:absolute;top:10px;left:10px;right:10px;z-index:2;margin:0;padding:4px}
 /* ===== États vides (carte + profil) ===== */
@@ -1581,6 +1606,16 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 
 
 /* ===== Étapes du jour, sous la carte ===== */
+/* Bandeau de contexte : « Jour 2 · Vatican » bien lisible au-dessus de la carte */
+.map-context{
+  position:absolute;top:60px;left:24px;right:24px;z-index:6;
+  background:var(--primary);color:#101010;
+  font:900 .82rem 'Sora',sans-serif;letter-spacing:.01em;
+  padding:9px 14px;border:3px solid var(--stroke);border-radius:12px;
+  box-shadow:3px 3px 0 var(--stroke);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.map-context[hidden]{display:none}
 .mapstops{
   position:absolute;left:24px;right:24px;bottom:26px;z-index:5;
   display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px;

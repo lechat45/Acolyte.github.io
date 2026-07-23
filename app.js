@@ -3930,6 +3930,15 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'4.0', date:'2026-07-24', titre:'Nouveau look et voyage en temps réel', items:[
+    '🌍 Le globe coiffe désormais le « i » d’ACOLITE — un vrai logo',
+    '✨ Écran de démarrage à l’effigie de la mascotte, et transitions plus douces entre les écrans',
+    '📍 Pendant ton séjour, Acolite s’ouvre directement sur la journée du moment',
+    '🗺️ Un bandeau sur la carte t’indique toujours ce que tu regardes, et elle s’assombrit la nuit'
+  ]},
+  { v:'3.9', date:'2026-07-24', titre:'Une carte agréable même la nuit', items:[
+    '🌙 En mode « Vol de nuit », la carte s’assombrit au lieu de t’éblouir'
+  ]},
   { v:'3.8', date:'2026-07-24', titre:'Un titre, et un secret bien caché', items:[
     '🧳 La barre de ton voyage a désormais un titre « Ton voyage »',
     '🎳 Un easter egg attend les curieux du côté de la mascotte… (sur ordinateur)'
@@ -4130,10 +4139,10 @@ const LS_PRIVACY = 'acolite_privacy';
 const privacyAccepted = () => { try{ return localStorage.getItem(LS_PRIVACY) === PRIVACY_VERSION; }catch(e){ return false; } };
 function privacyHTML(){
   return `
-  <p class="sub" style="margin:0 0 14px">En vigueur au ${esc(PRIVACY_VERSION)}. Acolite est un service <strong>gratuit</strong>, sans publicité, sans abonnement et <strong>sans revente d'aucune donnée</strong>. Pour toute question : <a href="${reportMailLink('confidentialité')}">${esc(SUPPORT_MAIL)}</a>.</p>
+  <p class="sub" style="margin:0 0 14px">En vigueur au ${esc(PRIVACY_VERSION)}. Acolite protège tes données : pas de publicité ciblée et <strong>sans revente d'aucune donnée</strong>. Pour toute question : <a href="${reportMailLink('confidentialité')}">${esc(SUPPORT_MAIL)}</a>.</p>
   <div class="legal">
     <h4>1. Responsable du traitement</h4>
-    <p>Acolite est une application de préparation de voyage, éditée à titre personnel et proposée gratuitement, « en l'état ». Contact : <a href="${reportMailLink('confidentialité')}">${esc(SUPPORT_MAIL)}</a>.</p>
+    <p>Acolite est une application de préparation de voyage, éditée à titre personnel et proposée « en l'état ». Contact : <a href="${reportMailLink('confidentialité')}">${esc(SUPPORT_MAIL)}</a>.</p>
 
     <h4>2. Les données que nous traitons</h4>
     <p>• <strong>Compte</strong> : ton adresse email et une empreinte chiffrée de ton mot de passe (le mot de passe lui-même n'est jamais stocké ni lisible, y compris par nous).<br>
@@ -4455,6 +4464,12 @@ function searchBar(on, first){
 async function projRoute(route){
   const frame = $('#projMap');
   if(!frame) return;
+  /* bandeau de contexte : on sait toujours ce qu'on regarde */
+  const ctxEl = $('#mapContext');
+  if(ctxEl){
+    ctxEl.textContent = route.label || '';
+    ctxEl.hidden = !route.label;
+  }
   const t = state.trip || {};
   const q = state.cache.plan?.logement?.quartier;
 
@@ -5720,6 +5735,23 @@ if(state.prefs){
 unlockSteps();
 if(state.lastProps) renderDestinations(state.lastProps);
 if(state.step > 1) gotoStep(Math.min(state.step, 3));
+/* Mode « voyage en cours » : si on est sur place aux dates du séjour, on ouvre
+   directement le plan et on déplie la journée du moment. */
+(function openTodayIfTraveling(){
+  if(!state.trip || !state.cache?.plan) return;
+  const d = stayDates(); if(!d) return;
+  const now = new Date(), start = new Date(d.in + 'T00:00:00'), end = new Date(d.out + 'T23:59:59');
+  if(isNaN(start) || now < start || now > end) return;   /* pas pendant le séjour */
+  const jour = Math.floor((now - start) / 86400000) + 1;
+  gotoStep(3);
+  _planTab = 'programme';
+  /* on déplie la journée du jour quand le plan est rendu */
+  setTimeout(() => { try{ if(typeof loadDayDetail === 'function' && state.cache.plan?.programme?.some(x => +x.jour === jour)) {
+    const box = document.querySelector(`[data-daybox="${CSS.escape(String(jour))}"]`);
+    if(box && box.dataset.open !== '1') loadDayDetail(String(jour));
+    box?.closest('.day-block')?.scrollIntoView({ block:'center' });
+  } }catch(e){} }, 400);
+})();
 requireAuth();
 
 /* app.js est arrivé au bout : le vérificateur de démarrage ne déclenchera pas d'alerte */
