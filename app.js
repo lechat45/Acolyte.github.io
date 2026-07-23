@@ -525,6 +525,54 @@ document.addEventListener('click', e => {
   }, wait);
 })();
 
+/* ---- Easter egg BOWLING (PC uniquement, sur la boule du logo) ----
+   4 clics d'affilée → la boule tourne sur elle-même. Répète 4 fois (4 pirouettes)
+   → elle devient une boule de bowling, fonce sur les lettres ACOLITE et les
+   éparpille comme des quilles, puis tout revient à sa place. */
+(function bowlingEgg(){
+  if(!window.matchMedia?.('(pointer:fine)').matches) return;   /* PC seulement */
+  const logo = document.querySelector('.logo-mark');
+  const word = document.querySelector('.logo-word');
+  if(!logo || !word) return;
+  const ball = logo.querySelector('.mascot');
+  const letters = [...word.querySelectorAll('i')];
+  if(!ball || !letters.length) return;
+
+  let clicks = 0, spins = 0, resetT = 0, busy = false;
+  logo.addEventListener('click', () => {
+    if(busy || motionOff()) return;
+    clearTimeout(resetT);
+    resetT = setTimeout(() => { clicks = 0; spins = 0; }, 900);  /* pas « de suite » → on repart de zéro */
+    if(++clicks < 4) return;
+    clicks = 0;
+    if(++spins < 4){ mascotReact(ball, 'm-spin'); return; }      /* pirouette */
+    spins = 0;
+    bowl();                                                       /* 4ᵉ pirouette → bowling ! */
+  });
+
+  function bowl(){
+    busy = true;
+    const roll = Math.round(word.getBoundingClientRect().width + 12);
+    ball.style.setProperty('--roll', roll + 'px');
+    ball.classList.add('bowling');
+    /* les quilles s'éparpillent quand la boule arrive (~0,5 s) */
+    setTimeout(() => letters.forEach(l => {
+      const dx = (Math.random() * 2 - 1) * 90;
+      const dy = (Math.random() * -1 - 0.2) * 70;
+      const rot = (Math.random() * 2 - 1) * 560;
+      l.style.transition = 'transform .5s cubic-bezier(.3,1.3,.5,1)';
+      l.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
+    }), 500);
+    /* tout revient à sa place */
+    setTimeout(() => letters.forEach(l => { l.style.transition = 'transform .5s ease'; l.style.transform = ''; }), 1300);
+    setTimeout(() => {
+      ball.classList.remove('bowling');
+      letters.forEach(l => { l.style.transition = ''; });
+      busy = false;
+    }, 1900);
+  }
+})();
+
 /* ---- Les yeux suivent la souris ----
    Sur un appareil à souris, les pupilles regardent le curseur au lieu de
    balayer toutes seules. Sur écran tactile (pas de souris fine), on garde
@@ -1726,6 +1774,7 @@ function renderSections(d){
   if(!zone) return;
   zone.innerHTML = `
     <div class="card sections-card">
+      <h2 class="sections-title">Ton voyage 🧳</h2>
       <div class="plan-tabs" role="tablist" aria-label="Détails du voyage">
         ${PLAN_TABS.map(t => `<button class="plan-tab${t.id === _planTab ? ' on' : ''}" data-plantab="${t.id}" role="tab" aria-selected="${t.id === _planTab}">
           <span>${t.ico}</span>${esc(t.nom)}</button>`).join('')}
@@ -3881,6 +3930,10 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.8', date:'2026-07-24', titre:'Un titre, et un secret bien caché', items:[
+    '🧳 La barre de ton voyage a désormais un titre « Ton voyage »',
+    '🎳 Un easter egg attend les curieux du côté de la mascotte… (sur ordinateur)'
+  ]},
   { v:'3.7', date:'2026-07-24', titre:'C’est la mascotte qui s’occupe de tout', items:[
     '💬 Pendant les recherches, la mascotte te parle dans une bulle : c’est elle qui travaille',
     '🧹 Fini le jargon : plus de détails techniques, plus de réglages compliqués',

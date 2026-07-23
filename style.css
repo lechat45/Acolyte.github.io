@@ -178,6 +178,10 @@ header{
 }
 .logo-mark .mascot{width:52px;height:52px;animation:none}
 .logo span{color:var(--txt)}
+/* chaque lettre du logo est un élément à part : nécessaire pour l'easter egg
+   « bowling » (les lettres s'éparpillent comme des quilles) */
+.logo-word{display:inline-flex}
+.logo-word i{display:inline-block;font-style:normal;will-change:transform}
 
 .icon-btn{
   background:var(--secondary);border:3px solid var(--stroke);color:var(--txt);
@@ -331,6 +335,18 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 /* petit sursaut de surprise */
 .mascot.m-wiggle{animation:mWiggle .5s ease-in-out}
 @keyframes mWiggle{0%,100%{transform:translateY(0) rotate(0)}20%{transform:translateY(-4px) rotate(-10deg)}50%{transform:translateY(-2px) rotate(9deg)}80%{transform:translateY(-3px) rotate(-5deg)}}
+/* easter egg BOWLING : la boule fonce sur les lettres ACOLITE (PC, logo seul) */
+.mascot.bowling{
+  animation:mBowl 1.4s cubic-bezier(.5,0,.5,1) both;
+  position:relative;z-index:10;
+}
+@keyframes mBowl{
+  0%{transform:translate(0,0) rotate(0) scale(1)}
+  35%{transform:translate(var(--roll,150px),-2px) rotate(760deg) scale(1.14)}
+  55%{transform:translate(var(--roll,150px),0) rotate(900deg) scale(1.14)}
+  100%{transform:translate(0,0) rotate(1480deg) scale(1)}
+}
+.logo{overflow:visible}   /* les quilles peuvent sortir un peu du logo */
 /* mascotte plus grande quand elle occupe une barre de chargement pleine largeur */
 .mascot.big{width:64px;height:64px}
 
@@ -703,6 +719,7 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 /* La carte des détails : posée sous « Ton voyage », elle donne à la barre
    d'onglets sa présence propre — c'est « la barre en dessous du voyage ». */
 .sections-card{padding-top:8px}
+.sections-title{margin:2px 0 14px}
 .plan-tabs{
   display:flex;gap:5px;overflow-x:auto;scrollbar-width:none;
   padding:6px;margin:0 0 18px;background:var(--bg);
