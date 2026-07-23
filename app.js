@@ -525,53 +525,167 @@ document.addEventListener('click', e => {
   }, wait);
 })();
 
-/* ---- Easter egg BOWLING (PC uniquement, sur la boule du logo) ----
-   4 clics d'affilée → la boule tourne sur elle-même. Répète 4 fois (4 pirouettes)
-   → elle devient une boule de bowling, fonce sur les lettres ACOLITE et les
-   éparpille comme des quilles, puis tout revient à sa place. */
-(function bowlingEgg(){
+/* ---- Easter egg : 3 clics d'affilée sur la boule du logo (PC) → mini-jeu
+   « défends la Terre » (tir sur les astéroïdes) avec classement. ---- */
+(function gameEgg(){
   if(!window.matchMedia?.('(pointer:fine)').matches) return;   /* PC seulement */
   const logo = document.querySelector('.logo-mark');
-  const word = document.querySelector('.logo-word');
-  if(!logo || !word) return;
-  const ball = logo.querySelector('.mascot');
-  const letters = [...word.querySelectorAll('i')];
-  if(!ball || !letters.length) return;
-
-  let clicks = 0, spins = 0, resetT = 0, busy = false;
+  if(!logo) return;
+  let clicks = 0, resetT = 0;
   logo.addEventListener('click', () => {
-    if(busy || motionOff()) return;
     clearTimeout(resetT);
-    resetT = setTimeout(() => { clicks = 0; spins = 0; }, 900);  /* pas « de suite » → on repart de zéro */
-    if(++clicks < 4) return;
-    clicks = 0;
-    if(++spins < 4){ mascotReact(ball, 'm-spin'); return; }      /* pirouette */
-    spins = 0;
-    bowl();                                                       /* 4ᵉ pirouette → bowling ! */
+    resetT = setTimeout(() => { clicks = 0; }, 700);           /* pas « de suite » → on repart de zéro */
+    if(++clicks >= 3){ clicks = 0; openGame(); }
   });
-
-  function bowl(){
-    busy = true;
-    const roll = Math.round(word.getBoundingClientRect().width + 12);
-    ball.style.setProperty('--roll', roll + 'px');
-    ball.classList.add('bowling');
-    /* les quilles s'éparpillent quand la boule arrive (~0,5 s) */
-    setTimeout(() => letters.forEach(l => {
-      const dx = (Math.random() * 2 - 1) * 90;
-      const dy = (Math.random() * -1 - 0.2) * 70;
-      const rot = (Math.random() * 2 - 1) * 560;
-      l.style.transition = 'transform .5s cubic-bezier(.3,1.3,.5,1)';
-      l.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
-    }), 500);
-    /* tout revient à sa place */
-    setTimeout(() => letters.forEach(l => { l.style.transition = 'transform .5s ease'; l.style.transform = ''; }), 1300);
-    setTimeout(() => {
-      ball.classList.remove('bowling');
-      letters.forEach(l => { l.style.transition = ''; });
-      busy = false;
-    }, 1900);
-  }
 })();
+
+/* ============================================================
+   MINI-JEU « Défends la Terre » — tir sur les astéroïdes + classement.
+   Auto-contenu (canvas), aucune dépendance. Le classement passe par le
+   backend (routes /game/top et /game/score).
+============================================================ */
+let _game = null;
+function openGame(){
+  const ov = $('#ovGame'); if(!ov) return;
+  ov.classList.add('show');
+  $('#gameOver').hidden = true;
+  $('#gameStart').hidden = false;
+}
+(function gameEngine(){
+  const cv = $('#gameCanvas'); if(!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const EARTH = { x: W / 2, y: H - 6, r: 26 };
+  let asts, parts, score, lives, spawnAcc, running, last, raf;
+
+  function reset(){
+    asts = []; parts = []; score = 0; lives = 3; spawnAcc = 0; running = true; last = performance.now();
+    hud();
+  }
+  function hud(){
+    $('#gameScore').textContent = 'Score : ' + score;
+    $('#gameLives').textContent = '❤️'.repeat(Math.max(0, lives)) || '💀';
+  }
+  function spawn(){
+    const r = 12 + Math.random() * 12;
+    const x = r + Math.random() * (W - 2 * r);
+    const speed = 34 + Math.min(90, score * 0.7) + Math.random() * 24;   /* accélère avec le score */
+    const ang = Math.atan2(EARTH.y - 0, EARTH.x - x) + (Math.random() - 0.5) * 0.5;
+    asts.push({ x, y: -r, r, vx: Math.cos(ang) * speed, vy: Math.abs(Math.sin(ang) * speed) + 20, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 3 });
+  }
+  function burst(x, y, col){
+    for(let i = 0; i < 10; i++){
+      const a = Math.random() * 6.28, s = 40 + Math.random() * 90;
+      parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .5, col });
+    }
+  }
+  function loop(now){
+    if(!running) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    /* apparition */
+    spawnAcc += dt;
+    const every = Math.max(0.45, 1.3 - score * 0.02);
+    if(spawnAcc > every){ spawnAcc = 0; spawn(); }
+    /* maj astéroïdes */
+    for(let i = asts.length - 1; i >= 0; i--){
+      const a = asts[i]; a.x += a.vx * dt; a.y += a.vy * dt; a.rot += a.vr * dt;
+      const dx = a.x - EARTH.x, dy = a.y - EARTH.y;
+      if(Math.hypot(dx, dy) < a.r + EARTH.r){        /* touche la Terre */
+        asts.splice(i, 1); lives--; hud(); burst(a.x, a.y, '#FF6B6B');
+        EARTH.hit = 0.25;
+        if(lives <= 0){ gameOver(); return; }
+      } else if(a.y - a.r > H){ asts.splice(i, 1); }   /* sortie bas */
+    }
+    /* particules */
+    for(let i = parts.length - 1; i >= 0; i--){
+      const p = parts[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      if(p.life <= 0) parts.splice(i, 1);
+    }
+    if(EARTH.hit) EARTH.hit = Math.max(0, EARTH.hit - dt);
+    draw();
+    raf = requestAnimationFrame(loop);
+  }
+  function draw(){
+    /* fond spatial */
+    ctx.fillStyle = '#0b1026'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(255,255,255,.7)';
+    for(let i = 0; i < 40; i++){ const sx = (i * 71) % W, sy = (i * 43) % H; ctx.fillRect(sx, sy, 1.5, 1.5); }
+    /* Terre */
+    ctx.save();
+    ctx.beginPath(); ctx.arc(EARTH.x, EARTH.y, EARTH.r, 0, 6.29); ctx.closePath();
+    ctx.fillStyle = EARTH.hit ? '#8fc3ea' : '#3E93C9'; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = '#1C5A78'; ctx.stroke();
+    ctx.clip();
+    ctx.fillStyle = '#6FBE5C';
+    ctx.beginPath(); ctx.ellipse(EARTH.x - 10, EARTH.y - 8, 12, 8, .3, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(EARTH.x + 12, EARTH.y + 2, 9, 12, -.2, 0, 6.29); ctx.fill();
+    ctx.restore();
+    /* astéroïdes */
+    asts.forEach(a => {
+      ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.rot);
+      ctx.beginPath(); ctx.arc(0, 0, a.r, 0, 6.29);
+      ctx.fillStyle = '#9a978d'; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = '#17202e'; ctx.stroke();
+      ctx.fillStyle = '#6f6b60';
+      ctx.beginPath(); ctx.arc(-a.r * .3, -a.r * .2, a.r * .3, 0, 6.29); ctx.fill();
+      ctx.beginPath(); ctx.arc(a.r * .35, a.r * .25, a.r * .22, 0, 6.29); ctx.fill();
+      ctx.restore();
+    });
+    /* particules */
+    parts.forEach(p => { ctx.globalAlpha = Math.max(0, p.life * 2); ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, 3, 3); });
+    ctx.globalAlpha = 1;
+  }
+  function hit(e){
+    if(!running) return;
+    const rect = cv.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (W / rect.width);
+    const my = (e.clientY - rect.top) * (H / rect.height);
+    for(let i = asts.length - 1; i >= 0; i--){
+      const a = asts[i];
+      if(Math.hypot(a.x - mx, a.y - my) < a.r + 6){
+        asts.splice(i, 1); score += 10; hud(); burst(a.x, a.y, '#FFE600'); return;
+      }
+    }
+  }
+  cv.addEventListener('mousedown', hit);
+  async function gameOver(){
+    running = false; cancelAnimationFrame(raf);
+    $('#gameOverScore').textContent = 'Score : ' + score;
+    $('#gameOverTitle').textContent = score >= 150 ? '🏆 Terre sauvée… de justesse !' : '💥 Terre touchée !';
+    $('#gameOver').hidden = false;
+    submitAndShowLeaderboard(score);
+  }
+  function start(){
+    $('#gameStart').hidden = true; $('#gameOver').hidden = true;
+    reset(); raf = requestAnimationFrame(loop);
+  }
+  _game = { start };
+  const go = $('#gameGo'); if(go) go.onclick = start;
+  const rp = $('#gameReplay'); if(rp) rp.onclick = start;
+})();
+
+/* Classement : envoie le score (si connecté) puis affiche le top 10. */
+async function submitAndShowLeaderboard(score){
+  const lb = $('#gameLeaderboard'); if(!lb) return;
+  lb.innerHTML = `<p class="hint" style="margin:0">Chargement du classement…</p>`;
+  const me = getUser()?.pseudo || '';
+  if(authToken() && me){
+    await srvFetch('/game/score', { method:'POST', body:{ name: me, score }, auth:true });
+  }
+  const r = await srvFetch('/game/top');
+  if(!r.ok || !Array.isArray(r.data?.top)){
+    lb.innerHTML = `<p class="hint" style="margin:0">${authToken() ? 'Classement indisponible pour le moment.' : '🔒 Connecte-toi pour enregistrer ton score et voir le classement.'}</p>`;
+    return;
+  }
+  const top = r.data.top;
+  if(!top.length){ lb.innerHTML = `<p class="hint" style="margin:0">Sois le premier au classement !</p>`; return; }
+  lb.innerHTML = `<h4 class="game-lb-title">🏆 Meilleurs défenseurs</h4>`
+    + top.map((s, i) => `<div class="game-lb-row${s.name === me ? ' me' : ''}">
+        <span class="game-lb-rank">${i + 1}</span>
+        <span class="game-lb-name">${esc(s.name)}</span>
+        <span class="game-lb-score">${esc(String(s.score))}</span>
+      </div>`).join('');
+}
 
 /* ---- Les yeux suivent la souris ----
    Sur un appareil à souris, les pupilles regardent le curseur au lieu de
@@ -1512,27 +1626,49 @@ Réponds UNIQUEMENT en JSON :
   }
 }
 
+/* Note « 8,6/10 » ou « 4,2 » → une rangée d'étoiles + la valeur brute. */
+function hotelStars(note){
+  if(note == null || note === '') return '';
+  const m = String(note).replace(',', '.').match(/([\d.]+)/);
+  if(!m) return `<span class="hc-note">⭐ ${esc(String(note))}</span>`;
+  let v = parseFloat(m[1]);
+  const sur5 = v > 5 ? v / 2 : v;                 /* /10 → /5 */
+  const pleines = Math.round(sur5);
+  const etoiles = '★'.repeat(Math.max(0, Math.min(5, pleines))) + '☆'.repeat(Math.max(0, 5 - pleines));
+  return `<span class="hc-note"><span class="hc-stars">${etoiles}</span> ${esc(String(note))}</span>`;
+}
 function renderHotels(rows){
   const zone = $('#zoneHotels'); if(!zone) return;
   const t = state.trip || {}, d = stayDates();
-  const A = state.prefs?.adults || 2;
-  const ICO = { hôtel:'🏨', hotel:'🏨', appartement:'🏠', auberge:'🎒', villa:'🏡' };
+  const A = state.prefs?.adults || 2, K = state.prefs?.kids || 0;
+  const ICO = { hôtel:'🏨', hotel:'🏨', appartement:'🏠', appart:'🏠', auberge:'🎒', villa:'🏡', motel:'🏨', 'chambre d’hôtes':'🛏️' };
+  const enc = encodeURIComponent;
   zone.innerHTML = rows.map((h, i) => {
-    /* lien Booking pré-rempli avec le NOM exact + tes dates → l'utilisateur voit le vrai prix du jour */
+    const type = String(h.type || '').toLowerCase();
+    const estAppart = /appart|villa|chambre|studio|loft/.test(type);
     const q = `${h.nom} ${h.quartier || ''} ${t.nom || ''}`.trim();
-    const book = `https://www.booking.com/searchresults.fr.html?ss=${encodeURIComponent(q)}`
-      + (d ? `&checkin=${d.in}&checkout=${d.out}` : '') + `&group_adults=${A}`;
-    return `<div class="item" style="align-items:flex-start">
-      <div class="emo">${ICO[String(h.type||'').toLowerCase()] || '🏨'}</div>
-      <div style="flex:1;min-width:0">
-        <h4>${esc(h.nom)}${i === 0 ? ' <span class="tag ok" style="font-size:.6rem">meilleur choix</span>' : ''}</h4>
-        <p>${esc(h.pourquoi || '')}</p>
-        <p class="hint" style="margin:3px 0 0">📍 ${esc(h.quartier || '—')}${h.note ? ` · ⭐ ${esc(String(h.note))}` : ''}</p>
-        <a class="tl-loc" href="${esc(book)}" target="_blank" rel="noopener" style="margin-top:8px">🎫 Voir le prix &amp; réserver</a>
+    /* liens pré-remplis avec le NOM exact + tes dates → le vrai prix du jour */
+    const book = `https://www.booking.com/searchresults.fr.html?ss=${enc(q)}`
+      + (d ? `&checkin=${d.in}&checkout=${d.out}` : '') + `&group_adults=${A}${K ? `&group_children=${K}` : ''}`;
+    const airbnb = `https://www.airbnb.fr/s/${enc(q)}/homes?adults=${A}${K ? `&children=${K}` : ''}`
+      + (d ? `&checkin=${d.in}&checkout=${d.out}` : '');
+    return `<div class="hotel-card${i === 0 ? ' best' : ''}">
+      ${i === 0 ? `<span class="hc-badge">⭐ Meilleur choix</span>` : ''}
+      <div class="hc-top">
+        <span class="hc-ico">${ICO[type] || '🏨'}</span>
+        <div class="hc-id">
+          <h4>${esc(h.nom)}</h4>
+          <div class="hc-meta">📍 ${esc(h.quartier || t.nom || '—')}${h.note ? ' · ' + hotelStars(h.note) : ''}</div>
+        </div>
+        <span class="hc-price">${esc(h.prix_nuit || '?')}<small>/nuit</small></span>
       </div>
-      <div class="side"><span class="tag money">💶 ${esc(h.prix_nuit || '?')}</span></div>
+      ${h.pourquoi ? `<p class="hc-why">${esc(h.pourquoi)}</p>` : ''}
+      <div class="hc-acts">
+        <a class="btn sm" href="${esc(book)}" target="_blank" rel="noopener">🎫 Voir &amp; réserver</a>
+        ${estAppart ? `<a class="btn sm ghost" href="${esc(airbnb)}" target="_blank" rel="noopener">🏠 Airbnb</a>` : ''}
+      </div>
     </div>`;
-  }).join('') + `<p class="hint">Établissements réels sélectionnés pour ton quartier et ton budget. <strong>Le prix exact du jour s'affiche sur Booking</strong> (dates déjà pré-remplies) — vérifie avant de réserver.</p>`;
+  }).join('') + `<p class="hint" style="margin-top:12px">Établissements réels, choisis pour ton quartier et ton budget. <strong>Le prix exact du jour s'affiche à la réservation</strong> (dates déjà pré-remplies).</p>`;
 }
 
 /* --- Liens logement pré-remplis (comparateurs + sites directs) --- */
@@ -1706,17 +1842,58 @@ function panEvents(){
 }
 
 /* ---- Onglet Budget ---- */
+/* Devine un poste de dépense (icône) à partir de son libellé. */
+function budgetIcon(label){
+  const l = label.toLowerCase();
+  if(/transport|vol|avion|train|voiture|billet|trajet|bus/.test(l)) return '🚆';
+  if(/h[ôo]tel|logement|h[ée]berg|airbnb|nuit|dormir/.test(l)) return '🏨';
+  if(/resto|repas|nourri|manger|food|cuisine|boisson/.test(l)) return '🍽️';
+  if(/activit|visite|entr[ée]e|mus[ée]e|excursion|billet|loisir/.test(l)) return '🎫';
+  if(/extra|divers|impr[ée]vu|souvenir|shopping/.test(l)) return '✨';
+  return '💶';
+}
+/* Découpe la répartition libre de l'IA en postes { label, montant }. */
+function parseBudget(txt){
+  if(!txt) return [];
+  return String(txt).split(/[·|,;\n]+/).map(s => s.trim()).filter(Boolean).map(seg => {
+    const m = seg.match(/(\d[\d\s]{0,7})\s*€?/);
+    const amount = m ? parseInt(m[1].replace(/\s/g, ''), 10) : null;
+    const label = seg.replace(/[:=–-]?\s*\d[\d\s]*\s*€?.*$/, '').trim() || seg.replace(/\d.*/, '').trim() || seg;
+    return { label, amount };
+  }).filter(x => x.label);
+}
 function panBudget(d){
   const bd = d.budget || {};
   const A = (state.prefs?.adults||1) + (state.prefs?.kids||0);
   const btNum = parseInt((String(bd.total).replace(/\s/g,'').match(/\d+/)||[])[0], 10) || 0;
+  const dts = stayDates();
+  const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : 0;
+  const parPersJour = (btNum && nuits) ? Math.round(btNum / nuits) : 0;
+  const postes = parseBudget(bd.repartition);
+  const maxMontant = Math.max(1, ...postes.map(p => p.amount || 0));
+  const avecMontants = postes.some(p => p.amount);
   return `
-    <div class="info-card">
-      <div class="ic-head"><span>💶</span><h4>Budget estimé</h4><b>${esc(String(bd.total||'?'))} € / pers.</b></div>
-      ${A > 1 && btNum ? `<p class="ic-note">${btNum * A} € au total pour ${A} personnes</p>` : ''}
-      ${bd.repartition ? `<p>${esc(bd.repartition)}</p>` : ''}
+    <div class="budget-head">
+      <div class="budget-total">
+        <span class="bt-num">${esc(String(bd.total || '?'))} €</span>
+        <span class="bt-lbl">par personne</span>
+      </div>
+      <div class="budget-chips">
+        ${A > 1 && btNum ? `<span class="budget-chip">👥 ${btNum * A} € au total (${A} pers.)</span>` : ''}
+        ${parPersJour ? `<span class="budget-chip">📅 ≈ ${parPersJour} € / jour</span>` : ''}
+      </div>
     </div>
-    ${(d.a_reserver||[]).length ? `<div class="info-card">
+    ${postes.length ? `<div class="budget-breakdown">
+      <h5 class="pan-sub" style="margin-top:4px">Où part ton budget</h5>
+      ${postes.map(p => `<div class="budget-row">
+        <span class="br-ico">${budgetIcon(p.label)}</span>
+        <span class="br-label">${esc(p.label)}</span>
+        ${p.amount ? `<span class="br-amount">${p.amount} €</span>` : ''}
+        ${avecMontants ? `<span class="br-bar"><i style="width:${p.amount ? Math.round(p.amount / maxMontant * 100) : 0}%"></i></span>` : ''}
+      </div>`).join('')}
+    </div>` : (bd.repartition ? `<div class="info-card"><p>${esc(bd.repartition)}</p></div>` : '')}
+    <p class="hint" style="margin:12px 0 0">💡 Estimation indicative — les prix réels du transport s'affichent dans l'onglet Transport.</p>
+    ${(d.a_reserver||[]).length ? `<div class="info-card" style="margin-top:14px">
       <div class="ic-head"><span>🎟️</span><h4>À réserver tôt</h4></div>
       ${d.a_reserver.map(r=>`<p class="ic-todo">${esc(r)}</p>`).join('')}</div>` : ''}`;
 }
@@ -3930,14 +4107,15 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'4.1', date:'2026-07-24', titre:'Un jeu caché, un budget clair et de belles adresses', items:[
+    '🛰️ Clique 3 fois sur le globe du logo (sur ordinateur) : défends la Terre contre les astéroïdes, avec un classement !',
+    '💶 L’onglet Budget montre où part ton argent, poste par poste, avec le coût par jour',
+    '🏨 Les logements ont de vraies fiches : étoiles, prix par nuit, et Airbnb pour les appartements'
+  ]},
   { v:'4.0', date:'2026-07-24', titre:'Nouveau look et voyage en temps réel', items:[
     '🌍 Le globe coiffe désormais le « i » d’ACOLITE — un vrai logo',
     '✨ Écran de démarrage à l’effigie de la mascotte, et transitions plus douces entre les écrans',
-    '📍 Pendant ton séjour, Acolite s’ouvre directement sur la journée du moment',
-    '🗺️ Un bandeau sur la carte t’indique toujours ce que tu regardes, et elle s’assombrit la nuit'
-  ]},
-  { v:'3.9', date:'2026-07-24', titre:'Une carte agréable même la nuit', items:[
-    '🌙 En mode « Vol de nuit », la carte s’assombrit au lieu de t’éblouir'
+    '📍 Pendant ton séjour, Acolite s’ouvre directement sur la journée du moment'
   ]},
   { v:'3.8', date:'2026-07-24', titre:'Un titre, et un secret bien caché', items:[
     '🧳 La barre de ton voyage a désormais un titre « Ton voyage »',
@@ -4464,12 +4642,6 @@ function searchBar(on, first){
 async function projRoute(route){
   const frame = $('#projMap');
   if(!frame) return;
-  /* bandeau de contexte : on sait toujours ce qu'on regarde */
-  const ctxEl = $('#mapContext');
-  if(ctxEl){
-    ctxEl.textContent = route.label || '';
-    ctxEl.hidden = !route.label;
-  }
   const t = state.trip || {};
   const q = state.cache.plan?.logement?.quartier;
 

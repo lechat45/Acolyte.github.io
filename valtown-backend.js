@@ -460,9 +460,35 @@ export default async function (request) {
     if (path === '/account' && request.method === 'DELETE') {
       const email = await sessionEmail(request);
       if (!email) return json({ error: 'Session expirée — reconnecte-toi' }, 401);
-      for (const t of ['aco_trips', 'aco_sessions', 'aco_codes', 'aco_logins', 'aco_users'])
+      for (const t of ['aco_trips', 'aco_sessions', 'aco_codes', 'aco_logins', 'aco_users', 'aco_scores'])
         await sqlite.execute({ sql: `DELETE FROM ${t} WHERE email = ?`, args: [email] });
       return json({ ok: true });
+    }
+
+    /* ---------- Classement du mini-jeu ---------- */
+    if (path === '/game/score' && request.method === 'POST') {
+      const email = await sessionEmail(request);
+      if (!email) return json({ error: 'Connecte-toi pour enregistrer ton score' }, 401);
+      const body = await request.json().catch(() => ({}));
+      const score = Math.max(0, Math.min(1_000_000, parseInt(body.score, 10) || 0));
+      const name = String(body.name || 'Voyageur').trim().slice(0, 20) || 'Voyageur';
+      await sqlite.execute(`CREATE TABLE IF NOT EXISTS aco_scores(
+        email TEXT PRIMARY KEY, name TEXT NOT NULL, score INTEGER NOT NULL, at INTEGER NOT NULL)`);
+      /* on ne garde que le MEILLEUR score de chaque joueur */
+      await sqlite.execute({
+        sql: `INSERT INTO aco_scores(email, name, score, at) VALUES(?,?,?,?)
+              ON CONFLICT(email) DO UPDATE SET name=excluded.name,
+              score=MAX(aco_scores.score, excluded.score), at=excluded.at`,
+        args: [email, name, score, Date.now()],
+      });
+      return json({ ok: true });
+    }
+    if (path === '/game/top') {
+      await sqlite.execute(`CREATE TABLE IF NOT EXISTS aco_scores(
+        email TEXT PRIMARY KEY, name TEXT NOT NULL, score INTEGER NOT NULL, at INTEGER NOT NULL)`);
+      const r = await sqlite.execute(`SELECT name, score FROM aco_scores ORDER BY score DESC, at ASC LIMIT 10`);
+      const top = (r.rows || []).map(row => ({ name: String(row.name ?? row[0]), score: Number(row.score ?? row[1]) }));
+      return json({ top });
     }
 
     if (path === '/gemini/models') {

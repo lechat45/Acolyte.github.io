@@ -235,7 +235,6 @@
       <button class="rt" id="mapLocate" title="Centrer sur ma position" aria-label="Centrer sur ma position">🧭</button>
       <a class="rt" id="projOpen" href="#" target="_blank" rel="noopener">↗ Maps</a>
     </div>
-    <div class="map-context" id="mapContext" hidden></div>
     <div class="mapstops" id="zoneStops"></div>
     <iframe id="projMap" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
     <div class="cat-empty" id="mapEmpty" hidden>
@@ -581,6 +580,33 @@
     </div>
     <div id="newsBody"></div>
     <button class="btn" id="newsOk" style="width:100%;justify-content:center;margin-top:14px">👍 J'ai vu</button>
+  </div>
+</div>
+
+<!-- ================= MINI-JEU : DÉFENDS LA TERRE (easter egg) ================= -->
+<div class="overlay" id="ovGame">
+  <div class="modal game-modal">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">🛰️ Défends la Terre</h2>
+      <button class="close-btn" data-close="ovGame" id="gameClose" aria-label="Fermer">✕</button>
+    </div>
+    <div class="game-hud">
+      <span id="gameScore">Score : 0</span>
+      <span id="gameLives">❤️❤️❤️</span>
+    </div>
+    <div class="game-stage">
+      <canvas id="gameCanvas" width="480" height="360"></canvas>
+      <div class="game-over" id="gameOver" hidden>
+        <h3 id="gameOverTitle">Terre perdue !</h3>
+        <p id="gameOverScore">Score : 0</p>
+        <div id="gameLeaderboard" class="game-lb"></div>
+        <button class="btn" id="gameReplay" style="justify-content:center">🔄 Rejouer</button>
+      </div>
+      <div class="game-start" id="gameStart">
+        <p>🖱️ Clique sur les astéroïdes pour les détruire avant qu'ils touchent la Terre.</p>
+        <button class="btn" id="gameGo" style="justify-content:center">🚀 Commencer</button>
+      </div>
+    </div>
   </div>
 </div>
 
