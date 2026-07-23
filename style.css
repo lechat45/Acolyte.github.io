@@ -345,6 +345,16 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 :root[data-theme="dark"] .travel-scene{
   background:linear-gradient(#0e1630 0%, #1a2140 55%, #2a2140 100%);
 }
+/* ciel étoilé qui scintille en mode nuit — une petite constellation */
+:root[data-theme="dark"] .travel-scene::after{
+  content:'';position:absolute;top:7px;left:15px;width:2px;height:2px;border-radius:50%;
+  background:#fff;pointer-events:none;
+  box-shadow:18px 5px 0 #fff, 37px -1px 0 rgba(255,255,255,.7), 58px 7px 0 #fff,
+             78px 2px 0 rgba(255,255,255,.6), 30px 12px 0 rgba(255,255,255,.55), 92px 9px 0 #fff;
+  animation:twinkle 3.2s ease-in-out infinite;
+}
+@keyframes twinkle{0%,100%{opacity:.85}50%{opacity:.35}}
+:root.no-motion .travel-scene::after{animation:none}
 /* nuages qui dérivent lentement */
 .cloud{
   position:absolute;background:#fff;opacity:.85;border-radius:20px;
@@ -415,6 +425,23 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .skel-pill{height:24px;width:70px;border-radius:20px}
 .skel-stat{height:96px;flex:1;border-radius:var(--r-md)}
 .loader-msg{transition:opacity .2s ease}
+/* Bulle de bande dessinée : la mascotte parle. Une petite queue pointe
+   vers elle, à gauche. */
+.speech{
+  position:relative;flex:1;min-width:0;
+  background:var(--secondary);color:var(--txt);
+  border:3px solid var(--stroke);border-radius:14px;
+  padding:11px 15px;font-size:.92rem;font-weight:700;line-height:1.35;
+  box-shadow:3px 3px 0 var(--stroke);
+  animation:speechPop .28s cubic-bezier(.2,1.4,.4,1) both;
+}
+/* la queue : deux triangles (contour + remplissage) pointant vers la mascotte */
+.speech::before,.speech::after{content:'';position:absolute;left:-13px;top:18px;
+  border-style:solid;border-width:8px 13px 8px 0;border-color:transparent}
+.speech::before{border-right-color:var(--stroke)}
+.speech::after{left:-9px;border-right-color:var(--secondary)}
+@keyframes speechPop{from{opacity:0;transform:translateX(-6px) scale(.94)}to{opacity:1;transform:none}}
+:root.no-motion .speech{animation:none}
 
 /* ===== Destination cards ===== */
 .dest-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
@@ -987,9 +1014,9 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
   border:3px solid var(--stroke);background:var(--danger);border-radius:var(--r-md);
   box-shadow:4px 4px 0px var(--stroke);
 }
-.err{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.err-msg{margin:0 0 10px;line-height:1.4}
+.err-acts{display:flex;flex-wrap:wrap;gap:10px}
 .err .btn{color:var(--txt);background:var(--secondary);flex-shrink:0}
-.err-retry{margin-left:auto}
 
 @keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){

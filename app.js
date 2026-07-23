@@ -235,22 +235,20 @@ function nextGemModel(current){
   return chain[i + 1] || (i === -1 ? chain[0] : null);
 }
 
-/* --- Message d'erreur lisible depuis la réponse Google --- */
+/* --- Message d'erreur : GÉNÉRIQUE pour l'utilisateur, détail en console.
+   L'utilisateur ne doit jamais voir de jargon technique ni de nom de service. --- */
 async function gemErrMsg(r){
   let apiMsg = '';
   try{ const j = await r.json(); apiMsg = j.error?.message || ''; }catch(e){}
-  if(r.status === 400 && /API key not valid|API_KEY_INVALID/i.test(apiMsg)) return 'Clé API invalide — vérifie qu\'elle est bien copiée en entier';
-  if(r.status === 403 && /SERVICE_DISABLED|has not been used|is disabled/i.test(apiMsg)) return 'API "Generative Language" désactivée sur ce projet Google — crée la clé depuis aistudio.google.com/apikey';
-  if(r.status === 403) return 'Accès refusé (403) — clé restreinte ? Vérifie les restrictions de la clé';
-  if(r.status === 429) return 'Quota gratuit atteint — attends 1 min ou passe sur Groq ⚡';
-  if(r.status === 404) return 'Modèle introuvable (404)';
-  if(r.status === 503) return 'Gemini surchargé (503), réessaie dans quelques secondes';
-  return `Erreur ${r.status}${apiMsg ? ' — ' + apiMsg.slice(0,120) : ''}`;
+  console.warn('[acolite] moteur IA', r.status, apiMsg);   /* pour le débogage, pas pour l'utilisateur */
+  if(r.status === 429) return 'Beaucoup de monde en ce moment — réessaie dans une minute';
+  if(r.status === 503) return 'Service momentanément surchargé — réessaie dans quelques secondes';
+  return 'Un souci technique est survenu';
 }
 
 async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, temp = 0.85, _hops = 0){
   const key = gemKey();
-  if(!key && !useBackend()){ toast('⚠️ Clé Gemini absente de config.js'); throw new Error('NO_KEY'); }
+  if(!key && !useBackend()){ toast('😕 Service momentanément indisponible'); throw new Error('NO_KEY'); }
   let model;
   try{
     model = await resolveGemModel(key);
@@ -322,7 +320,7 @@ async function gemini(prompt, expectJson = true, maxTok = 4096, _retry = false, 
   if(!txt){
     /* réponse vide (réflexion trop longue ?) → une relance avec le double de place */
     if(!_retry) return gemini(prompt, expectJson, maxTok * 2, true, temp, _hops);
-    toast('⚠️ Réponse vide de Gemini, réessaie'); throw new Error('EMPTY');
+    toast('😕 Petit accroc — je réessaie'); throw new Error('EMPTY');
   }
   if(!expectJson) return txt;
   txt = txt.replace(/```json|```/g,'').trim();
@@ -351,7 +349,7 @@ async function groq(prompt, expectJson = true, maxTok = 2048, _retryModel = fals
         headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + groqKey() },
         body: JSON.stringify(body)
       });
-  if(r.status === 401){ toast('Clé Groq invalide — vérifie dans ⚙'); throw new Error('BAD_GROQ'); }
+  if(r.status === 401){ throw new Error('BAD_GROQ'); }   /* silencieux : bascule interne, l'utilisateur n'a rien à savoir */
   if(r.status === 429){ throw new Error('GROQ_RATE'); }
   if(r.status === 404 && !_retryModel){
     /* modèle retiré par Groq → on passe au suivant de la liste et on mémorise */
@@ -479,7 +477,9 @@ function travelSceneHTML(){
     ${mascotSVG('traveler')}
   </div>`;
 }
-function loaderHTML(msg){ return `<div class="loader">${travelSceneHTML()}<span class="loader-msg">${esc(msg)}</span></div>`; }
+/* Le message s'affiche dans une bulle de BD : c'est la mascotte qui parle,
+   c'est elle qui fait le travail. */
+function loaderHTML(msg){ return `<div class="loader">${travelSceneHTML()}<div class="speech loader-msg">${esc(msg)}</div></div>`; }
 /* La mascotte tient lieu de logo. On masque le SVG aux lecteurs d'écran :
    le mot « Acolite » juste à côté dit déjà de quoi il s'agit, et l'étiquette
    par défaut du SVG (« Acolite réfléchit ») serait fausse ici. */
@@ -552,14 +552,31 @@ if(window.matchMedia?.('(pointer:fine)').matches && !motionOff()){
 /* errHTML(msg, retryId?) : si un retryId est fourni ET enregistré dans _retryFns,
    un bouton « Réessayer » relance l'action fautive. */
 const _retryFns = {};
+const SUPPORT_MAIL = 'sacha.pellerin.45@icloud.com';
+/* Lien « Signaler » : l'utilisateur n'a aucun détail technique à comprendre,
+   il envoie simplement un mail au créateur d'Acolite. */
+function reportMailLink(what){
+  const subject = 'Acolite — un souci technique';
+  const body = `Bonjour,\n\nJ'ai rencontré un problème dans Acolite${what ? ' (' + what + ')' : ''}.\n\nCe que je faisais : \n\n`;
+  return `mailto:${SUPPORT_MAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 function errHTML(msg, retryId){
-  return `<div class="err">⚠️ ${esc(msg)}${retryId ? `<button class="btn sm ghost err-retry" data-retry="${esc(retryId)}">↻ Réessayer</button>` : ''}</div>`;
+  return `<div class="err">
+    <p class="err-msg">😕 ${esc(msg || 'Un petit souci technique. Réessaie dans un instant.')}</p>
+    <div class="err-acts">
+      ${retryId ? `<button class="btn sm ghost err-retry" data-retry="${esc(retryId)}">↻ Réessayer</button>` : ''}
+      <a class="btn sm ghost" href="${reportMailLink(retryId || '')}">✉️ Signaler le problème</a>
+    </div>
+  </div>`;
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-retry]');
   if(b && typeof _retryFns[b.dataset.retry] === 'function') _retryFns[b.dataset.retry]();
 });
-function badge(via){ return via === 'groq' ? '<span class="ai-badge groq">⚡ Groq</span>' : '<span class="ai-badge gemini">✦ Gemini</span>'; }
+/* Plus aucune mention du moteur : pour l'utilisateur, c'est Acolite (la
+   mascotte) qui travaille. Le détail vit uniquement dans la politique de
+   confidentialité. On garde la fonction pour ne pas toucher les appels. */
+function badge(){ return ''; }
 
 /* --- Skeletons : silhouettes de chargement (perçu plus rapide qu'un spinner) --- */
 function skelCards(n = 3){
@@ -713,8 +730,8 @@ Réponds UNIQUEMENT en JSON valide, structure exacte. Commence OBLIGATOIREMENT p
     if(qs.length && !state._qsDone) openQsPopup(qs);
     else { $('#ovQs').classList.remove('show'); $('#zoneQs').innerHTML = ''; }
   }catch(e){
-    const msg = e.message === 'RATE' ? 'Quota IA atteint — réessaie dans 1 min ou passe sur Groq ⚡.'
-      : (e.name === 'AbortError' ? 'Délai dépassé — le serveur IA n’a pas répondu.' : 'Impossible de contacter Gemini. Vérifie ta clé ou ta connexion.');
+    const msg = e.message === 'RATE' ? 'Beaucoup de monde en ce moment — réessaie dans une minute.'
+      : (e.name === 'AbortError' ? 'La recherche a mis trop de temps — réessaie.' : 'Un souci technique. Vérifie ta connexion et réessaie.');
     if(e.message !== 'NO_KEY') zone.innerHTML = `<div class="card">${errHTML(msg, 'propose')}</div>`;
     else zone.innerHTML = '';
   }finally{
@@ -732,7 +749,7 @@ const cleanPrix = s => String(s || '').replace(/\s*(par|\/)\s*nuit/gi, '').trim(
 function renderDestinations(d){
   const zone = $('#zoneResults');
   const n = (d.destinations||[]).length;
-  let html = `<div class="card"><h2>${n > 1 ? 'Compare tes voyages' : 'Ton voyage sur mesure'} 🎒 <span class="ai-badge gemini">✦ Gemini</span></h2>
+  let html = `<div class="card"><h2>${n > 1 ? 'Compare tes voyages' : 'Ton voyage sur mesure'} 🎒</h2>
   <p class="sub">${n > 1 ? 'Des propositions volontairement différentes. Compare-les point par point et clique sur celle qui te fait vibrer.' : 'Acolite a concentré ses efforts sur la formule idéale pour ta destination. Clique dessus pour lancer l\'organisation.'}</p>
   <div class="dest-grid">`;
   (d.destinations||[]).forEach((x,i)=>{
@@ -3032,7 +3049,7 @@ function renderBudget(d){
   const sum = (d.postes||[]).reduce((a,p)=>a+(+p.montant||0),0) || 1;
   $('#zoneBud').innerHTML = `
     <div class="row" style="justify-content:space-between">
-      <div><div class="hint" style="margin:0">ESTIMATION TOTALE / PERSONNE <span class="ai-badge gemini">✦ Gemini</span></div>
+      <div><div class="hint" style="margin:0">ESTIMATION TOTALE / PERSONNE</div>
       <div class="spend-total">${total} €</div></div>
     </div>
     <div class="bud-bar">${(d.postes||[]).map((p,i)=>`<i style="width:${((+p.montant||0)/sum*100).toFixed(1)}%;background:${BUD_COLORS[i%BUD_COLORS.length]}"></i>`).join('')}</div>
@@ -3864,6 +3881,13 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.7', date:'2026-07-24', titre:'C’est la mascotte qui s’occupe de tout', items:[
+    '💬 Pendant les recherches, la mascotte te parle dans une bulle : c’est elle qui travaille',
+    '🧹 Fini le jargon : plus de détails techniques, plus de réglages compliqués',
+    '😌 Un souci ? Un message clair et un bouton pour le signaler en un clic',
+    '🔒 Politique de confidentialité renforcée et transparente',
+    '🌙 L’animation de chargement gagne un ciel étoilé la nuit'
+  ]},
   { v:'3.6', date:'2026-07-23', titre:'Des détails qui prennent vie', items:[
     '👀 Sur ordinateur, les yeux de la mascotte suivent ta souris',
     '🌅 L’animation de chargement gagne un ciel, des nuages et un sol — la mascotte survole vraiment le monde',
@@ -4048,28 +4072,47 @@ function checkNews(){
    ⚠️ Texte fourni de bonne foi, sans valeur d'avis juridique — à faire
    relire par un professionnel avant une mise en production sérieuse.
 ============================================================ */
-const PRIVACY_VERSION = '2026-07-23';
+const PRIVACY_VERSION = '2026-07-24';
 const LS_PRIVACY = 'acolite_privacy';
 const privacyAccepted = () => { try{ return localStorage.getItem(LS_PRIVACY) === PRIVACY_VERSION; }catch(e){ return false; } };
 function privacyHTML(){
   return `
-  <p class="sub" style="margin:0 0 14px">En vigueur au ${esc(PRIVACY_VERSION)}. Acolite est un service <strong>gratuit</strong>, sans publicité et sans revente de données.</p>
+  <p class="sub" style="margin:0 0 14px">En vigueur au ${esc(PRIVACY_VERSION)}. Acolite est un service <strong>gratuit</strong>, sans publicité, sans abonnement et <strong>sans revente d'aucune donnée</strong>. Pour toute question : <a href="${reportMailLink('confidentialité')}">${esc(SUPPORT_MAIL)}</a>.</p>
   <div class="legal">
-    <h4>1. Qui traite tes données</h4>
-    <p>Acolite est une application de préparation de voyage. Elle est éditée à titre personnel et proposée en démonstration, « en l'état ».</p>
-    <h4>2. Ce que nous conservons</h4>
-    <p>• <strong>Ton compte</strong> : ton adresse email et un mot de passe <em>chiffré</em> (jamais lisible en clair), sur notre serveur.<br>
-    • <strong>Tes voyages, notes et préférences</strong> : d'abord dans ton navigateur ; si tu as un compte, une copie est enregistrée sur le serveur pour te suivre d'un appareil à l'autre.<br>
-    • Nous ne collectons ni ta localisation précise, ni tes contacts, et n'installons aucun traceur publicitaire.</p>
-    <h4>3. Services tiers</h4>
-    <p>Pour fonctionner, Acolite transmet le strict nécessaire à : un fournisseur d'intelligence artificielle (pour construire ton voyage), un service d'envoi d'email (pour ton code de vérification), et des sources ouvertes de données de transport, météo, cartes et taux de change. Ces prestataires ont leurs propres règles de confidentialité.</p>
-    <h4>4. Durée & suppression</h4>
-    <p>Tes données sont conservées tant que ton compte existe. Tu peux <strong>tout supprimer définitivement</strong> à tout moment depuis ton profil : ton compte et toutes les données associées, côté serveur comme dans ce navigateur, sont alors effacés.</p>
-    <h4>5. Tes droits</h4>
-    <p>Tu peux consulter, corriger ou effacer tes données directement dans l'application. Pour toute autre demande, la suppression de compte reste la voie la plus sûre.</p>
-    <h4>6. Limites & responsabilité</h4>
-    <p>Les itinéraires, prix, horaires et conseils sont générés automatiquement et peuvent comporter des <strong>erreurs ou des informations périmées</strong>. Ils sont donnés à titre indicatif : <strong>vérifie toujours</strong> auprès des transporteurs, hébergeurs et autorités avant de réserver ou de partir. Acolite ne saurait être tenu responsable d'un dommage, d'une perte ou d'une dépense résultant de l'usage de ces informations, ni d'une interruption du service. Tu utilises Acolite sous ta propre responsabilité.</p>
-    <h4>7. Évolutions</h4>
+    <h4>1. Responsable du traitement</h4>
+    <p>Acolite est une application de préparation de voyage, éditée à titre personnel et proposée gratuitement, « en l'état ». Contact : <a href="${reportMailLink('confidentialité')}">${esc(SUPPORT_MAIL)}</a>.</p>
+
+    <h4>2. Les données que nous traitons</h4>
+    <p>• <strong>Compte</strong> : ton adresse email et une empreinte chiffrée de ton mot de passe (le mot de passe lui-même n'est jamais stocké ni lisible, y compris par nous).<br>
+    • <strong>Contenu de voyage</strong> : ce que tu saisis (destinations, dates, notes, dépenses, préférences) et ce qu'Acolite génère pour toi. Enregistré dans ton navigateur, et — si tu as un compte — copié sur notre serveur pour te suivre d'un appareil à l'autre.<br>
+    • <strong>Aucune</strong> localisation précise, aucun accès à tes contacts, aucun traceur ni cookie publicitaire.</p>
+
+    <h4>3. Finalités & base légale</h4>
+    <p>Tes données servent uniquement à faire fonctionner le service que tu demandes : créer ton compte, construire et retrouver tes voyages. La base légale est l'exécution du service et ton consentement, que tu peux retirer à tout moment en supprimant ton compte.</p>
+
+    <h4>4. Prestataires techniques (transparence complète)</h4>
+    <p>Pour fonctionner, Acolite transmet le strict nécessaire à des prestataires, sans jamais leur transmettre ton mot de passe :</p>
+    <p>• <strong>Intelligence artificielle</strong> — la préparation de ton voyage s'appuie sur les modèles <strong>Google Gemini</strong> (raisonnement) et <strong>Groq</strong> (tâches rapides). Ce que tu écris pour décrire ton voyage leur est envoyé afin de générer des propositions. Nos clés d'accès sont gardées secrètes sur notre serveur ; elles ne transitent jamais par ton navigateur.<br>
+    • <strong>Envoi d'emails</strong> — les codes de vérification sont expédiés via <strong>EmailJS</strong>.<br>
+    • <strong>Données ouvertes</strong> — météo et géocodage (Open-Meteo), horaires et prix de transport (Deutsche Bahn, Ryanair), jours fériés (Nager.Date), taux de change (Frankfurter), lieux et cartes (OpenStreetMap, Wikipédia, Wikivoyage).<br>
+    Chacun de ces prestataires applique sa propre politique de confidentialité.</p>
+
+    <h4>5. Hébergement & durée de conservation</h4>
+    <p>Tes données de compte sont conservées tant que ton compte existe. Les données restées dans ton navigateur y demeurent jusqu'à ce que tu les effaces. Aucune donnée n'est conservée à d'autres fins que le service.</p>
+
+    <h4>6. Sécurité</h4>
+    <p>Les mots de passe sont protégés par une empreinte cryptographique renforcée. Les échanges avec nos serveurs sont chiffrés (HTTPS). Aucun système n'étant infaillible, nous ne pouvons garantir une sécurité absolue, mais nous mettons en œuvre des mesures raisonnables.</p>
+
+    <h4>7. Tes droits</h4>
+    <p>Tu peux consulter, corriger ou effacer tes données directement dans l'application. La <strong>suppression de ton compte</strong> (depuis ton profil) efface définitivement tout ce qui est associé à ton compte, côté serveur comme dans ce navigateur. Pour exercer un autre droit (accès, opposition, portabilité), écris à <a href="${reportMailLink('mes données')}">${esc(SUPPORT_MAIL)}</a>.</p>
+
+    <h4>8. Mineurs</h4>
+    <p>Acolite n'est pas destiné aux personnes de moins de 15 ans sans l'accord d'un représentant légal.</p>
+
+    <h4>9. Limites & responsabilité</h4>
+    <p>Les destinations, itinéraires, prix, horaires et conseils sont <strong>générés automatiquement</strong> et peuvent comporter des <strong>erreurs, approximations ou informations périmées</strong>. Ils sont fournis à titre purement indicatif : <strong>vérifie toujours</strong> les informations essentielles (documents de voyage, horaires, disponibilités, tarifs, conditions sanitaires et de sécurité) auprès des transporteurs, hébergeurs et autorités officielles avant de réserver ou de partir. Dans les limites permises par la loi, Acolite et son éditeur ne sauraient être tenus responsables d'un dommage, d'une perte, d'une dépense ou d'un préjudice, direct ou indirect, résultant de l'usage du service, d'une information erronée, d'une décision prise sur cette base, ou d'une interruption du service. Tu utilises Acolite sous ta seule responsabilité.</p>
+
+    <h4>10. Évolutions</h4>
     <p>Cette politique peut évoluer. En cas de changement important, ton acceptation te sera redemandée à l'ouverture de l'application.</p>
   </div>`;
 }
@@ -4254,7 +4297,7 @@ const OPT = {
   stAcces:  { key:'acces',  items:[['non','✅ Aucun besoin'],['oui','♿ Mobilité réduite']] },
   stEco:    { key:'eviter', multi:true, items:[['avion','✈️ Éviter l\'avion'],['train','🚆 Éviter le train'],['voiture','🚗 Éviter la voiture']] },
   stTheme:  { key:'theme',  items:[['auto','🖥️ Système'],['light','☀️ Clair'],['dark','🌙 Sombre']] },
-  stIA:     { key:null,     toggles:[['verif','🔍 Relecture par une 2e IA'],['reels','📡 Données réelles (météo, trains, fériés)']] },
+  stIA:     { key:null,     toggles:[['verif','🔍 Double vérification du plan'],['reels','📡 Données réelles (météo, trains, fériés)']] },
   stUI:     { key:null,     toggles:[['motion','✨ Animations']] }
 };
 function renderSettings(){
@@ -4271,7 +4314,6 @@ function renderSettings(){
       return `<div class="chip ${on ? 'on' : ''}" data-set="${cfg.key}" data-val="${v}" data-multi="${cfg.multi ? 1 : 0}">${lbl}</div>`;
     }).join('');
   });
-  const m = $('#stModel'); if(m) m.value = SET.model;
   const dt = $('#stDetail'); if(dt) dt.value = SET.detail;
   const f = $('#stFont'); if(f) f.value = SET.font;
   const fv = $('#stFsVal'); if(fv) fv.textContent = SET.font + ' %';
@@ -4316,7 +4358,6 @@ document.addEventListener('click', e => {
   }
 });
 document.addEventListener('change', e => {
-  if(e.target.id === 'stModel'){ SET.model = e.target.value; localStorage.removeItem(LS_GEMM); saveSettings(); toast('🤖 Modèle : ' + e.target.selectedOptions[0].text); }
   if(e.target.id === 'stDetail'){ SET.detail = e.target.value; saveSettings(); }
 });
 document.addEventListener('input', e => {
@@ -4327,12 +4368,13 @@ document.addEventListener('input', e => {
 });
 
 /* --- Barre "l'IA cherche" : remplace la nav du bas pendant la réflexion --- */
+/* La mascotte parle à la première personne : c'est elle qui cherche. */
 const SB_MSG = [
-  'Acolite explore le monde…',
-  'Il compare les destinations…',
-  'Il vérifie les vols et les prix…',
-  'Il repère les bons quartiers…',
-  'Il finalise tes propositions…'
+  'J’explore le monde pour toi…',
+  'Je compare les destinations…',
+  'Je vérifie les vols et les prix…',
+  'Je repère les bons quartiers…',
+  'Je finalise tes propositions…'
 ];
 let _sbTimer = null;
 function searchBar(on, first){
