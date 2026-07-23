@@ -1432,14 +1432,15 @@ function todayHTML(){
    VUE « TON VOYAGE » — une barre d'onglets, un panneau à la fois.
    Fini le mur qui défile : chaque écran tient et se lit d'un coup.
 ============================================================ */
-let _planTab = 'transport';                     /* onglet actif, mémorisé entre les rendus */
+let _planTab = 'programme';                     /* onglet actif, mémorisé entre les rendus */
 const _openDays = new Set();                    /* journées dépliées : survivent au changement d'onglet */
 const _comDrafts = {};                          /* commentaires en cours de frappe, par journée */
-/* Le programme jour par jour n'est plus un onglet : c'est le cœur de la vue,
-   toujours affiché. Les onglets ne portent plus que les détails. */
+/* Tout le contenu du voyage vit dans ces onglets, sous la carte « Ton
+   voyage » qui ne garde que le résumé (trajet + conseil). */
 const PLAN_TABS = [
-  { id:'transport', ico:'🚆', nom:'Transport' },
+  { id:'programme', ico:'📆', nom:'Programme' },
   { id:'logement',  ico:'🏨', nom:'Logement'  },
+  { id:'transport', ico:'🚆', nom:'Transport' },
   { id:'events',    ico:'🎉', nom:'Événements'},
   { id:'budget',    ico:'💶', nom:'Budget' }
 ];
@@ -1449,7 +1450,8 @@ const PLAN_TABS = [
 function panProgramme(d){
   const jours = d.programme || [];
   if(!jours.length) return `<p class="hint">Aucune journée planifiée pour l'instant.</p>`;
-  return jours.map(jr => `
+  return `<p class="pan-intro">Ton programme jour par jour. Une journée ne te va pas ? <strong>Vois-la heure par heure</strong>, ou demande à Acolite de la <strong>refaire</strong>.</p>`
+    + jours.map(jr => `
       <div class="day-block">
         <div class="day-row">
           <span class="day-num">J${esc(String(jr.jour))}</span>
@@ -1548,11 +1550,7 @@ function renderPlan(d){
       ${d._checked ? `<span class="tr-check" title="Plan relu par une 2ᵉ IA">✔</span>` : ''}
     </div>
 
-    ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}
-
-    <!-- Le programme : le cœur, toujours affiché -->
-    <p class="pan-intro">Ton programme jour par jour. Une journée ne te va pas ? <strong>Vois-la heure par heure</strong>, ou demande à Acolite de la <strong>refaire</strong>.</p>
-    ${panProgramme(d)}`;
+    ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}`;
 
   renderSections(d);
   refreshPasses();
@@ -1565,7 +1563,7 @@ function renderPlan(d){
    programme (sinon on perdrait les journées dépliées et les commentaires
    en cours de frappe). */
 function renderSections(d){
-  const panels = { transport: panTransport, logement: panLogement, events: panEvents, budget: panBudget };
+  const panels = { programme: panProgramme, transport: panTransport, logement: panLogement, events: panEvents, budget: panBudget };
   const zone = $('#zoneSections');
   if(!zone) return;
   zone.innerHTML = `
@@ -3710,8 +3708,8 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
 ============================================================ */
 const CHANGELOG = [
   { v:'3.2', date:'2026-07-23', titre:'La page « Ton voyage » remise au clair', items:[
-    '🧳 Ton programme jour par jour est désormais tout en haut, toujours visible',
-    '🎛️ Une barre juste en dessous range les détails : Transport · Logement · Événements · Budget',
+    '🧳 « Ton voyage » ne montre plus que ton trajet en un coup d’œil',
+    '🎛️ Une barre juste en dessous range TOUT le reste : Programme · Logement · Transport · Événements · Budget',
     '🕘 Les boutons d’une journée sont enfin explicites : « Voir heure par heure » et « Refaire ce jour »',
     '🎫 « Réserver » se replie comme « Gérer ce voyage » — la page respire'
   ]},
