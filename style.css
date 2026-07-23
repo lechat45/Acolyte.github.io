@@ -541,17 +541,25 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 
 /* ===== Mini-carte du trajet (en tête de la vue 3) ===== */
 .trip-route{
-  display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:14px 16px;
+  margin:0 0 18px;padding:16px;
   background:var(--secondary);border:3px solid var(--stroke);border-radius:var(--r-md);
   box-shadow:4px 4px 0 var(--stroke);
 }
-.tr-mode{font-size:2rem;line-height:1;flex-shrink:0}
-.tr-body{flex:1;min-width:0}
-.tr-line{display:flex;align-items:center;gap:10px}
-.tr-pt{font-family:'Sora',sans-serif;font-weight:900;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tr-dash{flex:1;min-width:20px;height:0;border-top:3px dashed var(--stroke);opacity:.55}
-.tr-meta{font-size:.72rem;font-weight:800;color:var(--txt-2);letter-spacing:.04em;margin-top:3px}
-.tr-real{margin-top:3px;min-height:1em}
+/* ligne du haut : mode + trajet, bien lisible */
+.tr-top{display:flex;align-items:center;gap:12px}
+.tr-mode{font-size:1.8rem;line-height:1;flex-shrink:0}
+.tr-journey{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.tr-pt{font-family:'Sora',sans-serif;font-weight:900;font-size:1.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-arrow{font-weight:900;color:var(--txt-2);flex-shrink:0}
+.tr-check{flex-shrink:0;font-weight:900;color:var(--ok);font-size:1.1rem}
+/* les infos deviennent des étiquettes distinctes : même contenu, plus clair */
+.tr-facts{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.tr-fact{
+  font:800 .72rem 'Sora',sans-serif;color:var(--txt);white-space:nowrap;
+  padding:4px 10px;background:var(--bg);
+  border:2px solid var(--stroke);border-radius:20px;
+}
+.tr-real{margin-top:10px;min-height:1em}
 
 /* ===== Logements réels ===== */
 .stay-list{margin-top:10px}

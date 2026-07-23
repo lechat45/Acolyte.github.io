@@ -1208,14 +1208,18 @@ Le programme couvre toute la durée (${p.days || 'du séjour'}), 1 ligne par jou
 }
 
 /* --- Événements & festivals aux dates du voyage (light → Groq) --- */
+let _evBusy = false;   /* évite deux recherches simultanées (prefetch + onglet) */
 async function loadEvents(){
-  const zone = $('#zoneEvents'), t = state.trip;
-  if(!zone || !t) return;
+  const t = state.trip;
+  if(!t) return;
+  const zone = $('#zoneEvents');            /* peut être absent : on précharge quand même */
   const d = stayDates();
   const ck = `events_${t.nom}_${d ? d.in : 'flex'}`;
   if(state.cache[ck]){ renderEvents(state.cache[ck]); return; }
+  if(_evBusy) return;
+  _evBusy = true;
   _retryFns.events = loadEvents;
-  zone.innerHTML = loaderHTML('Recherche des événements…');
+  if(zone) zone.innerHTML = loaderHTML('Recherche des événements…');
   const when = d ? `entre le ${d.in} et le ${d.out}` : (state.prefs?.when || 'à la période prévue');
   const prompt = `Tu es Acolite, connaisseur de ${t.nom} (${t.pays}). ${ctx()}
 Liste les ÉVÉNEMENTS marquants à ${t.nom} pendant le séjour (${when}) : festivals, fêtes locales, grands marchés, matchs importants, expositions, ET jours fériés (musées/commerces fermés).
@@ -1225,7 +1229,8 @@ Réponds UNIQUEMENT en JSON : {"events":[{"nom":"...","quand":"date ou période"
     const { data } = await ai('light', prompt);
     state.cache[ck] = data; save();
     renderEvents(data);
-  }catch(e){ if(e.message !== 'NO_KEY') zone.innerHTML = errHTML('Événements indisponibles pour le moment.', 'events'); }
+  }catch(e){ if(e.message !== 'NO_KEY' && zone) zone.innerHTML = errHTML('Événements indisponibles pour le moment.', 'events'); }
+  finally{ _evBusy = false; }
 }
 function renderEvents(data){
   const zone = $('#zoneEvents'); if(!zone) return;
@@ -1275,10 +1280,6 @@ document.addEventListener('click', e => {
   renderPlan(plan);
   toast(`✔ « ${String(ev.nom).slice(0, 28)} » ajouté au jour ${cible.jour}`);
   setTimeout(() => document.querySelector(`[data-daybox="${CSS.escape(String(cible.jour))}"]`)?.closest('.day-block')?.scrollIntoView({ block:'center' }), 120);
-});
-
-document.addEventListener('click', e => {
-  if(e.target.id === 'btnEvents') loadEvents();
 });
 
 /* ============================================================
@@ -1506,11 +1507,15 @@ function panLogement(d){
     <div id="zoneHotels"></div>`;
 }
 
-/* ---- Onglet Événements ---- */
+/* ---- Onglet Événements : plus de bouton, la recherche se fait toute seule
+   pendant l'organisation du voyage (comme les prix réels) ---- */
 function panEvents(){
+  const t = state.trip, d = stayDates();
+  const ck = t ? `events_${t.nom}_${d ? d.in : 'flex'}` : null;
+  const contenu = (ck && state.cache[ck]) ? '' : loaderHTML('Recherche des événements…');
   return `
     <p class="pan-intro">Festivals, fêtes, marchés et jours fériés pendant ton séjour. Ajoute ceux qui te tentent à ton programme.</p>
-    <div id="zoneEvents"><button class="btn sm ghost" id="btnEvents">Voir les événements</button></div>`;
+    <div id="zoneEvents">${contenu}</div>`;
 }
 
 /* ---- Onglet Budget ---- */
@@ -1539,15 +1544,24 @@ function renderPlan(d){
   $('#zonePlan').innerHTML = `
     ${todayHTML()}
 
-    <!-- Bandeau trajet : compact, toujours visible -->
+    <!-- Bandeau trajet : le trajet en haut, les infos en étiquettes claires -->
     <div class="trip-route">
-      <div class="tr-mode">${icons[tr.mode]||'✈️'}</div>
-      <div class="tr-body">
-        <div class="tr-line"><span class="tr-pt">${esc(dep)}</span><span class="tr-dash"></span><span class="tr-pt">${esc(arr)}</span></div>
-        <div class="tr-meta">${esc(String(tr.mode||'').toUpperCase())}${tr.prix_estime ? ` · ${esc(tr.prix_estime)}` : ''}${nuits ? ` · ${nuits} nuit(s)` : ''}${bd.total ? ` · ${esc(String(bd.total))} €/pers` : ''}</div>
-        <div class="tr-real" id="realPrice"></div>
+      <div class="tr-top">
+        <span class="tr-mode">${icons[tr.mode]||'✈️'}</span>
+        <div class="tr-journey">
+          <span class="tr-pt">${esc(dep)}</span>
+          <span class="tr-arrow" aria-hidden="true">→</span>
+          <span class="tr-pt">${esc(arr)}</span>
+        </div>
+        ${d._checked ? `<span class="tr-check" title="Plan relu par une 2ᵉ IA">✔</span>` : ''}
       </div>
-      ${d._checked ? `<span class="tr-check" title="Plan relu par une 2ᵉ IA">✔</span>` : ''}
+      <div class="tr-facts">
+        <span class="tr-fact">${icons[tr.mode]||'✈️'} ${esc(String(tr.mode||'—').toUpperCase())}</span>
+        ${tr.prix_estime ? `<span class="tr-fact">💶 ${esc(tr.prix_estime)}</span>` : ''}
+        ${nuits ? `<span class="tr-fact">🌙 ${nuits} nuit${nuits>1?'s':''}</span>` : ''}
+        ${bd.total ? `<span class="tr-fact">👛 ${esc(String(bd.total))} €/pers</span>` : ''}
+      </div>
+      <div class="tr-real" id="realPrice"></div>
     </div>
 
     ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}`;
@@ -1556,6 +1570,9 @@ function renderPlan(d){
   refreshPasses();
   startWx();
   autoRealPrices(tr.mode);
+  /* on cherche les événements dès l'organisation du voyage : ils sont prêts
+     (en cache) quand l'utilisateur ouvre l'onglet, sans bouton à presser */
+  loadEvents();
 }
 
 /* La barre d'onglets et son panneau, dans leur carte à part sous le voyage.
@@ -1575,6 +1592,7 @@ function renderSections(d){
       <div class="plan-panel">${(panels[_planTab] || panTransport)(d)}</div>
     </div>`;
   if(_planTab === 'logement') loadHotels();
+  if(_planTab === 'events') loadEvents();
 }
 
 /* changement d'onglet : on ne re-rend QUE la barre des détails */
@@ -3707,6 +3725,11 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.3', date:'2026-07-23', titre:'Un bandeau de trajet plus clair et des événements automatiques', items:[
+    '🧭 Le bandeau de ton trajet est redessiné : le départ et l’arrivée en grand, les infos en étiquettes lisibles',
+    '🎉 Plus besoin de cliquer « Voir les événements » : Acolite les cherche dès qu’il organise ton voyage',
+    '➕ Ils sont prêts dans l’onglet Événements, à ajouter à ton programme en un clic'
+  ]},
   { v:'3.2', date:'2026-07-23', titre:'La page « Ton voyage » remise au clair', items:[
     '🧳 « Ton voyage » ne montre plus que ton trajet en un coup d’œil',
     '🎛️ Une barre juste en dessous range TOUT le reste : Programme · Logement · Transport · Événements · Budget',
