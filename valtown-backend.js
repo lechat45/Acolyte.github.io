@@ -13,6 +13,8 @@
         GROQ_KEY          = ta clé gsk_…
         TRAVELPAYOUTS_KEY = ton token
         ALLOWED_ORIGIN    = https://lechat45.github.io
+      Pour le panel admin (sans ça, /admin/stats répond 403 à TOUT LE MONDE) :
+        ADMIN_EMAIL       = l'adresse EXACTE de ton compte Acolite
       Pour les comptes (SANS ÇA, aucune inscription possible) :
         EMAILJS_PUBLIC    = Public Key   (dashboard.emailjs.com/admin/account)
         EMAILJS_PRIVATE   = Private Key  (même page — à ne JAMAIS mettre côté navigateur)
@@ -489,6 +491,87 @@ export default async function (request) {
       const r = await sqlite.execute(`SELECT name, score FROM aco_scores ORDER BY score DESC, at ASC LIMIT 10`);
       const top = (r.rows || []).map(row => ({ name: String(row.name ?? row[0]), score: Number(row.score ?? row[1]) }));
       return json({ top });
+    }
+
+    /* ============================================================
+       PANEL ADMIN — statistiques AGRÉGÉES uniquement.
+       ------------------------------------------------------------
+       Règles de sécurité tenues ici, pas côté navigateur :
+       1. Autorisation serveur : la session doit correspondre EXACTEMENT
+          à ADMIN_EMAIL. Aucun autre compte ne passe.
+       2. Cette route ne renvoie QUE des nombres. Jamais un email, jamais
+          un contenu de voyage, jamais une note. Même une session admin
+          volée ne donnerait accès à aucune donnée personnelle.
+       3. Seuil d'anonymat : une destination comptant moins de K voyages
+          est fondue dans « autres » — sinon « 1 voyage à Reykjavik »
+          désignerait quelqu'un dans une petite base.
+    ============================================================ */
+    if (path === '/admin/stats') {
+      const admin = env('ADMIN_EMAIL').trim().toLowerCase();
+      const email = await sessionEmail(request);
+      /* message identique dans tous les cas de refus : on n'indique jamais
+         si c'est la session ou le droit qui manque */
+      if (!admin || !email || !safeEqual(email, admin)) return json({ error: 'Accès refusé' }, 403);
+
+      const K = 5;                       /* seuil d'anonymat */
+      const now = Date.now(), J7 = now - 7 * 864e5, J30 = now - 30 * 864e5;
+
+      const cnt = async (sql, args = []) => {
+        const r = await sqlite.execute({ sql, args });
+        const row = r.rows?.[0];
+        return row ? Number(row.n ?? row[0]) : 0;
+      };
+      const comptes = {
+        total:      await cnt(`SELECT COUNT(*) AS n FROM aco_users`),
+        verifies:   await cnt(`SELECT COUNT(*) AS n FROM aco_users WHERE verified = 1`),
+        nouveaux7j: await cnt(`SELECT COUNT(*) AS n FROM aco_users WHERE created_at > ?`, [J7]),
+        nouveaux30j:await cnt(`SELECT COUNT(*) AS n FROM aco_users WHERE created_at > ?`, [J30]),
+      };
+
+      /* Agrégation des voyages : on lit les payloads UNIQUEMENT pour compter.
+         Rien de ce qui est lu ici ne sort de cette fonction. */
+      const dest = new Map(), modes = { avion:0, train:0, voiture:0, autre:0 };
+      let voyagesTotal = 0, avecPlan = 0;
+      try {
+        const rows = (await sqlite.execute(`SELECT payload FROM aco_trips`)).rows || [];
+        for (const row of rows) {
+          voyagesTotal++;
+          try {
+            const p = JSON.parse(String(row.payload ?? row[0]));
+            const st = p?.trip || {};
+            const nom = st?.trip?.nom;
+            if (nom) dest.set(String(nom).slice(0, 60), (dest.get(String(nom).slice(0, 60)) || 0) + 1);
+            const m = st?.cache?.plan?.transport?.mode;
+            if (m && modes[m] !== undefined) modes[m]++; else if (m) modes.autre++;
+            if (st?.cache?.plan) avecPlan++;
+          } catch (e) { /* payload illisible : on l'ignore, il ne compte pas */ }
+        }
+      } catch (e) { /* table absente : aucun voyage encore */ }
+
+      /* seuil d'anonymat : en dessous de K, on ne nomme pas la destination */
+      const visibles = [], masquees = { lieux: 0, voyages: 0 };
+      for (const [nom, n] of dest) {
+        if (n >= K) visibles.push({ nom, n });
+        else { masquees.lieux++; masquees.voyages += n; }
+      }
+      visibles.sort((a, b) => b.n - a.n);
+
+      let jeu = [];
+      try {
+        const r = await sqlite.execute(`SELECT name, score FROM aco_scores ORDER BY score DESC LIMIT 10`);
+        jeu = (r.rows || []).map(x => ({ name: String(x.name ?? x[0]).slice(0, 20), score: Number(x.score ?? x[1]) }));
+      } catch (e) {}
+
+      return json({
+        comptes,
+        voyages: { total: voyagesTotal, avecPlan },
+        destinations: visibles.slice(0, 15),
+        destinationsMasquees: masquees,
+        transports: modes,
+        jeu,
+        seuil: K,
+        genere: now,
+      });
     }
 
     if (path === '/gemini/models') {

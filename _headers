@@ -3,6 +3,11 @@
 # (le service worker sert la version en cache en secours hors-ligne)
 /index.html
   Cache-Control: no-cache
+
+# Panel admin : jamais mis en cache, jamais indexé
+/admin.html
+  Cache-Control: no-store
+  X-Robots-Tag: noindex, nofollow
 /*.js
   Cache-Control: no-cache
 /*.css

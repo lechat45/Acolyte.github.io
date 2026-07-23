@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Page volontairement invisible des moteurs et jamais mise en cache :
+     elle n'est PAS dans la liste SHELL de sw.js, donc toujours chargée
+     depuis le réseau (jamais de chiffres périmés servis hors-ligne). -->
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.val.run https://*.workers.dev https://*.deno.dev; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>Acolite — Statistiques</title>
+<style>
+  :root{--bg:#F4F3EF;--card:#fff;--ink:#000;--muted:#2A2A2A;--primary:#FFE600;--danger:#EF4444;--ok:#22C55E}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);
+    padding:24px 16px 60px;min-height:100vh;
+    background-image:radial-gradient(rgba(0,0,0,.1) 1.5px,transparent 1.5px);background-size:18px 18px}
+  .wrap{max-width:860px;margin:0 auto}
+  header{background:var(--primary);border:3px solid var(--ink);box-shadow:5px 5px 0 var(--ink);
+    padding:16px 20px;margin-bottom:22px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  h1{font-size:1.4rem;letter-spacing:-.02em;text-transform:uppercase}
+  .sub{font-size:.8rem;font-weight:600;opacity:.75}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
+  .stat{background:var(--card);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);padding:14px 16px;border-radius:4px}
+  .stat .k{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);opacity:.8}
+  .stat .v{font-size:1.9rem;font-weight:900;line-height:1.1;margin-top:4px}
+  .card{background:var(--card);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);
+    padding:18px;margin-bottom:18px;border-radius:4px}
+  .card h2{font-size:1rem;text-transform:uppercase;margin-bottom:10px;border-bottom:3px solid var(--ink);
+    padding-bottom:5px;display:inline-block}
+  .row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.08)}
+  .row:last-child{border-bottom:0}
+  .row .n{margin-left:auto;font-weight:900}
+  .bar{height:8px;background:var(--bg);border:2px solid var(--ink);border-radius:5px;overflow:hidden;flex:1;max-width:220px}
+  .bar i{display:block;height:100%;background:var(--primary);border-right:2px solid var(--ink)}
+  .note{font-size:.8rem;color:var(--muted);line-height:1.55;margin-top:10px}
+  .msg{background:var(--card);border:3px solid var(--ink);box-shadow:5px 5px 0 var(--ink);
+    padding:26px;text-align:center;border-radius:4px}
+  .msg.err{background:var(--danger);color:#fff}
+  .msg h2{font-size:1.1rem;margin-bottom:8px;text-transform:uppercase}
+  .msg p{font-size:.9rem;line-height:1.6}
+  .hidden{display:none}
+  button{font:inherit;font-weight:800;cursor:pointer;background:var(--card);color:var(--ink);
+    border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:9px 16px;border-radius:4px}
+  button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>📊 Acolite — Statistiques</h1>
+      <div class="sub" id="stamp">Chargement…</div>
+    </div>
+    <button id="refresh">↻ Actualiser</button>
+  </header>
+
+  <div id="state" class="msg"><h2>Vérification…</h2><p>Lecture de ta session.</p></div>
+  <div id="panel" class="hidden"></div>
+</div>
+
+<script src="config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
