@@ -1432,23 +1432,24 @@ function todayHTML(){
    VUE « TON VOYAGE » — une barre d'onglets, un panneau à la fois.
    Fini le mur qui défile : chaque écran tient et se lit d'un coup.
 ============================================================ */
-let _planTab = 'programme';                     /* onglet actif, mémorisé entre les rendus */
+let _planTab = 'transport';                     /* onglet actif, mémorisé entre les rendus */
 const _openDays = new Set();                    /* journées dépliées : survivent au changement d'onglet */
 const _comDrafts = {};                          /* commentaires en cours de frappe, par journée */
+/* Le programme jour par jour n'est plus un onglet : c'est le cœur de la vue,
+   toujours affiché. Les onglets ne portent plus que les détails. */
 const PLAN_TABS = [
-  { id:'programme', ico:'📆', nom:'Programme' },
+  { id:'transport', ico:'🚆', nom:'Transport' },
   { id:'logement',  ico:'🏨', nom:'Logement'  },
   { id:'events',    ico:'🎉', nom:'Événements'},
-  { id:'infos',     ico:'💶', nom:'Budget' }
+  { id:'budget',    ico:'💶', nom:'Budget' }
 ];
 
 /* ---- Panneau 1 : le programme jour par jour ---- */
+/* ---- Le programme jour par jour : cœur de la vue, toujours affiché ---- */
 function panProgramme(d){
   const jours = d.programme || [];
   if(!jours.length) return `<p class="hint">Aucune journée planifiée pour l'instant.</p>`;
-  return `
-    <p class="pan-intro">Une journée ne te va pas ? <strong>🕘</strong> la détaille heure par heure, <strong>🔄</strong> la refait entièrement.</p>
-    ${jours.map(jr => `
+  return jours.map(jr => `
       <div class="day-block">
         <div class="day-row">
           <span class="day-num">J${esc(String(jr.jour))}</span>
@@ -1457,10 +1458,10 @@ function panProgramme(d){
             ${jr.base ? `<span class="day-base">📍 ${esc(jr.base)}</span>` : ''}
             ${(jr.lieux||[]).length ? `<p>${jr.lieux.map(esc).join(' · ')}</p>` : ''}
           </div>
-          <div class="day-acts">
-            <button class="ico-btn" data-daydetail="${esc(String(jr.jour))}" title="Détailler heure par heure">🕘</button>
-            <button class="ico-btn" data-planb="${esc(String(jr.jour))}" title="Refaire cette journée">🔄</button>
-          </div>
+        </div>
+        <div class="day-acts">
+          <button class="day-act" data-daydetail="${esc(String(jr.jour))}">🕘 Voir heure par heure</button>
+          <button class="day-act" data-planb="${esc(String(jr.jour))}">🔄 Refaire ce jour</button>
         </div>
         ${state.cache.maps?.[jr.jour] ? `<img class="daymap" src="${state.cache.maps[jr.jour]}" alt="Carte du jour ${esc(String(jr.jour))}">` : ''}
         ${collabBarHTML(jr.jour)}
@@ -1470,10 +1471,25 @@ function panProgramme(d){
           return `<div class="day-detail" data-daybox="${esc(String(jr.jour))}" data-open="${ouvert ? '1' : '0'}">${
             ouvert ? timelineHTML(state.cache.days[jr.jour]) : ''}</div>`;
         })()}
-      </div>`).join('')}`;
+      </div>`).join('');
 }
 
-/* ---- Panneau 2 : le logement ---- */
+/* ---- Onglet Transport ---- */
+function panTransport(d){
+  const tr = d.transport || {};
+  const icons = { avion:'✈️', train:'🚆', voiture:'🚗' };
+  return `
+    <div class="info-card">
+      <div class="ic-head"><span>${icons[tr.mode]||'✈️'}</span><h4>Pourquoi ${esc(tr.mode||'ce transport')} ?</h4>${tr.prix_estime ? `<b>${esc(tr.prix_estime)}</b>` : ''}</div>
+      <p>${esc(tr.pourquoi || '—')}</p>
+      ${tr.details ? `<p class="ic-note">${esc(tr.details)}</p>` : ''}
+    </div>
+    ${d.sur_place ? `<div class="info-card">
+      <div class="ic-head"><span>🚇</span><h4>Se déplacer sur place</h4></div><p>${esc(d.sur_place)}</p></div>` : ''}
+    ${carbonHTML(tr.mode)}`;
+}
+
+/* ---- Onglet Logement ---- */
 function panLogement(d){
   const lg = d.logement || {};
   return `
@@ -1488,36 +1504,27 @@ function panLogement(d){
     <div id="zoneHotels"></div>`;
 }
 
-/* ---- Panneau 3 : les événements ---- */
+/* ---- Onglet Événements ---- */
 function panEvents(){
   return `
     <p class="pan-intro">Festivals, fêtes, marchés et jours fériés pendant ton séjour. Ajoute ceux qui te tentent à ton programme.</p>
     <div id="zoneEvents"><button class="btn sm ghost" id="btnEvents">Voir les événements</button></div>`;
 }
 
-/* ---- Panneau 4 : budget, transport détaillé, sur place, à réserver ---- */
-function panInfos(d){
-  const tr = d.transport || {}, bd = d.budget || {}, lg = d.logement || {};
-  const icons = { avion:'✈️', train:'🚆', voiture:'🚗' };
+/* ---- Onglet Budget ---- */
+function panBudget(d){
+  const bd = d.budget || {};
   const A = (state.prefs?.adults||1) + (state.prefs?.kids||0);
   const btNum = parseInt((String(bd.total).replace(/\s/g,'').match(/\d+/)||[])[0], 10) || 0;
   return `
     <div class="info-card">
-      <div class="ic-head"><span>💶</span><h4>Budget</h4><b>${esc(String(bd.total||'?'))} € / pers.</b></div>
+      <div class="ic-head"><span>💶</span><h4>Budget estimé</h4><b>${esc(String(bd.total||'?'))} € / pers.</b></div>
       ${A > 1 && btNum ? `<p class="ic-note">${btNum * A} € au total pour ${A} personnes</p>` : ''}
       ${bd.repartition ? `<p>${esc(bd.repartition)}</p>` : ''}
     </div>
-    <div class="info-card">
-      <div class="ic-head"><span>${icons[tr.mode]||'✈️'}</span><h4>Pourquoi ${esc(tr.mode||'ce transport')}</h4></div>
-      <p>${esc(tr.pourquoi || '—')}</p>
-      ${tr.details ? `<p class="ic-note">${esc(tr.details)}</p>` : ''}
-    </div>
-    ${d.sur_place ? `<div class="info-card">
-      <div class="ic-head"><span>🚇</span><h4>Se déplacer sur place</h4></div><p>${esc(d.sur_place)}</p></div>` : ''}
     ${(d.a_reserver||[]).length ? `<div class="info-card">
       <div class="ic-head"><span>🎟️</span><h4>À réserver tôt</h4></div>
-      ${d.a_reserver.map(r=>`<p class="ic-todo">${esc(r)}</p>`).join('')}</div>` : ''}
-    ${carbonHTML(tr.mode)}`;
+      ${d.a_reserver.map(r=>`<p class="ic-todo">${esc(r)}</p>`).join('')}</div>` : ''}`;
 }
 
 function renderPlan(d){
@@ -1527,8 +1534,6 @@ function renderPlan(d){
   const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : null;
   const dep = cleanPlace(state.prefs?.from || '') || 'Départ';
   const arr = String(state.trip?.nom || '').split('→').pop().trim() || '—';
-  const panels = { programme: panProgramme, logement: panLogement, events: panEvents, infos: panInfos };
-
   $('#zonePlan').innerHTML = `
     ${todayHTML()}
 
@@ -1545,24 +1550,40 @@ function renderPlan(d){
 
     ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}
 
-    <!-- Onglets : un seul panneau affiché à la fois -->
-    <div class="plan-tabs" role="tablist">
-      ${PLAN_TABS.map(t => `<button class="plan-tab${t.id === _planTab ? ' on' : ''}" data-plantab="${t.id}" role="tab" aria-selected="${t.id === _planTab}">
-        <span>${t.ico}</span>${esc(t.nom)}</button>`).join('')}
-    </div>
-    <div class="plan-panel">${(panels[_planTab] || panProgramme)(d)}</div>`;
+    <!-- Le programme : le cœur, toujours affiché -->
+    <p class="pan-intro">Ton programme jour par jour. Une journée ne te va pas ? <strong>Vois-la heure par heure</strong>, ou demande à Acolite de la <strong>refaire</strong>.</p>
+    ${panProgramme(d)}`;
 
+  renderSections(d);
   refreshPasses();
   startWx();
   autoRealPrices(tr.mode);
+}
+
+/* La barre d'onglets et son panneau, dans leur carte à part sous le voyage.
+   Séparé de renderPlan pour qu'un changement d'onglet ne re-rende JAMAIS le
+   programme (sinon on perdrait les journées dépliées et les commentaires
+   en cours de frappe). */
+function renderSections(d){
+  const panels = { transport: panTransport, logement: panLogement, events: panEvents, budget: panBudget };
+  const zone = $('#zoneSections');
+  if(!zone) return;
+  zone.innerHTML = `
+    <div class="card sections-card">
+      <div class="plan-tabs" role="tablist" aria-label="Détails du voyage">
+        ${PLAN_TABS.map(t => `<button class="plan-tab${t.id === _planTab ? ' on' : ''}" data-plantab="${t.id}" role="tab" aria-selected="${t.id === _planTab}">
+          <span>${t.ico}</span>${esc(t.nom)}</button>`).join('')}
+      </div>
+      <div class="plan-panel">${(panels[_planTab] || panTransport)(d)}</div>
+    </div>`;
   if(_planTab === 'logement') loadHotels();
 }
 
-/* changement d'onglet : on ne re-rend que le plan, l'onglet reste mémorisé */
+/* changement d'onglet : on ne re-rend QUE la barre des détails */
 function goPlanTab(id, focus){
   if(!state.cache.plan) return;
   _planTab = id;
-  renderPlan(state.cache.plan);
+  renderSections(state.cache.plan);
   if(focus) $(`[data-plantab="${id}"]`)?.focus();
 }
 document.addEventListener('click', e => {
@@ -3529,16 +3550,44 @@ async function srvFetch(path, { method = 'GET', body = null, auth = false } = {}
   }
 }
 
-/* --- Synchronisation des voyages --- */
+/* --- Synchronisation des voyages ---
+   On n'envoie PAS l'état brut : state.cache.maps contient les cartes
+   hors-ligne en JPEG base64 (des centaines de Ko), qui feraient dépasser
+   la limite du serveur — le voyage ne serait alors jamais enregistré.
+   Ces images se régénèrent sur l'autre appareil ; on ne synchronise que
+   ce qui ne se recalcule pas : le voyage et ce que l'IA a produit. */
+function slimTrip(){
+  const { cache, ...rest } = state || {};
+  const c = cache || {};
+  return {
+    ...rest,
+    cache: {                       /* on garde le fruit du raisonnement IA… */
+      plan: c.plan, _real: c._real, hotels: c.hotels,
+      events: c.events, transport: c.transport,
+    },                             /* …mais jamais les images (maps, postcard) */
+  };
+}
+function histLocal(){
+  try{ return JSON.parse(localStorage.getItem(LS_HIST)) || []; }catch(e){ return []; }
+}
 function syncPayload(){
-  return { trip: state, history: (() => { try{ return JSON.parse(localStorage.getItem('acolite_history')) || []; }catch(e){ return []; } })() };
+  return { trip: slimTrip(), history: histLocal() };
 }
 let _syncT = null;
+let _syncWarned = false;   /* on ne prévient qu'une fois par session */
 function pushSync(){
   if(!authToken()) return;
   clearTimeout(_syncT);                       /* on groupe les rafales de save() */
   _syncT = setTimeout(async () => {
-    await srvFetch('/sync', { method:'POST', body:{ payload: syncPayload() }, auth:true });
+    const r = await srvFetch('/sync', { method:'POST', body:{ payload: syncPayload() }, auth:true });
+    /* un échec de synchro ne doit pas passer inaperçu : c'est ce qui nous
+       avait fait croire que « ça marche » alors que le serveur refusait */
+    if(!r.ok && !_syncWarned){
+      _syncWarned = true;
+      toast(r.status === 413
+        ? '⚠️ Voyage trop lourd pour la synchro — il reste sur cet appareil'
+        : '⚠️ Synchronisation en pause — tes voyages restent sur cet appareil');
+    }else if(r.ok){ _syncWarned = false; }
   }, 1500);
 }
 /* Première connexion : si le compte est vide et que l'appareil a des voyages,
@@ -3554,8 +3603,22 @@ async function pullSync(){
     if(!localVide) await srvFetch('/sync', { method:'POST', body:{ payload: syncPayload() }, auth:true });
     return;
   }
-  if(dist.trip) { state = dist.trip; save(); }
-  if(Array.isArray(dist.history)) lsSet('acolite_history', JSON.stringify(dist.history));
+  if(dist.trip){
+    /* on greffe le voyage distant en gardant les images déjà présentes
+       sur CET appareil (cartes hors-ligne) : elles ne voyagent pas, mais
+       si elles sont là, autant les conserver */
+    const localMaps = state.cache?.maps;
+    state = dist.trip;
+    if(localMaps){ state.cache = state.cache || {}; state.cache.maps = localMaps; }
+    save();
+  }
+  if(Array.isArray(dist.history)) lsSet(LS_HIST, JSON.stringify(dist.history));
+  /* on ré-affiche ce qui vient d'arriver, comme au démarrage */
+  try{
+    renderGallery();
+    if(state.lastProps) renderDestinations(state.lastProps);
+    if(state.step > 1) gotoStep(Math.min(state.step, 3));
+  }catch(e){}
 }
 
 
@@ -3646,6 +3709,16 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.2', date:'2026-07-23', titre:'La page « Ton voyage » remise au clair', items:[
+    '🧳 Ton programme jour par jour est désormais tout en haut, toujours visible',
+    '🎛️ Une barre juste en dessous range les détails : Transport · Logement · Événements · Budget',
+    '🕘 Les boutons d’une journée sont enfin explicites : « Voir heure par heure » et « Refaire ce jour »',
+    '🎫 « Réserver » se replie comme « Gérer ce voyage » — la page respire'
+  ]},
+  { v:'3.1', date:'2026-07-23', titre:'La synchronisation des voyages fonctionne', items:[
+    '☁️ Tes voyages remontent bien sur ton compte, même les gros — seules les cartes hors-ligne restent sur chaque appareil (elles se refont toutes seules)',
+    '🔔 Si la synchro échoue, tu es prévenu au lieu de le découvrir trop tard'
+  ]},
   { v:'3.0', date:'2026-07-23', titre:'Ton compte te suit sur tous tes appareils', items:[
     '☁️ Tes voyages sont enregistrés sur ton compte — retrouve-les sur ton téléphone comme sur ton ordinateur',
     '🔐 Ton mot de passe n’est plus jamais stocké en clair, et ton code de vérification arrive par email',

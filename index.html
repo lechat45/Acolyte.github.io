@@ -156,26 +156,31 @@
   <section class="view hidden" id="view3">
     <div id="passSlot3"></div>
 
-    <!-- 1 · Le plan construit par l'IA -->
+    <!-- 1 · Le voyage : trajet + conseil + programme jour par jour -->
     <div class="card">
       <h2>Ton voyage 🧳</h2>
-      <p class="sub">Le transport, le logement, le budget et le programme — construits par Acolite.</p>
+      <p class="sub">Ton programme jour par jour, construit par Acolite. Les détails sont juste en dessous.</p>
       <div id="zonePlan"></div>
     </div>
 
-    <!-- 2 · Passer à l'action -->
-    <div class="card" id="cardResa">
-      <h3 style="margin:0 0 4px">🎫 Réserver</h3>
-      <p class="sub" style="margin:0 0 12px">Tous les liens de réservation, déjà pré-remplis avec ta destination et tes dates.</p>
-      <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
-      <div class="btn-duo" style="margin-top:10px">
-        <button class="btn ghost sm" id="btnDossier">📄 Carnet (PDF)</button>
-        <button class="btn ghost sm" id="btnMaps">🗺️ Cartes hors-ligne</button>
+    <!-- 2 · Les détails, rangés par catégorie (barre rendue par le JS) -->
+    <div id="zoneSections"></div>
+
+    <!-- 3 · Réserver (replié : on n'y va qu'au moment de réserver) -->
+    <div class="acc" id="accResa">
+      <div class="acc-head" data-acc>🎫 RÉSERVER <span class="arr">›</span></div>
+      <div class="acc-body">
+        <p class="sub" style="margin:0 0 12px">Tous les liens de réservation, déjà pré-remplis avec ta destination et tes dates.</p>
+        <button class="btn" id="btnOpenResa" style="width:100%;justify-content:center">🎫 Réserver — billets, hôtels, activités</button>
+        <div class="btn-duo" style="margin-top:10px">
+          <button class="btn ghost sm" id="btnDossier">📄 Carnet (PDF)</button>
+          <button class="btn ghost sm" id="btnMaps">🗺️ Cartes hors-ligne</button>
+        </div>
+        <p class="hint" style="margin:8px 0 0">✈️ Avant le décollage : télécharge le carnet PDF et prépare les <strong>cartes de chaque journée</strong> — tout reste consultable <strong>sans connexion</strong>.</p>
       </div>
-      <p class="hint" style="margin:8px 0 0">✈️ Avant le décollage : télécharge le carnet PDF (plan + n° de réservation) et prépare les <strong>cartes de chaque journée</strong> — tout reste consultable <strong>sans connexion</strong>, réseau coupé ou pas.</p>
     </div>
 
-    <!-- 3 · Gestion du voyage (replié : actions rares) -->
+    <!-- 4 · Gestion du voyage (replié : actions rares) -->
     <div class="acc" id="accManage">
       <div class="acc-head" data-acc>🧰 GÉRER CE VOYAGE <span class="arr">›</span></div>
       <div class="acc-body">

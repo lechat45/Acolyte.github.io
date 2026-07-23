@@ -570,25 +570,34 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .key-tip p{margin:0;color:#101010;font-weight:800;font-size:.92rem;line-height:1.45}
 
 /* --- barre d'onglets --- */
+/* La carte des détails : posée sous « Ton voyage », elle donne à la barre
+   d'onglets sa présence propre — c'est « la barre en dessous du voyage ». */
+.sections-card{padding-top:8px}
 .plan-tabs{
   display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;
-  padding:4px;margin:0 0 14px;background:var(--bg);
+  padding:5px;margin:0 0 18px;background:var(--bg);
   border:3px solid var(--stroke);border-radius:14px;
+  box-shadow:3px 3px 0 var(--stroke);
 }
 .plan-tabs::-webkit-scrollbar{display:none}
 .plan-tab{
   flex:1;min-width:max-content;white-space:nowrap;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:6px;
-  padding:10px 14px;border:0;border-radius:10px;background:transparent;
-  font:900 .78rem 'Sora',sans-serif;color:var(--txt-2);
+  display:flex;align-items:center;justify-content:center;gap:7px;
+  padding:11px 14px;border:2px solid transparent;border-radius:10px;background:transparent;
+  font:900 .8rem 'Sora',sans-serif;color:var(--txt-2);
+  transition:color .12s ease, background .12s ease;
 }
-.plan-tab span{font-size:1rem;line-height:1}
-.plan-tab.on{background:var(--primary);color:#101010;box-shadow:2px 2px 0 var(--stroke)}
+.plan-tab span{font-size:1.05rem;line-height:1}
+.plan-tab:not(.on):hover{color:var(--txt);background:var(--secondary)}
+.plan-tab.on{
+  background:var(--primary);color:#101010;
+  border-color:var(--stroke);box-shadow:2px 2px 0 var(--stroke);
+}
 /* mobile : icône au-dessus du mot → les 4 onglets tiennent sans défilement */
 @media(max-width:460px){
-  .plan-tabs{gap:4px;padding:3px}
-  .plan-tab{flex-direction:column;gap:2px;padding:7px 4px;font-size:.62rem;min-width:0}
-  .plan-tab span{font-size:1.05rem}
+  .plan-tabs{gap:4px;padding:4px}
+  .plan-tab{flex-direction:column;gap:3px;padding:8px 4px;font-size:.64rem;min-width:0}
+  .plan-tab span{font-size:1.15rem}
 }
 .plan-panel{animation:pop .25s ease both}
 .pan-intro{font-size:.82rem;font-weight:600;color:var(--txt-2);line-height:1.5;margin:0 0 14px}
@@ -618,11 +627,24 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .day-txt p{margin:4px 0 0;font-size:.79rem;color:var(--txt-2);font-weight:600;line-height:1.45}
 .day-base{display:inline-block;margin-top:4px;font-size:.66rem;font-weight:800;
   background:var(--accent-cyan);color:#101010;padding:1px 7px;border:1.5px solid var(--stroke);border-radius:8px}
-.day-acts{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+/* Actions d'une journée : deux boutons EXPLICITES sous le résumé, plutôt
+   que des icônes muettes serrées à droite qu'on ne comprenait pas. */
+.day-acts{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 0}
+.day-act{
+  flex:1;min-width:140px;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  font:800 .8rem 'Sora',sans-serif;color:var(--txt);cursor:pointer;
+  padding:9px 12px;background:var(--bg);
+  border:2px solid var(--stroke);border-radius:9px;box-shadow:2px 2px 0 var(--stroke);
+  transition:transform .1s ease, box-shadow .1s ease, background .1s ease;
+}
+.day-act:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--stroke);background:var(--card-hover)}
+.day-act:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--stroke)}
+/* .ico-btn : conservé pour les autres écrans qui l'utilisent encore */
 .ico-btn{width:36px;height:36px;display:grid;place-items:center;cursor:pointer;font-size:1rem;
   background:var(--bg);border:2px solid var(--stroke);border-radius:9px;box-shadow:2px 2px 0 var(--stroke)}
 .ico-btn:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--stroke)}
-.day-block{margin-bottom:14px}
+.day-block{margin-bottom:18px}
 
 /* --- panneau Budget & infos --- */
 .info-card{padding:13px 15px;margin-bottom:11px;background:var(--secondary);
