@@ -441,6 +441,43 @@ document.querySelectorAll('.logo-mark').forEach(el => {
   el.innerHTML = mascotSVG();
   el.setAttribute('aria-hidden', 'true');
 });
+
+/* ---- La mascotte prend vie ----
+   Clic → elle saute. Et de temps en temps, à intervalle ALÉATOIRE, une
+   mascotte visible réagit toute seule (pirouette, saut, sursaut) : c'est ce
+   qui la rend imprévisible plutôt que mécanique. Tout est coupé si
+   l'utilisateur a demandé de réduire les animations. */
+const MASCOT_REACTIONS = ['m-hop', 'm-spin', 'm-wiggle'];
+function motionOff(){
+  return document.documentElement.classList.contains('no-motion')
+      || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+function mascotReact(m, cls){
+  if(!m || motionOff()) return;
+  MASCOT_REACTIONS.forEach(c => m.classList.remove(c));
+  void m.offsetWidth;                     /* redémarre l'animation même si déjà jouée */
+  m.classList.add(cls);
+  m.addEventListener('animationend', () => m.classList.remove(cls), { once:true });
+}
+/* clic : saut, où que soit la mascotte (logo, chargements…) */
+document.addEventListener('click', e => {
+  const m = e.target.closest?.('.mascot');
+  if(m) mascotReact(m, 'm-hop');
+});
+/* vie spontanée : une réaction au hasard, à un moment au hasard */
+(function mascotLife(){
+  const wait = 4000 + Math.random() * 6000;        /* entre 4 et 10 s */
+  setTimeout(() => {
+    if(!motionOff()){
+      const vis = [...document.querySelectorAll('.mascot')].filter(m => m.getClientRects().length);
+      if(vis.length){
+        const m = vis[Math.floor(Math.random() * vis.length)];
+        mascotReact(m, MASCOT_REACTIONS[Math.floor(Math.random() * MASCOT_REACTIONS.length)]);
+      }
+    }
+    mascotLife();                                   /* on relance avec un nouveau délai */
+  }, wait);
+})();
 /* errHTML(msg, retryId?) : si un retryId est fourni ET enregistré dans _retryFns,
    un bouton « Réessayer » relance l'action fautive. */
 const _retryFns = {};
@@ -721,13 +758,18 @@ function pushHistory(t){
 }
 
 /* --- Galerie « Mes voyages » : reprendre un voyage déjà exploré --- */
+let _galExpanded = false;   /* affiche-t-on TOUS les voyages, ou les 3 premiers ? */
 function renderGallery(){
   const box = $('#galleryList'), card = $('#tripGallery');
   if(!box || !card) return;
   const h = getHistory().slice().reverse();
   if(!h.length){ card.hidden = true; box.innerHTML = ''; return; }
   card.hidden = false;
-  box.innerHTML = h.map((x, i) => `
+  /* au-delà de 3 voyages, on n'en montre que 3 — un bouton déplie le reste */
+  const LIMITE = 3;
+  const trop = h.length > LIMITE;
+  const visibles = (trop && !_galExpanded) ? h.slice(0, LIMITE) : h;
+  box.innerHTML = visibles.map((x, i) => `
     <div class="gal">
       <div class="gal-flag">${esc(x.drapeau || '📍')}</div>
       <div class="gal-info">
@@ -735,8 +777,13 @@ function renderGallery(){
         <span>${esc(x.pays || '')}${x.budget_estime ? ' · ' + esc(x.budget_estime) : ''}</span>
       </div>
       <button class="btn sm ghost gal-open" data-gi="${i}">${x.trip ? 'Rouvrir →' : 'Reproposer'}</button>
-    </div>`).join('');
+    </div>`).join('')
+    + (trop ? `<button class="btn ghost sm gal-toggle" id="galToggle">${
+        _galExpanded ? '▲ Afficher moins' : `▼ Voir tous mes voyages (${h.length})`}</button>` : '');
 }
+document.addEventListener('click', e => {
+  if(e.target.id === 'galToggle'){ _galExpanded = !_galExpanded; renderGallery(); }
+});
 function reopenTrip(i){
   const x = getHistory().slice().reverse()[i];
   if(!x) return;
@@ -1450,8 +1497,11 @@ const PLAN_TABS = [
 /* ---- Le programme jour par jour : cœur de la vue, toujours affiché ---- */
 function panProgramme(d){
   const jours = d.programme || [];
-  if(!jours.length) return `<p class="hint">Aucune journée planifiée pour l'instant.</p>`;
-  return `<p class="pan-intro">Ton programme jour par jour. Une journée ne te va pas ? <strong>Vois-la heure par heure</strong>, ou demande à Acolite de la <strong>refaire</strong>.</p>`
+  /* le conseil clé, remonté ici depuis l'ancienne carte « Ton voyage » */
+  const tip = d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : '';
+  if(!jours.length) return tip + `<p class="hint">Aucune journée planifiée pour l'instant.</p>`;
+  return tip
+    + `<p class="pan-intro">Ton programme jour par jour. Une journée ne te va pas ? <strong>Vois-la heure par heure</strong>, ou demande à Acolite de la <strong>refaire</strong>.</p>`
     + jours.map(jr => `
       <div class="day-block">
         <div class="day-row">
@@ -1482,6 +1532,7 @@ function panTransport(d){
   const tr = d.transport || {};
   const icons = { avion:'✈️', train:'🚆', voiture:'🚗' };
   return `
+    ${tripRouteHTML(d)}
     <div class="info-card">
       <div class="ic-head"><span>${icons[tr.mode]||'✈️'}</span><h4>Pourquoi ${esc(tr.mode||'ce transport')} ?</h4>${tr.prix_estime ? `<b>${esc(tr.prix_estime)}</b>` : ''}</div>
       <p>${esc(tr.pourquoi || '—')}</p>
@@ -1534,17 +1585,17 @@ function panBudget(d){
       ${d.a_reserver.map(r=>`<p class="ic-todo">${esc(r)}</p>`).join('')}</div>` : ''}`;
 }
 
-function renderPlan(d){
+/* Le bandeau de trajet : il vit désormais en tête de l'onglet Transport
+   (la carte « Ton voyage » a été retirée). #realPrice y est rempli par
+   autoRealPrices dès que l'onglet Transport s'affiche. */
+function tripRouteHTML(d){
   const icons = { avion:'✈️', train:'🚆', voiture:'🚗' };
   const tr = d.transport || {}, bd = d.budget || {};
   const dts = stayDates();
   const nuits = dts ? Math.max(1, Math.round((new Date(dts.out) - new Date(dts.in)) / 86400000)) : null;
   const dep = cleanPlace(state.prefs?.from || '') || 'Départ';
   const arr = String(state.trip?.nom || '').split('→').pop().trim() || '—';
-  $('#zonePlan').innerHTML = `
-    ${todayHTML()}
-
-    <!-- Bandeau trajet : le trajet en haut, les infos en étiquettes claires -->
+  return `
     <div class="trip-route">
       <div class="tr-top">
         <span class="tr-mode">${icons[tr.mode]||'✈️'}</span>
@@ -1562,14 +1613,16 @@ function renderPlan(d){
         ${bd.total ? `<span class="tr-fact">👛 ${esc(String(bd.total))} €/pers</span>` : ''}
       </div>
       <div class="tr-real" id="realPrice"></div>
-    </div>
+    </div>`;
+}
 
-    ${d.conseil_cle ? `<div class="key-tip"><span class="kt-emo">💡</span><p>${esc(d.conseil_cle)}</p></div>` : ''}`;
-
+function renderPlan(d){
+  /* #zonePlan ne porte plus que l'encart « aujourd'hui » (vide hors séjour) :
+     le trajet est passé dans l'onglet Transport, le conseil dans Programme. */
+  const zp = $('#zonePlan'); if(zp) zp.innerHTML = todayHTML();
   renderSections(d);
   refreshPasses();
   startWx();
-  autoRealPrices(tr.mode);
   /* on cherche les événements dès l'organisation du voyage : ils sont prêts
      (en cache) quand l'utilisateur ouvre l'onglet, sans bouton à presser */
   loadEvents();
@@ -1593,6 +1646,10 @@ function renderSections(d){
     </div>`;
   if(_planTab === 'logement') loadHotels();
   if(_planTab === 'events') loadEvents();
+  /* le bandeau trajet (avec #realPrice) est dans l'onglet Transport : on
+     déclenche le prix réel quand cet onglet s'affiche. On passe le mode DU
+     PLAN (avion/train/voiture), pas state.mode qui a un autre vocabulaire. */
+  if(_planTab === 'transport') autoRealPrices(d.transport?.mode);
 }
 
 /* changement d'onglet : on ne re-rend QUE la barre des détails */
@@ -1961,6 +2018,9 @@ const _e2 = $('#btnOpenSim'); if(_e2) _e2.onclick = () => {
   loadTransport();
 };
 document.addEventListener('click', e => {
+  /* la barrière de confidentialité obligatoire ne se ferme NI par la croix
+     (absente) NI par un clic sur le fond : il faut accepter */
+  if(_privacyGate && e.target.closest('#ovPrivacy')) return;
   const c = e.target.closest('[data-close]');
   if(c){ $('#' + c.dataset.close).classList.remove('show'); return; }
   if(e.target.classList?.contains('overlay')) e.target.classList.remove('show');
@@ -3656,6 +3716,8 @@ const _e20 = $('#btnSignup'); if(_e20) _e20.onclick = async () => {
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return authErr('Adresse email invalide.');
   if(p1.length < 8) return authErr('Mot de passe : 8 caractères minimum.');
   if(p1 !== p2) return authErr('Les deux mots de passe ne correspondent pas.');
+  if(!$('#auPrivacy')?.checked) return authErr('Merci d’accepter la politique de confidentialité.');
+  lsSet(LS_PRIVACY, PRIVACY_VERSION);           /* acceptation enregistrée */
   authErr(''); authWait(_e20, true);
   const r = await srvFetch('/auth/signup', { method:'POST', body:{ email, password:p1 } });
   authWait(_e20, false);
@@ -3717,7 +3779,13 @@ const _e23 = $('#btnLogin'); if(_e23) _e23.onclick = async () => {
   toast('Re-bonjour ' + email.split('@')[0] + ' 👋');
 };
 
-function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); renderSettings(); renderGallery(); showOnboard(); checkNews(); }
+function enterApp(){
+  $('#authWrap').classList.add('hidden');
+  /* si la politique a changé depuis la dernière acceptation, on la redemande
+     avant tout le reste */
+  if(!requirePrivacy()) return;
+  renderProfile(); renderSettings(); renderGallery(); showOnboard(); checkNews();
+}
 
 /* ============================================================
    NOUVEAUTÉS — journal des mises à jour.
@@ -3725,6 +3793,13 @@ function enterApp(){ $('#authWrap').classList.add('hidden'); renderProfile(); re
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'3.4', date:'2026-07-23', titre:'Mascotte joueuse, confidentialité et page épurée', items:[
+    '🌍 Clique sur la mascotte : elle saute ! Et elle réagit toute seule de temps en temps',
+    '🔒 Une politique de confidentialité claire, à accepter à la création du compte',
+    '🧳 Dans « Mes voyages », un bouton déplie tous tes voyages au-delà de trois',
+    '🧹 Page « Ton voyage » épurée : le trajet passe dans l’onglet Transport, le conseil dans Programme',
+    '🧭 Le bandeau de trajet est plus lisible : départ, arrivée et infos en étiquettes'
+  ]},
   { v:'3.3', date:'2026-07-23', titre:'Un bandeau de trajet plus clair et des événements automatiques', items:[
     '🧭 Le bandeau de ton trajet est redessiné : le départ et l’arrivée en grand, les infos en étiquettes lisibles',
     '🎉 Plus besoin de cliquer « Voir les événements » : Acolite les cherche dès qu’il organise ton voyage',
@@ -3883,6 +3958,68 @@ function checkNews(){
   const ok = $('#newsOk'); if(ok) ok.onclick = closeNews;
   const pf = $('#pfNews'); if(pf) pf.onclick = () => openNews(true);
   const v = $('#pfVersion'); if(v) v.textContent = `· version ${APP_VERSION}`;
+}
+
+/* ============================================================
+   POLITIQUE DE CONFIDENTIALITÉ
+   Acceptée au moins une fois à l'inscription. Si le texte change, on
+   incrémente PRIVACY_VERSION : tous les utilisateurs devront ré-accepter
+   à leur prochaine ouverture (comparaison avec la version mémorisée).
+   ⚠️ Texte fourni de bonne foi, sans valeur d'avis juridique — à faire
+   relire par un professionnel avant une mise en production sérieuse.
+============================================================ */
+const PRIVACY_VERSION = '2026-07-23';
+const LS_PRIVACY = 'acolite_privacy';
+const privacyAccepted = () => { try{ return localStorage.getItem(LS_PRIVACY) === PRIVACY_VERSION; }catch(e){ return false; } };
+function privacyHTML(){
+  return `
+  <p class="sub" style="margin:0 0 14px">En vigueur au ${esc(PRIVACY_VERSION)}. Acolite est un service <strong>gratuit</strong>, sans publicité et sans revente de données.</p>
+  <div class="legal">
+    <h4>1. Qui traite tes données</h4>
+    <p>Acolite est une application de préparation de voyage. Elle est éditée à titre personnel et proposée en démonstration, « en l'état ».</p>
+    <h4>2. Ce que nous conservons</h4>
+    <p>• <strong>Ton compte</strong> : ton adresse email et un mot de passe <em>chiffré</em> (jamais lisible en clair), sur notre serveur.<br>
+    • <strong>Tes voyages, notes et préférences</strong> : d'abord dans ton navigateur ; si tu as un compte, une copie est enregistrée sur le serveur pour te suivre d'un appareil à l'autre.<br>
+    • Nous ne collectons ni ta localisation précise, ni tes contacts, et n'installons aucun traceur publicitaire.</p>
+    <h4>3. Services tiers</h4>
+    <p>Pour fonctionner, Acolite transmet le strict nécessaire à : un fournisseur d'intelligence artificielle (pour construire ton voyage), un service d'envoi d'email (pour ton code de vérification), et des sources ouvertes de données de transport, météo, cartes et taux de change. Ces prestataires ont leurs propres règles de confidentialité.</p>
+    <h4>4. Durée & suppression</h4>
+    <p>Tes données sont conservées tant que ton compte existe. Tu peux <strong>tout supprimer définitivement</strong> à tout moment depuis ton profil : ton compte et toutes les données associées, côté serveur comme dans ce navigateur, sont alors effacés.</p>
+    <h4>5. Tes droits</h4>
+    <p>Tu peux consulter, corriger ou effacer tes données directement dans l'application. Pour toute autre demande, la suppression de compte reste la voie la plus sûre.</p>
+    <h4>6. Limites & responsabilité</h4>
+    <p>Les itinéraires, prix, horaires et conseils sont générés automatiquement et peuvent comporter des <strong>erreurs ou des informations périmées</strong>. Ils sont donnés à titre indicatif : <strong>vérifie toujours</strong> auprès des transporteurs, hébergeurs et autorités avant de réserver ou de partir. Acolite ne saurait être tenu responsable d'un dommage, d'une perte ou d'une dépense résultant de l'usage de ces informations, ni d'une interruption du service. Tu utilises Acolite sous ta propre responsabilité.</p>
+    <h4>7. Évolutions</h4>
+    <p>Cette politique peut évoluer. En cas de changement important, ton acceptation te sera redemandée à l'ouverture de l'application.</p>
+  </div>`;
+}
+let _privacyGate = false;   /* true = acceptation obligatoire (bloque la fermeture) */
+function openPrivacy(gate){
+  _privacyGate = !!gate;
+  const b = $('#privacyBody'); if(b) b.innerHTML = privacyHTML();
+  $('#privacyClose')?.classList.toggle('hidden', _privacyGate);   /* pas de croix si obligatoire */
+  $('#privacyAccept')?.classList.toggle('hidden', !_privacyGate); /* bouton accepter seulement en mode obligatoire */
+  $('#ovPrivacy')?.classList.add('show');
+}
+function acceptPrivacy(){
+  lsSet(LS_PRIVACY, PRIVACY_VERSION);
+  $('#ovPrivacy')?.classList.remove('show');
+  const cb = $('#auPrivacy'); if(cb) cb.checked = true;
+  /* si on était sur la barrière obligatoire (utilisateur déjà connecté),
+     on reprend l'entrée dans l'app maintenant que c'est accepté */
+  if(_privacyGate){ _privacyGate = false; enterApp(); }
+}
+{
+  const op = $('#openPrivacy'); if(op) op.onclick = () => openPrivacy(false);
+  const pa = $('#privacyAccept'); if(pa) pa.onclick = acceptPrivacy;
+  const pf = $('#pfPrivacy'); if(pf) pf.onclick = () => openPrivacy(false);
+}
+/* Barrière : un utilisateur connecté qui n'a pas accepté la version en cours
+   doit le faire avant d'utiliser l'app. Appelée à l'entrée. */
+function requirePrivacy(){
+  if(privacyAccepted()) return true;
+  openPrivacy(true);
+  return false;
 }
 
 /* --- Onboarding première visite (3 slides, mémorisé) --- */

@@ -156,14 +156,10 @@
   <section class="view hidden" id="view3">
     <div id="passSlot3"></div>
 
-    <!-- 1 · Le voyage : trajet + conseil + programme jour par jour -->
-    <div class="card">
-      <h2>Ton voyage 🧳</h2>
-      <p class="sub">Ton trajet en un coup d'œil. Tout le détail — programme, logement, budget — est dans la barre juste en dessous.</p>
-      <div id="zonePlan"></div>
-    </div>
+    <!-- Encart « aujourd'hui » (rendu par le JS, seulement pendant le séjour) -->
+    <div id="zonePlan"></div>
 
-    <!-- 2 · Les détails, rangés par catégorie (barre rendue par le JS) -->
+    <!-- Tout le voyage, rangé par catégorie (barre rendue par le JS) -->
     <div id="zoneSections"></div>
 
     <!-- 3 · Réserver (replié : on n'y va qu'au moment de réserver) -->
@@ -376,6 +372,10 @@
         <div class="side"><button class="btn sm ghost" id="pfTheme">Activer / désactiver</button></div>
       </div>
       <div class="item act">
+        <div class="head"><div class="emo">🔒</div><h4>Politique de confidentialité</h4></div>
+        <div class="side"><button class="btn sm ghost" id="pfPrivacy">Consulter</button></div>
+      </div>
+      <div class="item act">
         <div class="head"><div class="emo">🚪</div><h4>Se déconnecter</h4></div>
         <div class="side"><button class="btn sm ghost" id="pfLogout">Déconnexion</button></div>
       </div>
@@ -417,6 +417,7 @@
       <div class="field" style="margin-top:12px"><label for="auEmail">Adresse email</label><input id="auEmail" type="email" placeholder="toi@exemple.com" autocomplete="email"></div>
       <div class="field" style="margin-top:12px"><label for="auPass">Mot de passe</label><input id="auPass" type="password" placeholder="8 caractères minimum" autocomplete="new-password"></div>
       <div class="field" style="margin-top:12px"><label for="auPass2">Confirme le mot de passe</label><input id="auPass2" type="password" autocomplete="new-password"></div>
+      <label class="privacy-check"><input type="checkbox" id="auPrivacy"> J'ai lu et j'accepte la <a id="openPrivacy">politique de confidentialité</a>.</label>
       <button class="btn" id="btnSignup" style="margin-top:16px;width:100%;justify-content:center">Créer mon compte →</button>
       <p class="auth-switch">Déjà un compte ? <a id="goLogin">Se connecter</a></p>
     </div>
@@ -567,6 +568,18 @@
     </div>
     <div id="newsBody"></div>
     <button class="btn" id="newsOk" style="width:100%;justify-content:center;margin-top:14px">👍 J'ai vu</button>
+  </div>
+</div>
+
+<!-- ================= POLITIQUE DE CONFIDENTIALITÉ ================= -->
+<div class="overlay" id="ovPrivacy">
+  <div class="modal" style="max-height:88vh;overflow-y:auto">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 style="margin:0">🔒 Confidentialité</h2>
+      <button class="close-btn" data-close="ovPrivacy" id="privacyClose" aria-label="Fermer">✕</button>
+    </div>
+    <div id="privacyBody"></div>
+    <button class="btn" id="privacyAccept" style="width:100%;justify-content:center;margin-top:14px">✅ J'accepte</button>
   </div>
 </div>
 
