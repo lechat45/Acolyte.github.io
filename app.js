@@ -433,28 +433,50 @@ function mascotSVG(cls = ''){
     </g>
   </svg>`;
 }
-/* ---- Astéroïde de dessin animé : roche grise, cratères, contour bleu nuit,
-   dans l'esprit de l'image de référence. Dessiné en SVG → net partout, hors-ligne. ---- */
-function asteroidSVG(){
-  return `<svg class="asteroid-svg" viewBox="0 0 44 44" aria-hidden="true">
-    <path class="ast-body" d="M22 3c6-1 11 2 14 6 4 3 6 8 4 13 1 5-1 10-6 12-4 4-11 5-16 2-6 0-11-4-13-9-3-4-3-10 0-14 2-5 7-8 13-8z"/>
-    <ellipse class="ast-crater" cx="16" cy="17" rx="4.5" ry="3.6"/>
-    <ellipse class="ast-crater" cx="29" cy="14" rx="3.4" ry="2.8"/>
-    <ellipse class="ast-crater" cx="27" cy="28" rx="5" ry="4.2"/>
-    <circle class="ast-crater" cx="15" cy="30" r="2.6"/>
-    <circle class="ast-crater sm" cx="34" cy="24" r="1.9"/>
+/* ---- Ligne d'horizon des grands monuments du monde, en silhouettes.
+   Dessinée en SVG → nette partout, hors-ligne, sans image à héberger.
+   Tour Eiffel · Pyramides · Colisée · Big Ben · Taj Mahal · Statue de la Liberté ---- */
+function monumentsSVG(){
+  return `<svg class="mon-svg" viewBox="0 0 240 44" preserveAspectRatio="xMinYMax meet" aria-hidden="true">
+    <g class="mon">
+      <!-- Tour Eiffel -->
+      <path d="M17 4 L21 18 L26 44 L21 44 L19 33 L15 33 L13 44 L8 44 L13 18 Z"/>
+      <rect x="12" y="21" width="10" height="2.4"/>
+      <!-- Pyramides -->
+      <path d="M36 44 L49 19 L62 44 Z"/>
+      <path d="M57 44 L66 27 L75 44 Z"/>
+      <!-- Colisée -->
+      <path d="M80 44 L80 30 Q80 25 84 25 L108 25 Q112 25 112 30 L112 44 Z"/>
+      <rect x="84" y="33" width="3.2" height="11"/>
+      <rect x="92" y="33" width="3.2" height="11"/>
+      <rect x="100" y="33" width="3.2" height="11"/>
+      <rect x="108" y="33" width="3.2" height="11"/>
+      <!-- Big Ben -->
+      <path d="M120 44 L120 17 L124 17 L124 12 L127 6 L130 12 L130 17 L134 17 L134 44 Z"/>
+      <circle class="mon-hole" cx="127" cy="24" r="2.3"/>
+      <!-- Taj Mahal -->
+      <rect x="146" y="26" width="2.6" height="18"/>
+      <rect x="171" y="26" width="2.6" height="18"/>
+      <path d="M151 44 L151 30 Q151 22 160 20 Q169 22 169 30 L169 44 Z"/>
+      <path d="M155 21 Q160 9 165 21 Z"/>
+      <rect x="159" y="13" width="2" height="6"/>
+      <!-- Statue de la Liberté -->
+      <path d="M196 44 L196 35 L214 35 L214 44 Z"/>
+      <path d="M202 35 L202 20 Q205 13 208 20 L208 35 Z"/>
+      <circle cx="205" cy="15" r="2.6"/>
+      <path class="mon-line" d="M207 17 L213 7"/>
+      <circle cx="213" cy="6" r="1.9"/>
+    </g>
   </svg>`;
 }
-/* Scène de chargement : la mascotte esquive des astéroïdes qui défilent. */
-function dodgeSceneHTML(){
-  return `<div class="dodge-scene" aria-hidden="true">
-    <span class="asteroid a1">${asteroidSVG()}</span>
-    <span class="asteroid a2">${asteroidSVG()}</span>
-    <span class="asteroid a3">${asteroidSVG()}</span>
-    ${mascotSVG('dodger')}
+/* Scène de chargement : la mascotte survole les monuments du monde qui défilent. */
+function travelSceneHTML(){
+  return `<div class="travel-scene" aria-hidden="true">
+    <div class="mon-strip">${monumentsSVG()}${monumentsSVG()}</div>
+    ${mascotSVG('traveler')}
   </div>`;
 }
-function loaderHTML(msg){ return `<div class="loader">${dodgeSceneHTML()}<span class="loader-msg">${esc(msg)}</span></div>`; }
+function loaderHTML(msg){ return `<div class="loader">${travelSceneHTML()}<span class="loader-msg">${esc(msg)}</span></div>`; }
 /* La mascotte tient lieu de logo. On masque le SVG aux lecteurs d'écran :
    le mot « Acolite » juste à côté dit déjà de quoi il s'agit, et l'étiquette
    par défaut du SVG (« Acolite réfléchit ») serait fausse ici. */
@@ -3814,8 +3836,8 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
-  { v:'3.5', date:'2026-07-23', titre:'La mascotte esquive des astéroïdes', items:[
-    '☄️ Pendant les chargements, la mascotte slalome entre des astéroïdes — l’attente devient un mini-spectacle'
+  { v:'3.5', date:'2026-07-23', titre:'La mascotte survole les monuments du monde', items:[
+    '🗼 Pendant les chargements, la mascotte survole une ligne d’horizon des grands monuments — Tour Eiffel, Pyramides, Colisée, Big Ben, Taj Mahal, Statue de la Liberté'
   ]},
   { v:'3.4', date:'2026-07-23', titre:'Mascotte joueuse, confidentialité et page épurée', items:[
     '🌍 Clique sur la mascotte : elle saute ! Et elle réagit toute seule de temps en temps',
@@ -4286,7 +4308,7 @@ function searchBar(on, first){
   if(on){
     let i = 0;
     const mk = $('#sbMascot');
-    if(mk && !mk.querySelector('.mascot')) mk.innerHTML = dodgeSceneHTML();   /* la mascotte esquive les astéroïdes pendant la recherche */
+    if(mk && !mk.querySelector('.mascot')) mk.innerHTML = travelSceneHTML();   /* la mascotte survole les monuments pendant la recherche */
     $('#sbText').textContent = first || SB_MSG[0];
     bar.hidden = false;
     nav.style.display = 'none';          /* les 3 boutons laissent la place à la barre */
