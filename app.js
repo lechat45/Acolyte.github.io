@@ -477,9 +477,10 @@ function travelSceneHTML(){
     ${mascotSVG('traveler')}
   </div>`;
 }
-/* Le message s'affiche dans une bulle de BD : c'est la mascotte qui parle,
-   c'est elle qui fait le travail. */
-function loaderHTML(msg){ return `<div class="loader">${travelSceneHTML()}<div class="speech loader-msg">${esc(msg)}</div></div>`; }
+/* Chargement standard : la mascotte SEULE (pas de fond qui défile) + une
+   bulle de BD. Le décor « monuments qui défilent » est réservé à la recherche
+   de destinations après le questionnaire (voir la barre searchBar). */
+function loaderHTML(msg){ return `<div class="loader">${mascotSVG('loader-solo')}<div class="speech loader-msg">${esc(msg)}</div></div>`; }
 /* La mascotte tient lieu de logo. On masque le SVG aux lecteurs d'écran :
    le mot « Acolite » juste à côté dit déjà de quoi il s'agit, et l'étiquette
    par défaut du SVG (« Acolite réfléchit ») serait fausse ici. */
@@ -544,18 +545,39 @@ document.addEventListener('click', e => {
    Auto-contenu (canvas), aucune dépendance. Le classement passe par le
    backend (routes /game/top et /game/score).
 ============================================================ */
+/* Skins PUREMENT cosmétiques : ils changent les couleurs, jamais les tailles
+   ni les vitesses → la difficulté reste identique. */
+const AST_SKINS = {
+  roche: { nom:'Roche',  body:'#9a978d', crater:'#6f6b60', stroke:'#17202e' },
+  glace: { nom:'Glace',  body:'#bcd8e6', crater:'#8fb8cc', stroke:'#2a5566' },
+  lave:  { nom:'Lave',   body:'#d4622a', crater:'#8f3a12', stroke:'#3a1405' },
+  metal: { nom:'Métal',  body:'#9aa3b2', crater:'#6b7280', stroke:'#232a38' },
+};
+const PLANET_SKINS = {
+  terre:    { nom:'Terre',    ocean:'#3E93C9', land:'#6FBE5C', stroke:'#1C5A78', hit:'#8fc3ea' },
+  mars:     { nom:'Mars',     ocean:'#c1440e', land:'#8a2c08', stroke:'#5c1d05', hit:'#e07a4a' },
+  lune:     { nom:'Lune',     ocean:'#c9c9c9', land:'#9a9a9a', stroke:'#5a5a5a', hit:'#eaeaea' },
+  pasteque: { nom:'Pastèque', ocean:'#4fae4a', land:'#e0566f', stroke:'#2c5e2a', hit:'#8fd08a' },
+};
+const LS_GAMESKIN = 'acolite_game_skin';
+let _gameSkin = (() => { try{ return { ast:'roche', planet:'terre', ...JSON.parse(localStorage.getItem(LS_GAMESKIN) || '{}') }; }catch(e){ return { ast:'roche', planet:'terre' }; } })();
+function saveGameSkin(){ lsSet(LS_GAMESKIN, JSON.stringify(_gameSkin)); }
+const astSkin = () => AST_SKINS[_gameSkin.ast] || AST_SKINS.roche;
+const planetSkin = () => PLANET_SKINS[_gameSkin.planet] || PLANET_SKINS.terre;
+
 let _game = null;
 function openGame(){
   const ov = $('#ovGame'); if(!ov) return;
   ov.classList.add('show');
   $('#gameOver').hidden = true;
+  $('#gameCustom').hidden = true;
   $('#gameStart').hidden = false;
 }
 (function gameEngine(){
   const cv = $('#gameCanvas'); if(!cv) return;
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
-  const EARTH = { x: W / 2, y: H - 6, r: 26 };
+  const EARTH = { x: W / 2, y: H - 4, r: 34 };
   let asts, parts, score, lives, spawnAcc, running, last, raf;
 
   function reset(){
@@ -610,23 +632,25 @@ function openGame(){
     ctx.fillStyle = '#0b1026'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = 'rgba(255,255,255,.7)';
     for(let i = 0; i < 40; i++){ const sx = (i * 71) % W, sy = (i * 43) % H; ctx.fillRect(sx, sy, 1.5, 1.5); }
-    /* Terre */
+    /* Terre (skin cosmétique) */
+    const P = planetSkin();
     ctx.save();
     ctx.beginPath(); ctx.arc(EARTH.x, EARTH.y, EARTH.r, 0, 6.29); ctx.closePath();
-    ctx.fillStyle = EARTH.hit ? '#8fc3ea' : '#3E93C9'; ctx.fill();
-    ctx.lineWidth = 3; ctx.strokeStyle = '#1C5A78'; ctx.stroke();
+    ctx.fillStyle = EARTH.hit ? P.hit : P.ocean; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = P.stroke; ctx.stroke();
     ctx.clip();
-    ctx.fillStyle = '#6FBE5C';
-    ctx.beginPath(); ctx.ellipse(EARTH.x - 10, EARTH.y - 8, 12, 8, .3, 0, 6.29); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(EARTH.x + 12, EARTH.y + 2, 9, 12, -.2, 0, 6.29); ctx.fill();
+    ctx.fillStyle = P.land;
+    ctx.beginPath(); ctx.ellipse(EARTH.x - 12, EARTH.y - 10, 15, 10, .3, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(EARTH.x + 15, EARTH.y + 3, 11, 15, -.2, 0, 6.29); ctx.fill();
     ctx.restore();
-    /* astéroïdes */
+    /* astéroïdes (skin cosmétique) */
+    const S = astSkin();
     asts.forEach(a => {
       ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.rot);
       ctx.beginPath(); ctx.arc(0, 0, a.r, 0, 6.29);
-      ctx.fillStyle = '#9a978d'; ctx.fill();
-      ctx.lineWidth = 2.5; ctx.strokeStyle = '#17202e'; ctx.stroke();
-      ctx.fillStyle = '#6f6b60';
+      ctx.fillStyle = S.body; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = S.stroke; ctx.stroke();
+      ctx.fillStyle = S.crater;
       ctx.beginPath(); ctx.arc(-a.r * .3, -a.r * .2, a.r * .3, 0, 6.29); ctx.fill();
       ctx.beginPath(); ctx.arc(a.r * .35, a.r * .25, a.r * .22, 0, 6.29); ctx.fill();
       ctx.restore();
@@ -656,12 +680,35 @@ function openGame(){
     submitAndShowLeaderboard(score);
   }
   function start(){
-    $('#gameStart').hidden = true; $('#gameOver').hidden = true;
+    $('#gameStart').hidden = true; $('#gameOver').hidden = true; $('#gameCustom').hidden = true;
     reset(); raf = requestAnimationFrame(loop);
+  }
+  /* --- Personnalisation : aperçus cliquables, purement cosmétiques --- */
+  function astPreview(k){
+    const s = AST_SKINS[k];
+    return `<svg viewBox="0 0 40 40" width="34" height="34"><circle cx="20" cy="20" r="16" fill="${s.body}" stroke="${s.stroke}" stroke-width="3"/><circle cx="15" cy="16" r="4.5" fill="${s.crater}"/><circle cx="26" cy="24" r="3.5" fill="${s.crater}"/></svg>`;
+  }
+  function planetPreview(k){
+    const s = PLANET_SKINS[k];
+    return `<svg viewBox="0 0 40 40" width="34" height="34"><circle cx="20" cy="20" r="16" fill="${s.ocean}" stroke="${s.stroke}" stroke-width="3"/><ellipse cx="14" cy="15" rx="7" ry="5" fill="${s.land}"/><ellipse cx="26" cy="25" rx="5" ry="7" fill="${s.land}"/></svg>`;
+  }
+  function renderSwatches(){
+    const a = $('#gcAsteroids'), p = $('#gcPlanets');
+    if(a) a.innerHTML = Object.keys(AST_SKINS).map(k => `<button class="gc-swatch${_gameSkin.ast === k ? ' on' : ''}" data-ast="${k}" title="${esc(AST_SKINS[k].nom)}">${astPreview(k)}<span>${esc(AST_SKINS[k].nom)}</span></button>`).join('');
+    if(p) p.innerHTML = Object.keys(PLANET_SKINS).map(k => `<button class="gc-swatch${_gameSkin.planet === k ? ' on' : ''}" data-planet="${k}" title="${esc(PLANET_SKINS[k].nom)}">${planetPreview(k)}<span>${esc(PLANET_SKINS[k].nom)}</span></button>`).join('');
   }
   _game = { start };
   const go = $('#gameGo'); if(go) go.onclick = start;
   const rp = $('#gameReplay'); if(rp) rp.onclick = start;
+  const cb = $('#gameCustomBtn'); if(cb) cb.onclick = () => { renderSwatches(); $('#gameStart').hidden = true; $('#gameCustom').hidden = false; };
+  const cd = $('#gameCustomDone'); if(cd) cd.onclick = () => { $('#gameCustom').hidden = true; $('#gameStart').hidden = false; };
+  $('#gameCustom')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-ast],[data-planet]');
+    if(!b) return;
+    if(b.dataset.ast) _gameSkin.ast = b.dataset.ast;
+    if(b.dataset.planet) _gameSkin.planet = b.dataset.planet;
+    saveGameSkin(); renderSwatches();
+  });
 })();
 
 /* Classement : envoie le score (si connecté) puis affiche le top 10. */
@@ -1716,16 +1763,13 @@ function carbonHTML(mode){
   const gain = best && best.v < mine ? Math.round((1 - best.v / mine) * 100) : 0;
   const ICO = { avion:'✈️', train:'🚆', voiture:'🚗' };
   return `<div class="divider"></div>
-    <h3 style="margin:0 0 4px">🌍 Empreinte carbone</h3>
-    <p class="hint" style="margin:0 0 10px">Estimation aller-retour par personne, sur ~${Math.round(dist)} km de trajet.</p>
-    <div class="item" style="align-items:flex-start">
-      <div class="emo">${ICO[m] || '🌍'}</div>
-      <div style="flex:1;min-width:0">
-        <h4>${mine} kg de CO₂ · en ${esc(m)}</h4>
-        <p class="hint" style="margin:2px 0 0">${gain
-          ? `En ${esc(best.x)}, ce serait ~${best.v} kg — <strong>${gain} % de moins</strong>.`
-          : `C'est déjà l'option la plus sobre sur ce trajet 👏`}</p>
-      </div>
+    <div class="info-card carbon-card">
+      <div class="ic-head"><span>🌍</span><h4>Impact sur le climat</h4></div>
+      <p class="carbon-big">${ICO[m] || '🌍'} <strong>${mine} kg de CO₂</strong> <span>aller-retour, par personne</span></p>
+      <p class="ic-note">Calculé sur le trajet réel d'environ ${Math.round(dist)} km.</p>
+      <p style="margin:8px 0 0">${gain
+        ? `🌱 En ${esc(best.x)}, ce serait environ <strong>${best.v} kg</strong>, soit <strong>${gain} % de moins</strong>.`
+        : `🌱 C'est déjà l'option la plus sobre pour ce trajet — bravo !`}</p>
     </div>`;
 }
 
@@ -1803,16 +1847,29 @@ function panProgramme(d){
 function panTransport(d){
   const tr = d.transport || {};
   const icons = { avion:'✈️', train:'🚆', voiture:'🚗' };
+  const labels = { avion:'en avion', train:'en train', voiture:'en voiture' };
+  const mode = ['avion','train','voiture'].includes(tr.mode) ? tr.mode : 'avion';
+  const dts = stayDates();
   return `
+    <p class="pan-intro">Comment tu rejoins ta destination, pourquoi ce choix, et ce que ça coûte pour la planète.</p>
     ${tripRouteHTML(d)}
-    <div class="info-card">
-      <div class="ic-head"><span>${icons[tr.mode]||'✈️'}</span><h4>Pourquoi ${esc(tr.mode||'ce transport')} ?</h4>${tr.prix_estime ? `<b>${esc(tr.prix_estime)}</b>` : ''}</div>
-      <p>${esc(tr.pourquoi || '—')}</p>
-      ${tr.details ? `<p class="ic-note">${esc(tr.details)}</p>` : ''}
+    <!-- Le choix, dit clairement -->
+    <div class="transport-choice">
+      <span class="tc-ico">${icons[mode]}</span>
+      <div class="tc-body">
+        <h4>Tu voyages ${labels[mode]}</h4>
+        <div class="tc-facts">
+          ${tr.prix_estime ? `<span class="tc-fact">💶 ${esc(tr.prix_estime)}</span>` : ''}
+          ${tr.duree ? `<span class="tc-fact">⏱ ${esc(tr.duree)}</span>` : ''}
+        </div>
+        <p class="tc-why">${esc(tr.pourquoi || 'Le meilleur compromis prix / temps / confort pour ce trajet.')}</p>
+      </div>
     </div>
+    ${tr.details ? `<div class="info-card">
+      <div class="ic-head"><span>ℹ️</span><h4>Bon à savoir</h4></div><p>${esc(tr.details)}</p></div>` : ''}
     ${d.sur_place ? `<div class="info-card">
-      <div class="ic-head"><span>🚇</span><h4>Se déplacer sur place</h4></div><p>${esc(d.sur_place)}</p></div>` : ''}
-    ${carbonHTML(tr.mode)}`;
+      <div class="ic-head"><span>🚇</span><h4>Une fois sur place</h4></div><p>${esc(d.sur_place)}</p></div>` : ''}
+    ${carbonHTML(mode)}`;
 }
 
 /* ---- Onglet Logement ---- */
@@ -4107,6 +4164,11 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'4.2', date:'2026-07-24', titre:'Un jeu personnalisable et un transport enfin clair', items:[
+    '🎨 Le jeu « Défends la Terre » est plus grand et personnalisable : change le style des astéroïdes et de la planète (sans changer la difficulté)',
+    '🚆 L’onglet Transport est réécrit : ce que tu prends, pourquoi, le prix et l’impact climat — en clair',
+    '🌍 L’animation « tour du monde » n’apparaît plus que pour la recherche de destinations ; ailleurs, c’est la mascotte seule'
+  ]},
   { v:'4.1', date:'2026-07-24', titre:'Un jeu caché, un budget clair et de belles adresses', items:[
     '🛰️ Clique 3 fois sur le globe du logo (sur ordinateur) : défends la Terre contre les astéroïdes, avec un classement !',
     '💶 L’onglet Budget montre où part ton argent, poste par poste, avec le coût par jour',

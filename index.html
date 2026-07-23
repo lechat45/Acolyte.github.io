@@ -595,7 +595,7 @@
       <span id="gameLives">❤️❤️❤️</span>
     </div>
     <div class="game-stage">
-      <canvas id="gameCanvas" width="480" height="360"></canvas>
+      <canvas id="gameCanvas" width="640" height="460"></canvas>
       <div class="game-over" id="gameOver" hidden>
         <h3 id="gameOverTitle">Terre perdue !</h3>
         <p id="gameOverScore">Score : 0</p>
@@ -604,7 +604,17 @@
       </div>
       <div class="game-start" id="gameStart">
         <p>🖱️ Clique sur les astéroïdes pour les détruire avant qu'ils touchent la Terre.</p>
-        <button class="btn" id="gameGo" style="justify-content:center">🚀 Commencer</button>
+        <div class="game-start-btns">
+          <button class="btn" id="gameGo" style="justify-content:center">🚀 Commencer</button>
+          <button class="btn ghost sm" id="gameCustomBtn" style="justify-content:center">🎨 Personnaliser</button>
+        </div>
+      </div>
+      <div class="game-custom" id="gameCustom" hidden>
+        <h3>🎨 Personnalisation</h3>
+        <p class="gc-hint">Change le style — sans toucher à la difficulté.</p>
+        <div class="gc-group"><span class="gc-label">☄️ Astéroïdes</span><div class="gc-swatches" id="gcAsteroids"></div></div>
+        <div class="gc-group"><span class="gc-label">🌍 Planète</span><div class="gc-swatches" id="gcPlanets"></div></div>
+        <button class="btn" id="gameCustomDone" style="justify-content:center;margin-top:6px">✅ Terminé</button>
       </div>
     </div>
   </div>

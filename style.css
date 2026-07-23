@@ -292,6 +292,8 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 
 /* ===== Loader ===== */
 .loader{display:flex;align-items:center;gap:14px;padding:26px 8px;color:var(--txt);font-size:1rem;font-weight:700}
+/* la mascotte seule du chargement standard */
+.mascot.loader-solo{width:52px;height:52px;flex-shrink:0}
 /* ===== Mascotte Acolite : la Terre aux grands yeux ===== */
 .mascot{width:46px;height:46px;flex-shrink:0;overflow:visible;animation:mBob 2.6s ease-in-out infinite}
 .m-ocean{fill:#3E93C9}
@@ -801,6 +803,23 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .info-card .divider{display:none}
 .info-card + h3{margin-top:16px}
 
+/* ===== Onglet Transport clarifié ===== */
+.transport-choice{
+  display:flex;gap:14px;align-items:flex-start;
+  padding:16px;margin-bottom:14px;
+  background:var(--primary);color:#101010;
+  border:3px solid var(--stroke);border-radius:var(--r-md);box-shadow:4px 4px 0 var(--stroke);
+}
+.tc-ico{font-size:2.2rem;line-height:1;flex-shrink:0}
+.tc-body{flex:1;min-width:0}
+.tc-body h4{margin:0;font-size:1.15rem}
+.tc-facts{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0}
+.tc-fact{font:800 .74rem 'Sora',sans-serif;background:#101010;color:var(--primary);padding:4px 10px;border-radius:20px;white-space:nowrap}
+.tc-why{margin:6px 0 0;font-size:.9rem;font-weight:600;line-height:1.5}
+.carbon-card .carbon-big{margin:0;font-size:1rem}
+.carbon-card .carbon-big strong{font-family:'Sora',sans-serif;font-size:1.15rem}
+.carbon-card .carbon-big span{font-size:.8rem;color:var(--txt-2);font-weight:600}
+
 /* ===== Cartes de logement ===== */
 .hotel-card{
   position:relative;margin-bottom:12px;padding:14px;
@@ -1071,7 +1090,28 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
   box-shadow:4px 4px 0px var(--stroke);
 }
 /* ===== Mini-jeu « Défends la Terre » ===== */
-.game-modal{width:min(520px,100%)}
+.game-modal{width:min(720px,100%)}
+.game-start-btns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+/* panneau de personnalisation */
+.game-custom{
+  position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;
+  align-items:center;justify-content:center;padding:22px;text-align:center;
+  background:rgba(11,16,38,.92);color:#fff;overflow-y:auto;
+}
+.game-custom[hidden]{display:none}
+.game-custom h3{margin:0;font-size:1.15rem;color:#fff}
+.gc-hint{margin:0;font-size:.84rem;color:#cfd6ef}
+.gc-group{width:100%;max-width:400px}
+.gc-label{display:block;font:900 .78rem 'Sora',sans-serif;margin:0 0 6px;text-align:left}
+.gc-swatches{display:flex;flex-wrap:wrap;gap:8px}
+.gc-swatch{
+  display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;
+  background:rgba(255,255,255,.08);border:2px solid transparent;border-radius:12px;
+  padding:8px 10px;color:#fff;font:700 .64rem 'Sora',sans-serif;
+}
+.gc-swatch:hover{background:rgba(255,255,255,.16)}
+.gc-swatch.on{border-color:var(--primary);background:rgba(255,230,0,.18)}
+.gc-swatch svg{display:block}
 .game-hud{display:flex;justify-content:space-between;align-items:center;
   font:900 .9rem 'Sora',sans-serif;margin:0 0 8px}
 .game-stage{position:relative;border:3px solid var(--stroke);border-radius:12px;overflow:hidden;box-shadow:4px 4px 0 var(--stroke);background:#0b1026}
