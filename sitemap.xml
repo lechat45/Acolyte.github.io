@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Acolite — plan du site.
+     Une seule adresse : Acolite est une application monopage, tout le reste
+     (questionnaire, propositions, voyage, carte, profil) vit derrière la même
+     URL et n'est pas indexable séparément.
+     À déclarer dans la Search Console :
+     https://lechat45.github.io/Acolyte.github.io/sitemap.xml -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://lechat45.github.io/Acolyte.github.io/</loc>
+    <lastmod>2026-07-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

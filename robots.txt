@@ -1,0 +1,21 @@
+# Acolite — robots.txt
+#
+# ⚠️ ATTENTION, à lire avant de compter dessus :
+# les robots ne lisent le robots.txt qu'à la RACINE d'un domaine, soit
+# https://lechat45.github.io/robots.txt — pas dans un sous-dossier.
+# Ce fichier-ci est donc IGNORÉ tant que le site vit sous
+# /Acolyte.github.io/. Il deviendra actif le jour où Acolite aura son propre
+# domaine (ou le dépôt « lechat45.github.io »).
+#
+# En attendant, ce sont les balises <meta name="robots"> de chaque page qui
+# font foi — et elles fonctionnent quel que soit le chemin :
+#   index.html  → index, follow
+#   admin.html  → noindex, nofollow, noarchive
+
+User-agent: *
+Allow: /
+
+# Le panneau de statistiques ne doit jamais remonter dans les résultats
+Disallow: /Acolyte.github.io/admin.html
+
+Sitemap: https://lechat45.github.io/Acolyte.github.io/sitemap.xml

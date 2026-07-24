@@ -11,17 +11,53 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Acolite — Ton copilote de voyage</title>
-<meta name="description" content="Acolite imagine, compare et organise ton voyage de A à Z : destination, transport (CO₂, prix, durée), logement, programme jour par jour. Consultable hors-ligne.">
-<!-- Aperçu de lien (réseaux sociaux) — génère promo.png depuis promo.html et place-le à la racine -->
+<title>Acolite — Planifie ton voyage : destination, transport, itinéraire</title>
+<meta name="description" content="Décris ton envie de voyage : Acolite choisit la destination, le transport et le logement, puis construit ton programme jour par jour. Consultable hors-ligne.">
+<!-- Canonique : sans elle, Google choisit lui-même l'adresse de référence.
+     Elle doit être ABSOLUE et pointer sur le sous-chemin GitHub Pages. -->
+<link rel="canonical" href="https://lechat45.github.io/Acolyte.github.io/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<!-- Aperçu de lien (réseaux sociaux). Les URL doivent être absolues : un
+     chemin relatif n'est pas résolu par les robots de partage. -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="Acolite — Your AI travel copilot">
-<meta property="og:description" content="From dream to day-by-day: one idea in, a whole bookable trip out. Free, offline-ready, no subscription.">
-<meta property="og:image" content="promo.png">
+<meta property="og:site_name" content="Acolite">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:url" content="https://lechat45.github.io/Acolyte.github.io/">
+<meta property="og:title" content="Acolite — Ton copilote de voyage">
+<meta property="og:description" content="D'une simple envie à un programme jour par jour : destination, transport, logement et itinéraire, organisés pour toi.">
+<meta property="og:image" content="https://lechat45.github.io/Acolyte.github.io/logo-acolite.png">
+<meta property="og:image:alt" content="Logo Acolite : le globe mascotte coiffe le i d'ACOLITE">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Acolite — Ton copilote de voyage">
+<meta name="twitter:description" content="D'une simple envie à un programme jour par jour : destination, transport, logement et itinéraire, organisés pour toi.">
+<meta name="twitter:image" content="https://lechat45.github.io/Acolyte.github.io/logo-acolite.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<!-- Données structurées : décrit le site à Google dans son vocabulaire.
+     Ce n'est PAS du script exécuté (type application/ld+json = bloc de
+     données), la CSP n'a donc pas à être touchée. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Acolite",
+  "alternateName": "Acolite — copilote de voyage",
+  "url": "https://lechat45.github.io/Acolyte.github.io/",
+  "image": "https://lechat45.github.io/Acolyte.github.io/logo-acolite.png",
+  "applicationCategory": "TravelApplication",
+  "operatingSystem": "Web, Android, iOS",
+  "inLanguage": "fr-FR",
+  "description": "Décris ton envie de voyage : Acolite choisit la destination, le transport et le logement, puis construit ton programme jour par jour. Consultable hors-ligne.",
+  "featureList": [
+    "Choix de la destination à partir d'une envie",
+    "Comparaison des transports sur le prix, la durée et le CO₂",
+    "Choix du quartier et du logement",
+    "Programme jour par jour organisé par proximité",
+    "Carte de l'itinéraire consultable hors-ligne"
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -87,7 +123,9 @@
       <div class="gallery" id="galleryList"></div>
     </div>
     <div class="card">
-      <h2>Où est-ce qu'on t'emmène ? 🌍</h2>
+      <!-- h1 de la page : c'est le titre principal du site pour Google et pour
+           les lecteurs d'écran. Il est stylé exactement comme les h2. -->
+      <h1>Où est-ce qu'on t'emmène ? 🌍</h1>
       <p class="sub">Décris tes envies, Acolite te propose des destinations sur mesure — puis t'aide à affiner.</p>
       <div class="grid">
         <div class="field"><label for="fFrom">Ville de départ</label><input id="fFrom" placeholder="Paris" autocomplete="off"></div>
