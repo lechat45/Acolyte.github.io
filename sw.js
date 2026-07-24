@@ -37,7 +37,9 @@ self.addEventListener('fetch', e => {
      disque du visiteur : au-delà de TILE_MAX, les plus anciennes sautent. */
   else if(url.hostname === 'tile.openstreetmap.org'){
     e.respondWith(caches.open(TILES).then(c => c.match(e.request).then(hit => hit || fetch(e.request).then(r => {
-      if(r.ok){
+      /* une réponse opaque (sans CORS) a un status 0 : r.ok est faux alors que
+         l'image est bonne. On l'accepte quand même, sinon rien n'est gardé. */
+      if(r.ok || r.type === 'opaque'){
         c.put(e.request, r.clone());
         c.keys().then(ks => { if(ks.length > TILE_MAX) ks.slice(0, ks.length - TILE_MAX).forEach(k => c.delete(k)); });
       }

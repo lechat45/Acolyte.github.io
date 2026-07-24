@@ -1440,87 +1440,6 @@ function osmFoodCtx(rows){
     + `Tu dois choisir EXCLUSIVEMENT dans cette liste : n'invente AUCUN nom. Recopie le nom exactement.\n`;
 }
 
-/* ---- Lieux à visiter RÉELS via OpenStreetMap ----
-   Même ancrage que les hébergements et les restaurants, appliqué à l'étape 3.
-   L'intérêt est double : l'IA cesse d'inventer des monuments, ET chaque lieu
-   arrive avec sa position exacte — c'est ce qui rend la carte possible.
-   Le géocodeur d'Open-Meteo, lui, ne connaît que les villes. */
-const OSM_SIGHT_FR = {
-  attraction:'site', museum:'musée', gallery:'galerie', artwork:'œuvre', viewpoint:'point de vue',
-  zoo:'zoo', aquarium:'aquarium', theme_park:'parc d’attractions', castle:'château',
-  monument:'monument', memorial:'mémorial', ruins:'ruines', fort:'fort', city_gate:'porte',
-  archaeological_site:'site archéologique', park:'parc', garden:'jardin',
-  cathedral:'cathédrale', church:'église', basilica:'basilique', mosque:'mosquée',
-  synagogue:'synagogue', temple:'temple'
-};
-/* Interroge Overpass avec bascule sur le miroir. Un 429 est un quota, pas une
-   panne réseau : on change de serveur SANS incrémenter _netFails (sinon netSlow()
-   basculerait et couperait des chemins qui vont très bien). */
-async function overpass(q, ms = 14000){
-  for(const url of OVERPASS_URLS){
-    try{
-      const r = await fetchT(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'data=' + encodeURIComponent(q)
-      }, netTimeout(ms));
-      if(r.status === 429 || r.status >= 500) continue;
-      if(!r.ok) return null;
-      return await r.json();
-    }catch(e){ _netFails++; }
-  }
-  return null;
-}
-async function osmSights(lat, lon, radiusM = 6000){
-  const ck = `osm_sight_${lat.toFixed(3)}_${lon.toFixed(3)}_${radiusM}`;
-  if(state.cache[ck]) return state.cache[ck];
-  if(netSlow()) return [];
-  const A = `(around:${radiusM},${lat},${lon})`;
-  const q = `[out:json][timeout:25];(`
-    + `nwr${A}[tourism~"^(attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park)$"][name];`
-    + `nwr${A}[historic~"^(castle|monument|memorial|ruins|fort|city_gate|archaeological_site)$"][name];`
-    + `nwr${A}[leisure~"^(park|garden)$"][name][wikidata];`
-    + `nwr${A}[amenity=place_of_worship][name][wikidata];`
-    + `);out center 120;`;
-  const d = await overpass(q);
-  if(!d) return [];
-  try{
-    const ref = { latitude: lat, longitude: lon };
-    const vus = new Set();
-    const rows = (d.elements || []).map(e => {
-      const t = e.tags || {};
-      const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon;
-      if(la == null || lo == null || !t.name) return null;
-      const nom = String(t.name).slice(0, 80);
-      if(vus.has(nom)) return null;                      /* une même église taguée 2 fois */
-      vus.add(nom);
-      const brut = t.tourism || t.historic || t.leisure
-        || (t.building && /cathedral|church|basilica|mosque|synagogue|temple/.test(t.building) ? t.building : '')
-        || 'site';
-      return {
-        nom,
-        type: OSM_SIGHT_FR[brut] || 'site',
-        /* wikidata/wikipedia = le lieu est documenté, donc notable : c'est le
-           seul signal de notoriété gratuit dont on dispose */
-        connu: !!(t.wikidata || t.wikipedia),
-        lat: +la.toFixed(5), lon: +lo.toFixed(5),
-        km: +havKm(ref, { latitude: la, longitude: lo }).toFixed(2)
-      };
-    }).filter(Boolean)
-      /* les lieux documentés d'abord, puis les plus centraux */
-      .sort((a, b) => (b.connu - a.connu) || (a.km - b.km))
-      .slice(0, 45);
-    state.cache[ck] = rows; save();
-    return rows;
-  }catch(e){ return []; }
-}
-function osmSightCtx(rows){
-  if(!rows || !rows.length) return '';
-  const l = rows.map(r => `- ${r.nom} (${r.type}, à ${r.km} km du centre)`).join('\n');
-  return `\nLIEUX RÉELS relevés sur OpenStreetMap autour de la destination (données vérifiées) :\n${l}\n`
-    + `Pour "etape3_lieux" et pour les "lieux" de chaque journée, choisis EN PRIORITÉ dans cette liste et RECOPIE le nom EXACTEMENT tel qu'il est écrit ci-dessus (c'est ce qui permet de les placer sur la carte). Tu ne peux citer un lieu absent de la liste que s'il est incontournable et tout aussi réel.\n`;
-}
-
 /* --- Du nom d'un lieu à sa position ---------------------------------------
    Les noms viennent de l'IA : accents, articles et casse varient. On compare
    sur une forme réduite plutôt que caractère par caractère. */
@@ -1543,6 +1462,85 @@ function matchSight(nom, rows){
   return m || null;
 }
 
+/* Repli quand le relevé OSM ne reconnaît pas un nom — typiquement un voyage
+   d'avant l'ancrage, où l'IA avait écrit « Colisée » là où OpenStreetMap dit
+   « Colosseo ». Wikipédia connaît les deux et donne les coordonnées.
+   Gratuit, sans clé, et fr.wikipedia.org est déjà autorisé par la CSP. */
+/* Résout une liste de lieux d'un coup : « Colisée » → 41.8905, 12.4926.
+   UNE seule requête pour toute la liste — l'API accepte 50 titres à la fois.
+   La version en série faisait une requête par lieu et mettait 20 secondes ;
+   celle-ci répond en une. */
+async function wikiPlaces(noms, ville, ici){
+  const res = new Map();
+  /* deux pistes par lieu : le nom brut, et le nom précisé par la ville.
+     Sans la seconde, « Panthéon » tombe sur une page d'homonymie et
+     « Place d'Espagne » ne mène nulle part. */
+  const parTitre = new Map();
+  const titres = [];
+  for(const n of noms){
+    const b = cleanPlace(n);
+    if(!b) continue;
+    for(const t of [b, `${b} (${ville})`]){
+      const k = normPlace(t);
+      if(parTitre.has(k)) continue;
+      parTitre.set(k, n);
+      titres.push(t);
+    }
+  }
+  if(!titres.length) return res;
+  /* par paquets de 40 : la limite de l'API est 50 */
+  for(let i = 0; i < titres.length && i < 120; i += 40){
+    const lot = titres.slice(i, i + 40);
+    const cs = await wikiCoords(lot);
+    if(!cs) continue;
+    for(const [titre, ll] of cs){
+      const nom = parTitre.get(normPlace(titre));
+      if(!nom) continue;
+      const km = havKm(ici, { latitude: ll[0], longitude: ll[1] });
+      /* garde-fou indispensable : sans lui, « Panthéon » pour un voyage à Rome
+         renverrait tranquillement celui de Paris. */
+      if(km > 80) continue;
+      const dejaKm = res.has(nom)
+        ? havKm(ici, { latitude: res.get(nom)[0], longitude: res.get(nom)[1] })
+        : Infinity;
+      if(km < dejaKm) res.set(nom, ll);
+    }
+  }
+  return res;
+}
+
+async function wikiCoords(titres){
+  /* Wikipédia accepte jusqu'à 50 titres d'un coup : une seule requête suffit
+     pour tester « Panthéon » ET « Panthéon (Rome) ». Sans le second, les lieux
+     dont le nom est ambigu tombent sur une page d'homonymie, sans coordonnées
+     — ou pire, sur l'homonyme parisien. */
+  const l = [...new Set((titres || []).filter(Boolean))];
+  if(!l.length) return null;
+  try{
+    const u = `https://fr.wikipedia.org/w/api.php?action=query&prop=coordinates`
+      + `&titles=${encodeURIComponent(l.join('|'))}&format=json&origin=*&redirects=1`;
+    const r = await fetchT(u, {}, 9000);
+    if(!r.ok) return null;
+    const d = await r.json();
+    /* Wikipédia renomme et redirige : « Place d'Espagne (Rome) » revient sous
+       « Piazza di Spagna ». On refait le chemin à l'envers pour retrouver le
+       titre qu'on avait demandé, sinon on ne sait plus à quel lieu rattacher
+       les coordonnées. */
+    const origine = new Map();
+    for(const x of (d?.query?.normalized || [])) origine.set(x.to, x.from);
+    for(const x of (d?.query?.redirects || [])) origine.set(x.to, origine.get(x.from) ?? x.from);
+    const out = new Map();
+    for(const k in (d?.query?.pages || {})){
+      const p = d.query.pages[k];
+      const c = p?.coordinates?.[0];
+      if(!c || !isFinite(c.lat) || !isFinite(c.lon)) continue;
+      out.set(origine.get(p.title) ?? p.title, [+c.lat, +c.lon]);
+    }
+    return out.size ? out : null;
+  }catch(e){}
+  return null;
+}
+
 /* Remplit plan._geo : { "nom du lieu": [lat, lon] }.
    Stocké SUR le plan (et non dans le cache OSM) pour trois raisons : ça survit
    à la synchro (slimTrip garde le plan), ça survit hors-ligne, et ça reste
@@ -1556,13 +1554,9 @@ async function ensurePlanGeo(force = false){
   if(!manquants.length && !force) return d._geo;
   const g = await geocode();
   if(!g) return d._geo;
-  const rows = await osmSights(+g.latitude, +g.longitude);
-  if(rows.length){
-    for(const l of manquants){
-      const m = matchSight(l, rows);
-      if(m) d._geo[l] = [m.lat, m.lon];
-    }
-  }
+  const ici = { latitude: +g.latitude, longitude: +g.longitude };
+  const trouve = await wikiPlaces(manquants, t.nom, ici);
+  for(const [nom, ll] of trouve) d._geo[nom] = ll;
   /* l'hôtel : sa position vient du relevé des hébergements, déjà en cache */
   const hn = d.logement?.nom || state.cache.hotels?.hotels?.[0]?.nom;
   if(hn && !d._geoHotel){
@@ -1754,17 +1748,12 @@ async function loadPlan(force = false){
   /* budget de temps : les données réelles ne doivent JAMAIS bloquer le plan
      (réseau lent/coupé → on continue sans elles au bout de 12 s) */
   const realCtx = await Promise.race([ realData(), new Promise(r => setTimeout(() => r(''), 12000)) ]);
-  /* Lieux réels : même ancrage que les hébergements et les restaurants. Il sert
-     deux fois — l'IA cesse d'inventer des monuments, et les noms recopiés tels
-     quels se retrouvent ensuite sur la carte avec leur position exacte.
-     Comme le reste des données réelles, ça ne doit JAMAIS bloquer le plan. */
-  const sightCtx = await Promise.race([
-    (async () => {
-      const g = await geocode();
-      return g ? osmSightCtx(await osmSights(+g.latitude, +g.longitude)) : '';
-    })().catch(() => ''),
-    new Promise(r => setTimeout(() => r(''), 9000))
-  ]);
+  /* Pas d'ancrage Overpass pour les monuments : mesuré à 30-60 s sur les
+     instances publiques (elles mettent en file d'attente), c'est trop lent
+     pour s'intercaler ici. Un monument ne ferme pas comme un restaurant, le
+     risque d'invention est faible — une consigne de NOMMAGE suffit, et c'est
+     elle qui permet ensuite de retrouver chaque lieu sur la carte. */
+  const sightCtx = `\nNOMMAGE DES LIEUX — important : écris chaque lieu du programme sous son nom d'usage en français, celui qui sert de titre à son article Wikipédia (ex : « Colisée », « Fontaine de Trevi », « Musées du Vatican »). Pas de description à la place du nom, pas de nom inventé.\n`;
   /* Le transport et le logement ont DÉJÀ été trouvés à l'étape 2 : on les garde et on approfondit */
   const dejaTrouve = (t.transport_conseille || t.logement_quartier)
     ? `\nCHOIX DÉJÀ VALIDÉS À L'ÉTAPE 2 (le voyageur les a acceptés en choisissant ce voyage — GARDE-LES, sauf si les données réelles les contredisent) :
@@ -4502,7 +4491,7 @@ const CHANGELOG = [
   { v:'4.5', date:'2026-07-24', titre:'Une carte qui montre enfin ta journée', items:[
     '🗺️ Chaque journée se lit d’un coup d’œil : tes étapes numérotées, reliées dans l’ordre de la balade, avec ton hôtel repéré',
     '📍 « Où je suis » te dit à quelle distance est ta prochaine étape et en combien de minutes à pied',
-    '🧭 Tes lieux ne sont plus inventés : ils sont relevés sur le terrain, donc toujours au bon endroit sur la carte',
+    '🏨 Ton hôtel apparaît sur chaque journée : tu vois d’un coup d’œil ce qui est près de là où tu dors',
     '📴 La carte reste consultable sans connexion une fois que tu l’as ouverte — pratique en avion ou à l’étranger'
   ]},
   { v:'4.4', date:'2026-07-24', titre:'Des restaurants qui existent vraiment', items:[
@@ -5126,6 +5115,10 @@ function acoMapCreate(el){
           img.className = 'am-tile';
           img.alt = '';
           img.decoding = 'async';
+          /* CORS explicite : sans ça la réponse est « opaque », le service
+             worker ne peut ni la lire ni la juger valide, et la carte hors-ligne
+             ne marche pas. OpenStreetMap renvoie bien Access-Control-Allow-Origin. */
+          img.crossOrigin = 'anonymous';
           img.addEventListener('load', () => img.classList.add('on'), { once: true });
           img.src = `https://tile.openstreetmap.org/${z}/${xw}/${y}.png`;
           elTiles.appendChild(img);
@@ -5361,8 +5354,15 @@ async function buildProjectMap(){
   const map = mapEngine();
   if(!t){
     bar.innerHTML = '';
-    $('#mapNote').textContent = '';
-    if(map) map.setMarks([]), map.setLine([]), map.setView(48.8566, 2.3522, 5);
+    const n = $('#mapNote'); if(n) n.textContent = '';
+    const w = $('#mapWarn'); if(w) w.textContent = '';
+    const z = $('#zoneStops'); if(z) z.innerHTML = '';
+    window._projRoutes = [];
+    if(map){
+      map.setMarks([]);
+      map.setLine([]);
+      map.setView(48.8566, 2.3522, 5);
+    }
     return;
   }
   /* les positions des lieux : déjà là si le plan est récent, sinon on les
@@ -5527,8 +5527,6 @@ document.addEventListener('click', e => {
     if(idx >= 0) map.openMark(idx);
     return;
   }
-  if(e.target.id === 'mapPrev') mapStep(-1);
-  if(e.target.id === 'mapNext') mapStep(1);
   if(e.target.id === 'mapLocate') mapLocate();
 });
 /* flèches ← → sur la bande des jours */
