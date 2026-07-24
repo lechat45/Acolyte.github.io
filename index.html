@@ -228,15 +228,16 @@
 
   <!-- ================= CATÉGORIE : CARTE ================= -->
   <section class="hidden" id="catMap">
-    <div class="mapbar">
-      <button class="rt nav" id="mapPrev" aria-label="Trajet précédent">‹</button>
-      <select id="mapDay" aria-label="Choisir le trajet à afficher"></select>
-      <button class="rt nav" id="mapNext" aria-label="Trajet suivant">›</button>
-      <button class="rt" id="mapLocate" title="Centrer sur ma position" aria-label="Centrer sur ma position">🧭</button>
-      <a class="rt" id="projOpen" href="#" target="_blank" rel="noopener">↗ Maps</a>
+    <!-- une pastille par journée : c'est la navigation principale de la carte -->
+    <div class="mapbar" id="mapDays" role="tablist" aria-label="Journées du voyage"></div>
+    <div class="mapnote">
+      <span class="mapnote-txt" id="mapNote"></span>
+      <span class="mapnote-warn" id="mapWarn"></span>
+      <button class="rt" id="mapLocate">🧭 Où je suis</button>
+      <a class="rt" id="projOpen" href="#" target="_blank" rel="noopener">↗ M'y guider</a>
     </div>
+    <div id="projMap"></div>
     <div class="mapstops" id="zoneStops"></div>
-    <iframe id="projMap" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
     <div class="cat-empty" id="mapEmpty" hidden>
       <div class="cat-empty-card">
         <div class="ce-emoji">🗺️</div>
@@ -592,6 +593,8 @@
     </div>
     <div class="game-hud">
       <span id="gameScore">Score : 0</span>
+      <span id="gameCombo" class="game-combo" hidden></span>
+      <span id="gameLevel">Niveau 1</span>
       <span id="gameLives">❤️❤️❤️</span>
     </div>
     <div class="game-stage">
@@ -604,6 +607,8 @@
       </div>
       <div class="game-start" id="gameStart">
         <p>🖱️ Clique sur les astéroïdes pour les détruire avant qu'ils touchent la Terre.</p>
+        <p class="game-tip">💡 Enchaîne sans laisser passer d'astéroïde : ton multiplicateur monte. Les dorés valent triple.</p>
+        <p class="game-best" id="gameBest" hidden></p>
         <div class="game-start-btns">
           <button class="btn" id="gameGo" style="justify-content:center">🚀 Commencer</button>
           <button class="btn ghost sm" id="gameCustomBtn" style="justify-content:center">🎨 Personnaliser</button>

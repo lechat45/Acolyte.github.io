@@ -820,6 +820,26 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .carbon-card .carbon-big strong{font-family:'Sora',sans-serif;font-size:1.15rem}
 .carbon-card .carbon-big span{font-size:.8rem;color:var(--txt-2);font-weight:600}
 
+/* ===== Cartes restaurant ===== */
+.resto-card{
+  margin-bottom:12px;padding:14px;
+  background:var(--secondary);border:3px solid var(--stroke);border-radius:var(--r-md);
+  box-shadow:3px 3px 0 var(--stroke);
+}
+.rc-top{display:flex;align-items:flex-start;gap:11px}
+.rc-emo{font-size:1.6rem;line-height:1;flex-shrink:0}
+.rc-id{flex:1;min-width:0}
+.rc-id h4{margin:0;font-size:1rem;line-height:1.25}
+.rc-meta{font-size:.76rem;font-weight:600;color:var(--txt-2);margin-top:3px}
+.rc-price{
+  flex-shrink:0;font:900 .76rem 'Sora',sans-serif;
+  background:var(--primary);color:#101010;padding:5px 10px;
+  border:2px solid var(--stroke);border-radius:10px;text-align:center;max-width:130px;line-height:1.25;
+}
+.rc-dish{margin:10px 0 0;font-size:.87rem;line-height:1.45}
+.rc-why{margin:5px 0 0;font-size:.85rem;line-height:1.5;color:var(--txt-2)}
+.rc-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+
 /* ===== Cartes de logement ===== */
 .hotel-card{
   position:relative;margin-bottom:12px;padding:14px;
@@ -1112,8 +1132,19 @@ textarea:focus-visible,[tabindex]:focus-visible,.chip:focus-visible{
 .gc-swatch:hover{background:rgba(255,255,255,.16)}
 .gc-swatch.on{border-color:var(--primary);background:rgba(255,230,0,.18)}
 .gc-swatch svg{display:block}
-.game-hud{display:flex;justify-content:space-between;align-items:center;
+.game-hud{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
   font:900 .9rem 'Sora',sans-serif;margin:0 0 8px}
+/* multiplicateur de combo : n'apparaît qu'au-delà de ×1 */
+.game-combo{
+  background:var(--primary);color:#101010;padding:2px 10px;border-radius:20px;
+  border:2px solid var(--stroke);font-size:.82rem;
+  animation:comboPop .25s cubic-bezier(.2,1.6,.4,1) both;
+}
+.game-combo[hidden]{display:none}
+@keyframes comboPop{from{transform:scale(.6)}to{transform:scale(1)}}
+.game-tip{font-size:.8rem;opacity:.85}
+.game-best{font:900 .88rem 'Sora',sans-serif;color:var(--primary)}
+.game-best[hidden]{display:none}
 .game-stage{position:relative;border:3px solid var(--stroke);border-radius:12px;overflow:hidden;box-shadow:4px 4px 0 var(--stroke);background:#0b1026}
 #gameCanvas{display:block;width:100%;height:auto;cursor:crosshair;touch-action:none}
 .game-over,.game-start{
@@ -1278,21 +1309,6 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 .catnav button.on .ico{transform:translateY(-1px) scale(1.1)}
 
 
-.maproutes{
-  display:flex;gap:10px;overflow-x:auto;padding:4px 4px 12px;margin:-4px -4px 8px;
-  scrollbar-width:none;
-}
-.maproutes::-webkit-scrollbar{display:none}
-.maproutes .rt{
-  flex-shrink:0;border:3px solid var(--stroke);background:var(--secondary);
-  border-radius:var(--r-md);box-shadow:4px 4px 0 var(--stroke);
-  font-family:'Sora',sans-serif;font-weight:900;font-size:.72rem;text-transform:uppercase;
-  padding:10px 14px;cursor:pointer;color:var(--txt);white-space:nowrap;
-  transition:all .1s ease;text-decoration:none;display:inline-flex;align-items:center;gap:6px;
-}
-.maproutes .rt.on{background:var(--primary);transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--stroke)}
-.maproutes .rt:not(.on):hover{transform:translate(-1px,-1px);box-shadow:5px 5px 0 var(--stroke)}
-
 /* Plan clé en main : 3 stats compactes */
 .plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .plan-stat{border:3px solid var(--stroke);background:var(--secondary);padding:12px;box-shadow:3px 3px 0 var(--stroke);display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:104px;overflow:hidden}
@@ -1315,13 +1331,14 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 #catMap{position:fixed;left:0;right:0;top:0;bottom:72px;z-index:30;background:var(--bg)}
 #catMap.hidden{display:none}
 /* la carte devient une vraie « fiche » encadrée, cohérente avec le reste du site */
-#catMap iframe{
-  position:absolute;top:66px;left:12px;
-  width:calc(100% - 24px);height:calc(100% - 80px);
+#catMap #projMap{
+  position:absolute;top:110px;left:12px;
+  width:calc(100% - 24px);height:calc(100% - 124px);
   border:4px solid var(--stroke);border-radius:16px;
-  box-shadow:5px 5px 0 var(--stroke);background:#fff;
+  box-shadow:5px 5px 0 var(--stroke);
+  background:#e9e5dc;                 /* teinte des tuiles OSM avant chargement */
+  overflow:hidden;
 }
-#catMap .maproutes{position:absolute;top:10px;left:10px;right:10px;z-index:2;margin:0;padding:4px}
 /* ===== États vides (carte + profil) ===== */
 .cat-empty{
   position:absolute;top:66px;left:12px;right:12px;bottom:14px;z-index:6;
@@ -1331,7 +1348,7 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   background-image:radial-gradient(rgba(0,0,0,0.06) 1.5px, transparent 1.5px);background-size:22px 22px;
 }
 .cat-empty[hidden]{display:none}
-#catMap.empty .mapbar,#catMap.empty #projMap,#catMap.empty .mapstops{display:none}
+#catMap.empty .mapbar,#catMap.empty .mapnote,#catMap.empty #projMap,#catMap.empty .mapstops{display:none}
 #catMap.empty .cat-empty{top:12px}
 .cat-empty-card{text-align:center;max-width:330px;padding:24px}
 .cat-empty-card .ce-emoji{font-size:3rem;line-height:1;margin-bottom:10px}
@@ -1587,35 +1604,104 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   .sb-track i{width:100%}
 }
 
-/* ===== Carte : sélecteur de trajet ===== */
+/* ===== Carte : bande des journées ===== */
 .mapbar{
   position:absolute;top:12px;left:12px;right:12px;z-index:5;
   display:flex;gap:8px;align-items:center;
+  overflow-x:auto;scrollbar-width:none;padding:2px;
 }
-.mapbar select{
-  flex:1;min-width:0;
-  font-family:'Sora',sans-serif;font-weight:900;font-size:.78rem;
-  padding:11px 12px;
-  background:var(--primary);color:#101010;
-  border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);border-radius:12px;
-  cursor:pointer;appearance:none;
-  background-image:linear-gradient(45deg,transparent 50%,#101010 50%),linear-gradient(135deg,#101010 50%,transparent 50%);
-  background-position:calc(100% - 18px) 50%, calc(100% - 12px) 50%;
-  background-size:6px 6px, 6px 6px;
-  background-repeat:no-repeat;
-  padding-right:34px;
-}
+.mapbar::-webkit-scrollbar{display:none}
 .mapbar .rt{
   flex-shrink:0;
   background:var(--secondary);color:var(--txt);
   border:3px solid var(--stroke);box-shadow:4px 4px 0 var(--stroke);border-radius:12px;
-  padding:11px 12px;font-family:'Sora',sans-serif;font-weight:900;font-size:.78rem;
+  padding:11px 14px;font-family:'Sora',sans-serif;font-weight:900;font-size:.78rem;
+  text-transform:uppercase;text-decoration:none;white-space:nowrap;cursor:pointer;
+}
+.mapbar .rt.on{background:var(--primary);color:#101010}
+.mapbar .rt:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--stroke)}
+
+/* La ligne de contexte : ce que raconte la journée + les deux actions */
+.mapnote{
+  position:absolute;top:64px;left:12px;right:12px;z-index:5;
+  display:flex;gap:8px;align-items:center;min-width:0;
+}
+.mapnote-txt{
+  flex:1;min-width:0;font-size:.8rem;font-weight:700;color:var(--txt-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.mapnote-warn{
+  flex-shrink:0;font-size:.66rem;font-weight:800;color:var(--danger);white-space:nowrap;
+}
+.mapnote-warn:empty{display:none}
+.mapnote .rt{
+  flex-shrink:0;
+  background:var(--secondary);color:var(--txt);
+  border:3px solid var(--stroke);box-shadow:3px 3px 0 var(--stroke);border-radius:10px;
+  padding:8px 10px;font-family:'Sora',sans-serif;font-weight:900;font-size:.7rem;
   text-decoration:none;white-space:nowrap;cursor:pointer;
 }
-.mapbar .rt:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--stroke)}
-.mapbar .rt.nav{padding:9px 13px;font-size:1.1rem;line-height:1}
+.mapnote .rt:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--stroke)}
 @media(max-width:560px){
-  .mapbar #projOpen{display:none}       /* petit écran : ‹ › + 🧭 suffisent */
+  .mapnote-txt{font-size:.72rem}
+  .mapnote .rt{padding:8px 9px;font-size:.66rem}
+}
+
+/* ===== Moteur de carte (tuiles OSM) =====
+   ⚠️ Les tuiles OSM sont TOUJOURS claires, y compris en thème sombre. Tout ce
+   qui se pose PAR-DESSUS doit donc utiliser une encre foncée fixe, jamais
+   var(--stroke) : en sombre celle-ci devient crème et disparaîtrait sur la
+   carte. C'est l'exception assumée à la règle des couleurs par variables. */
+.acomap{position:relative;overflow:hidden;touch-action:none;cursor:grab}
+.acomap.am-grab{cursor:grabbing}
+.am-tiles,.am-marks,.am-lines{position:absolute;top:0;left:0;right:0;bottom:0}
+.am-tile{
+  position:absolute;top:0;left:0;width:256px;height:256px;
+  opacity:0;transition:opacity .18s ease;will-change:transform;
+}
+.am-tile.on{opacity:1}
+:root.no-motion .am-tile{transition:none}
+@media(prefers-reduced-motion:reduce){ .am-tile{transition:none} }
+.am-lines{pointer-events:none;overflow:visible}
+.am-line-b{fill:none;stroke:#101010;stroke-width:9;stroke-linejoin:round;stroke-linecap:round}
+.am-line-f{fill:none;stroke:#FFE600;stroke-width:4;stroke-linejoin:round;stroke-linecap:round}
+.am-dash{fill:none;stroke:#101010;stroke-width:3.5;stroke-dasharray:8 7;stroke-linecap:round}
+.am-marks{pointer-events:none}
+.am-mark{
+  position:absolute;top:0;left:0;margin:-16px 0 0 -16px;
+  width:32px;height:32px;display:grid;place-items:center;padding:0;
+  border:3px solid #101010;box-shadow:2px 2px 0 #101010;border-radius:50%;
+  background:var(--primary);color:#101010;
+  font-family:'Sora',sans-serif;font-weight:900;font-size:.82rem;line-height:1;
+  cursor:pointer;pointer-events:auto;
+}
+.am-mark:active{transform-origin:center;box-shadow:0 0 0 #101010}
+.am-hotel{background:#22F5FF}
+.am-me{background:#FF5F5F;color:#fff}
+.am-start{background:#fff}
+.am-end{background:#6FBE5C}
+.am-pop{position:absolute;top:0;left:0;width:0;height:0;z-index:8}
+.am-pop-in{
+  position:absolute;bottom:24px;left:0;transform:translateX(-50%);
+  display:flex;align-items:center;gap:8px;white-space:nowrap;
+  background:#fff;color:#101010;
+  border:3px solid #101010;box-shadow:3px 3px 0 #101010;border-radius:10px;
+  padding:7px 10px;font-size:.76rem;font-weight:800;
+}
+.am-pop-in a{color:#101010;font-weight:900;font-size:.7rem;text-decoration:underline;white-space:nowrap}
+.am-zoom{position:absolute;top:10px;right:10px;z-index:7;display:flex;flex-direction:column;gap:6px}
+.am-zb{
+  width:34px;height:34px;display:grid;place-items:center;padding:0;
+  background:#fff;color:#101010;border:3px solid #101010;box-shadow:2px 2px 0 #101010;
+  border-radius:9px;font-family:'Sora',sans-serif;font-weight:900;font-size:1.05rem;
+  line-height:1;cursor:pointer;
+}
+.am-zb:active{transform:translate(2px,2px);box-shadow:0 0 0 #101010}
+.am-credit{
+  position:absolute;right:8px;bottom:6px;z-index:7;
+  background:rgba(255,255,255,.82);color:#101010;
+  font-size:.6rem;font-weight:700;text-decoration:none;
+  padding:2px 6px;border-radius:6px;
 }
 
 /* ===== Panneau Préférences ===== */
@@ -1698,7 +1784,8 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
 
 /* ===== Étapes du jour, sous la carte ===== */
 .mapstops{
-  position:absolute;left:24px;right:24px;bottom:26px;z-index:5;
+  /* remontées de quelques pixels pour ne pas recouvrir l'attribution OSM */
+  position:absolute;left:24px;right:24px;bottom:40px;z-index:5;
   display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding:2px;
 }
 .mapstops::-webkit-scrollbar{display:none}
@@ -1707,8 +1794,12 @@ input[type="datetime-local"]::-webkit-date-and-time-value{text-align:left;margin
   flex-shrink:0;display:flex;align-items:center;gap:6px;
   background:var(--secondary);color:var(--txt);text-decoration:none;
   border:3px solid var(--stroke);box-shadow:3px 3px 0 var(--stroke);
-  padding:8px 11px;font-weight:800;font-size:.78rem;white-space:nowrap;
+  padding:8px 11px;font-family:inherit;font-weight:800;font-size:.78rem;
+  white-space:nowrap;cursor:pointer;
 }
+/* étape que le relevé OSM n'a pas su situer : on la montre, en retrait */
+.stop.off{opacity:.55;cursor:not-allowed}
+.stop.off b{background:var(--secondary);color:var(--txt-2)}
 .stop b{
   background:var(--primary);color:#101010;
   width:20px;height:20px;display:grid;place-items:center;

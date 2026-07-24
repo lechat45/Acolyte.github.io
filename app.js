@@ -572,29 +572,54 @@ function openGame(){
   $('#gameOver').hidden = true;
   $('#gameCustom').hidden = true;
   $('#gameStart').hidden = false;
+  /* rappel du record personnel, s'il y en a un */
+  const b = $('#gameBest');
+  if(b){
+    let rec = 0; try{ rec = parseInt(localStorage.getItem('acolite_game_best'), 10) || 0; }catch(e){}
+    b.hidden = !rec;
+    b.textContent = rec ? '🏅 Ton record : ' + rec : '';
+  }
 }
 (function gameEngine(){
   const cv = $('#gameCanvas'); if(!cv) return;
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   const EARTH = { x: W / 2, y: H - 4, r: 34 };
-  let asts, parts, score, lives, spawnAcc, running, last, raf;
+  const LS_GAMEBEST = 'acolite_game_best';
+  const bestScore = () => { try{ return parseInt(localStorage.getItem(LS_GAMEBEST), 10) || 0; }catch(e){ return 0; } };
+  let asts, parts, texts, score, lives, spawnAcc, running, last, raf, combo, level, shake;
+
+  /* Multiplicateur : monte en enchaînant les tirs, retombe si la Terre est touchée. */
+  const mult = () => Math.min(5, 1 + Math.floor(combo / 4));
 
   function reset(){
-    asts = []; parts = []; score = 0; lives = 3; spawnAcc = 0; running = true; last = performance.now();
+    asts = []; parts = []; texts = []; score = 0; lives = 3; spawnAcc = 0;
+    combo = 0; level = 1; shake = 0;
+    running = true; last = performance.now();
     hud();
   }
   function hud(){
     $('#gameScore').textContent = 'Score : ' + score;
+    $('#gameLevel').textContent = 'Niveau ' + level;
     $('#gameLives').textContent = '❤️'.repeat(Math.max(0, lives)) || '💀';
+    const c = $('#gameCombo');
+    if(c){
+      const m = mult();
+      c.hidden = m <= 1;
+      c.textContent = '×' + m;
+    }
   }
   function spawn(){
     const r = 12 + Math.random() * 12;
     const x = r + Math.random() * (W - 2 * r);
     const speed = 34 + Math.min(90, score * 0.7) + Math.random() * 24;   /* accélère avec le score */
     const ang = Math.atan2(EARTH.y - 0, EARTH.x - x) + (Math.random() - 0.5) * 0.5;
-    asts.push({ x, y: -r, r, vx: Math.cos(ang) * speed, vy: Math.abs(Math.sin(ang) * speed) + 20, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 3 });
+    /* astéroïde doré : même taille et même vitesse (donc même difficulté),
+       il rapporte simplement plus de points */
+    const bonus = Math.random() < 0.09;
+    asts.push({ x, y: -r, r, bonus, vx: Math.cos(ang) * speed, vy: Math.abs(Math.sin(ang) * speed) + 20, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 3 });
   }
+  function popText(x, y, txt, col){ texts.push({ x, y, txt, col, life: .9 }); }
   function burst(x, y, col){
     for(let i = 0; i < 10; i++){
       const a = Math.random() * 6.28, s = 40 + Math.random() * 90;
@@ -613,7 +638,8 @@ function openGame(){
       const a = asts[i]; a.x += a.vx * dt; a.y += a.vy * dt; a.rot += a.vr * dt;
       const dx = a.x - EARTH.x, dy = a.y - EARTH.y;
       if(Math.hypot(dx, dy) < a.r + EARTH.r){        /* touche la Terre */
-        asts.splice(i, 1); lives--; hud(); burst(a.x, a.y, '#FF6B6B');
+        asts.splice(i, 1); lives--; combo = 0; shake = 0.35; hud();
+        burst(a.x, a.y, '#FF6B6B');
         EARTH.hit = 0.25;
         if(lives <= 0){ gameOver(); return; }
       } else if(a.y - a.r > H){ asts.splice(i, 1); }   /* sortie bas */
@@ -623,15 +649,30 @@ function openGame(){
       const p = parts[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
       if(p.life <= 0) parts.splice(i, 1);
     }
+    /* points flottants */
+    for(let i = texts.length - 1; i >= 0; i--){
+      const t = texts[i]; t.y -= 34 * dt; t.life -= dt;
+      if(t.life <= 0) texts.splice(i, 1);
+    }
+    /* niveau : repère de progression, calé sur le score */
+    const lv = 1 + Math.floor(score / 120);
+    if(lv !== level){ level = lv; hud(); }
     if(EARTH.hit) EARTH.hit = Math.max(0, EARTH.hit - dt);
+    if(shake > 0) shake = Math.max(0, shake - dt);
     draw();
     raf = requestAnimationFrame(loop);
   }
   function draw(){
-    /* fond spatial */
+    /* fond spatial (dessiné avant la secousse pour ne pas laisser de bord noir) */
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#0b1026'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = 'rgba(255,255,255,.7)';
     for(let i = 0; i < 40; i++){ const sx = (i * 71) % W, sy = (i * 43) % H; ctx.fillRect(sx, sy, 1.5, 1.5); }
+    /* secousse d'impact : tout le reste de la scène tremble un instant */
+    if(shake > 0){
+      const s = shake * 16;
+      ctx.setTransform(1, 0, 0, 1, (Math.random() - .5) * s, (Math.random() - .5) * s);
+    }
     /* Terre (skin cosmétique) */
     const P = planetSkin();
     ctx.save();
@@ -646,11 +687,16 @@ function openGame(){
     /* astéroïdes (skin cosmétique) */
     const S = astSkin();
     asts.forEach(a => {
+      const body = a.bonus ? '#FFD34D' : S.body;
+      const crater = a.bonus ? '#c8992a' : S.crater;
+      const stroke = a.bonus ? '#6b4c00' : S.stroke;
       ctx.save(); ctx.translate(a.x, a.y); ctx.rotate(a.rot);
+      if(a.bonus){ ctx.shadowColor = '#FFD34D'; ctx.shadowBlur = 14; }   /* le doré se repère au premier coup d'œil */
       ctx.beginPath(); ctx.arc(0, 0, a.r, 0, 6.29);
-      ctx.fillStyle = S.body; ctx.fill();
-      ctx.lineWidth = 2.5; ctx.strokeStyle = S.stroke; ctx.stroke();
-      ctx.fillStyle = S.crater;
+      ctx.fillStyle = body; ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 2.5; ctx.strokeStyle = stroke; ctx.stroke();
+      ctx.fillStyle = crater;
       ctx.beginPath(); ctx.arc(-a.r * .3, -a.r * .2, a.r * .3, 0, 6.29); ctx.fill();
       ctx.beginPath(); ctx.arc(a.r * .35, a.r * .25, a.r * .22, 0, 6.29); ctx.fill();
       ctx.restore();
@@ -658,6 +704,17 @@ function openGame(){
     /* particules */
     parts.forEach(p => { ctx.globalAlpha = Math.max(0, p.life * 2); ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, 3, 3); });
     ctx.globalAlpha = 1;
+    /* points gagnés, qui s'élèvent et s'effacent */
+    ctx.textAlign = 'center';
+    ctx.font = '900 17px Sora, system-ui, sans-serif';
+    texts.forEach(t => {
+      ctx.globalAlpha = Math.max(0, Math.min(1, t.life * 1.4));
+      ctx.fillStyle = t.col;
+      ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 3;
+      ctx.strokeText(t.txt, t.x, t.y); ctx.fillText(t.txt, t.x, t.y);
+    });
+    ctx.globalAlpha = 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
   function hit(e){
     if(!running) return;
@@ -667,15 +724,27 @@ function openGame(){
     for(let i = asts.length - 1; i >= 0; i--){
       const a = asts[i];
       if(Math.hypot(a.x - mx, a.y - my) < a.r + 6){
-        asts.splice(i, 1); score += 10; hud(); burst(a.x, a.y, '#FFE600'); return;
+        const m = mult();
+        const pts = (a.bonus ? 30 : 10) * m;
+        asts.splice(i, 1);
+        score += pts; combo++;
+        popText(a.x, a.y, '+' + pts + (m > 1 ? ' ×' + m : ''), a.bonus ? '#FFD34D' : '#FFE600');
+        hud(); burst(a.x, a.y, a.bonus ? '#FFD34D' : '#FFE600');
+        return;
       }
     }
+    combo = 0; hud();   /* tir dans le vide : le multiplicateur retombe */
   }
   cv.addEventListener('mousedown', hit);
   async function gameOver(){
     running = false; cancelAnimationFrame(raf);
-    $('#gameOverScore').textContent = 'Score : ' + score;
-    $('#gameOverTitle').textContent = score >= 150 ? '🏆 Terre sauvée… de justesse !' : '💥 Terre touchée !';
+    const avant = bestScore();
+    const record = score > avant;
+    if(record) lsSet(LS_GAMEBEST, String(score));
+    $('#gameOverScore').textContent = record
+      ? '🎉 Nouveau record : ' + score + ' !'
+      : 'Score : ' + score + '  ·  ton record : ' + avant;
+    $('#gameOverTitle').textContent = score >= 150 ? '🏆 Belle défense !' : '💥 Terre touchée !';
     $('#gameOver').hidden = false;
     submitAndShowLeaderboard(score);
   }
@@ -683,6 +752,13 @@ function openGame(){
     $('#gameStart').hidden = true; $('#gameOver').hidden = true; $('#gameCustom').hidden = true;
     reset(); raf = requestAnimationFrame(loop);
   }
+  /* Échap ferme le jeu et arrête la boucle (sinon elle tournerait dans le vide) */
+  document.addEventListener('keydown', e => {
+    if(e.key !== 'Escape') return;
+    if(!$('#ovGame')?.classList.contains('show')) return;
+    running = false; cancelAnimationFrame(raf);
+    $('#ovGame').classList.remove('show');
+  });
   /* --- Personnalisation : aperçus cliquables, purement cosmétiques --- */
   function astPreview(k){
     const s = AST_SKINS[k];
@@ -1243,7 +1319,9 @@ const OSM_STAY_KINDS = 'hotel|guest_house|hostel|apartment|chalet|motel';
 const OSM_STAY_FR = { hotel:'hôtel', guest_house:'chambre d’hôtes', hostel:'auberge',
                       apartment:'appartement', chalet:'chalet', motel:'motel' };
 async function osmStays(lat, lon, radiusM = 3500){
-  const ck = `osm_stay_${lat.toFixed(3)}_${lon.toFixed(3)}_${radiusM}`;
+  /* v2 : les relevés d'avant ne portaient pas de coordonnées, donc la carte ne
+     pouvait pas placer l'hôtel. Changer la clé force un relevé neuf. */
+  const ck = `osm_stay2_${lat.toFixed(3)}_${lon.toFixed(3)}_${radiusM}`;
   if(state.cache[ck]) return state.cache[ck];
   /* ce chemin touche RÉELLEMENT le réseau : c'est ici, et seulement ici,
      qu'on renonce en connexion dégradée. Le reste de loadHotels continue. */
@@ -1277,6 +1355,9 @@ async function osmStays(lat, lon, radiusM = 3500){
         nom: String(e.tags.name).slice(0, 80),
         type: OSM_STAY_FR[e.tags.tourism] || e.tags.tourism,
         etoiles: e.tags.stars ? +e.tags.stars : null,
+        /* on GARDE la position : c'est elle qui permet de poser l'hôtel sur la carte.
+           Sans ça on refaisait un géocodage approximatif alors qu'Overpass l'a déjà donnée. */
+        lat: +la.toFixed(5), lon: +lo.toFixed(5),
         km: +havKm(ref, { latitude: la, longitude: lo }).toFixed(2)
       };
     }).filter(Boolean)
@@ -1292,6 +1373,206 @@ function osmStayCtx(rows){
   const l = rows.map(h => `- ${h.nom} (${h.type}${h.etoiles ? `, ${h.etoiles}★` : ''}, à ${h.km} km du centre du quartier)`).join('\n');
   return `\nHÉBERGEMENTS RÉELS relevés sur OpenStreetMap autour du quartier visé (données vérifiées, pas d'invention) :\n${l}\n`
     + `Choisis EN PRIORITÉ dans cette liste. Tu ne peux proposer un établissement absent de la liste que si aucun ne convient au budget ou au type demandé — dans ce cas il doit être tout aussi réel et vérifiable.\n`;
+}
+
+/* ---- Restaurants RÉELS via OpenStreetMap ----
+   Même principe que les hébergements : l'IA choisira DANS cette liste au lieu
+   d'inventer des adresses qui n'existent pas (ou plus). */
+const OSM_FOOD_FR = { restaurant:'restaurant', cafe:'café', fast_food:'sur le pouce',
+                      bistro:'bistrot', pub:'pub', bar:'bar' };
+/* gamme de prix quand OSM la connaît (rarement renseignée, mais précieuse) */
+function osmPriceLabel(t){
+  const p = t.price_range || t['price:range'] || t.price || '';
+  if(/^\$+$|^€+$/.test(p)) return p.length <= 1 ? 'économique' : (p.length === 2 ? 'moyen' : 'élevé');
+  if(/cheap|budget|low/i.test(p)) return 'économique';
+  if(/moderate|mid/i.test(p)) return 'moyen';
+  if(/expensive|high/i.test(p)) return 'élevé';
+  return '';
+}
+async function osmFood(lat, lon, radiusM = 1800){
+  const ck = `osm_food2_${lat.toFixed(3)}_${lon.toFixed(3)}_${radiusM}`;   /* v2 : avec coordonnées */
+  if(state.cache[ck]) return state.cache[ck];
+  if(netSlow()) return [];      /* seul chemin réseau : on renonce si ça rame */
+  const q = `[out:json][timeout:20];nwr(around:${radiusM},${lat},${lon})`
+    + `[amenity~"^(restaurant|cafe|bistro)$"][name];out center 80;`;
+  let d = null;
+  for(const url of OVERPASS_URLS){
+    try{
+      const r = await fetchT(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(q)
+      }, netTimeout(12000));
+      if(r.status === 429 || r.status >= 500) continue;   /* quota : miroir, sans compter d'échec réseau */
+      if(!r.ok) return [];
+      d = await r.json();
+      break;
+    }catch(e){ _netFails++; }
+  }
+  if(!d) return [];
+  try{
+    const ref = { latitude: lat, longitude: lon };
+    const rows = (d.elements || []).map(e => {
+      const t = e.tags || {};
+      const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon;
+      if(la == null || lo == null || !t.name) return null;
+      return {
+        nom: String(t.name).slice(0, 80),
+        type: OSM_FOOD_FR[t.amenity] || t.amenity,
+        cuisine: t.cuisine ? String(t.cuisine).split(/[;,]/)[0].replace(/_/g, ' ').slice(0, 30) : '',
+        gamme: osmPriceLabel(t),
+        vege: t['diet:vegetarian'] === 'yes' || t['diet:vegan'] === 'yes',
+        lat: +la.toFixed(5), lon: +lo.toFixed(5),      /* gardées pour la carte */
+        km: +havKm(ref, { latitude: la, longitude: lo }).toFixed(2)
+      };
+    }).filter(Boolean)
+      .sort((a, b) => a.km - b.km)
+      .slice(0, 40);
+    state.cache[ck] = rows; save();
+    return rows;
+  }catch(e){ return []; }
+}
+/* Liste réelle mise en forme pour le prompt (vide = on n'ajoute rien) */
+function osmFoodCtx(rows){
+  if(!rows || !rows.length) return '';
+  const l = rows.map(r => `- ${r.nom} (${r.type}${r.cuisine ? ', ' + r.cuisine : ''}${r.gamme ? ', gamme ' + r.gamme : ''}${r.vege ? ', option végé' : ''}, à ${r.km} km)`).join('\n');
+  return `\nRESTAURANTS RÉELS relevés sur OpenStreetMap autour du quartier (données vérifiées) :\n${l}\n`
+    + `Tu dois choisir EXCLUSIVEMENT dans cette liste : n'invente AUCUN nom. Recopie le nom exactement.\n`;
+}
+
+/* ---- Lieux à visiter RÉELS via OpenStreetMap ----
+   Même ancrage que les hébergements et les restaurants, appliqué à l'étape 3.
+   L'intérêt est double : l'IA cesse d'inventer des monuments, ET chaque lieu
+   arrive avec sa position exacte — c'est ce qui rend la carte possible.
+   Le géocodeur d'Open-Meteo, lui, ne connaît que les villes. */
+const OSM_SIGHT_FR = {
+  attraction:'site', museum:'musée', gallery:'galerie', artwork:'œuvre', viewpoint:'point de vue',
+  zoo:'zoo', aquarium:'aquarium', theme_park:'parc d’attractions', castle:'château',
+  monument:'monument', memorial:'mémorial', ruins:'ruines', fort:'fort', city_gate:'porte',
+  archaeological_site:'site archéologique', park:'parc', garden:'jardin',
+  cathedral:'cathédrale', church:'église', basilica:'basilique', mosque:'mosquée',
+  synagogue:'synagogue', temple:'temple'
+};
+/* Interroge Overpass avec bascule sur le miroir. Un 429 est un quota, pas une
+   panne réseau : on change de serveur SANS incrémenter _netFails (sinon netSlow()
+   basculerait et couperait des chemins qui vont très bien). */
+async function overpass(q, ms = 14000){
+  for(const url of OVERPASS_URLS){
+    try{
+      const r = await fetchT(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(q)
+      }, netTimeout(ms));
+      if(r.status === 429 || r.status >= 500) continue;
+      if(!r.ok) return null;
+      return await r.json();
+    }catch(e){ _netFails++; }
+  }
+  return null;
+}
+async function osmSights(lat, lon, radiusM = 6000){
+  const ck = `osm_sight_${lat.toFixed(3)}_${lon.toFixed(3)}_${radiusM}`;
+  if(state.cache[ck]) return state.cache[ck];
+  if(netSlow()) return [];
+  const A = `(around:${radiusM},${lat},${lon})`;
+  const q = `[out:json][timeout:25];(`
+    + `nwr${A}[tourism~"^(attraction|museum|gallery|viewpoint|zoo|aquarium|theme_park)$"][name];`
+    + `nwr${A}[historic~"^(castle|monument|memorial|ruins|fort|city_gate|archaeological_site)$"][name];`
+    + `nwr${A}[leisure~"^(park|garden)$"][name][wikidata];`
+    + `nwr${A}[amenity=place_of_worship][name][wikidata];`
+    + `);out center 120;`;
+  const d = await overpass(q);
+  if(!d) return [];
+  try{
+    const ref = { latitude: lat, longitude: lon };
+    const vus = new Set();
+    const rows = (d.elements || []).map(e => {
+      const t = e.tags || {};
+      const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon;
+      if(la == null || lo == null || !t.name) return null;
+      const nom = String(t.name).slice(0, 80);
+      if(vus.has(nom)) return null;                      /* une même église taguée 2 fois */
+      vus.add(nom);
+      const brut = t.tourism || t.historic || t.leisure
+        || (t.building && /cathedral|church|basilica|mosque|synagogue|temple/.test(t.building) ? t.building : '')
+        || 'site';
+      return {
+        nom,
+        type: OSM_SIGHT_FR[brut] || 'site',
+        /* wikidata/wikipedia = le lieu est documenté, donc notable : c'est le
+           seul signal de notoriété gratuit dont on dispose */
+        connu: !!(t.wikidata || t.wikipedia),
+        lat: +la.toFixed(5), lon: +lo.toFixed(5),
+        km: +havKm(ref, { latitude: la, longitude: lo }).toFixed(2)
+      };
+    }).filter(Boolean)
+      /* les lieux documentés d'abord, puis les plus centraux */
+      .sort((a, b) => (b.connu - a.connu) || (a.km - b.km))
+      .slice(0, 45);
+    state.cache[ck] = rows; save();
+    return rows;
+  }catch(e){ return []; }
+}
+function osmSightCtx(rows){
+  if(!rows || !rows.length) return '';
+  const l = rows.map(r => `- ${r.nom} (${r.type}, à ${r.km} km du centre)`).join('\n');
+  return `\nLIEUX RÉELS relevés sur OpenStreetMap autour de la destination (données vérifiées) :\n${l}\n`
+    + `Pour "etape3_lieux" et pour les "lieux" de chaque journée, choisis EN PRIORITÉ dans cette liste et RECOPIE le nom EXACTEMENT tel qu'il est écrit ci-dessus (c'est ce qui permet de les placer sur la carte). Tu ne peux citer un lieu absent de la liste que s'il est incontournable et tout aussi réel.\n`;
+}
+
+/* --- Du nom d'un lieu à sa position ---------------------------------------
+   Les noms viennent de l'IA : accents, articles et casse varient. On compare
+   sur une forme réduite plutôt que caractère par caractère. */
+function normPlace(s){
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/^(le |la |les |l'|the |il |la |el )/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+/* Retrouve un lieu dans le relevé OSM : égalité d'abord, puis inclusion —
+   « Colisée » doit matcher « Colisée (Amphithéâtre Flavien) ». */
+function matchSight(nom, rows){
+  const n = normPlace(nom);
+  if(n.length < 3) return null;
+  let m = rows.find(r => normPlace(r.nom) === n);
+  if(m) return m;
+  m = rows.find(r => { const x = normPlace(r.nom); return x.length >= 4 && (x.includes(n) || n.includes(x)); });
+  return m || null;
+}
+
+/* Remplit plan._geo : { "nom du lieu": [lat, lon] }.
+   Stocké SUR le plan (et non dans le cache OSM) pour trois raisons : ça survit
+   à la synchro (slimTrip garde le plan), ça survit hors-ligne, et ça reste
+   minuscule — deux nombres par lieu, pas d'image. */
+async function ensurePlanGeo(force = false){
+  const d = state.cache.plan, t = state.trip;
+  if(!d || !t) return null;
+  const attendus = (d.programme || []).flatMap(j => (j.lieux || []).filter(Boolean));
+  d._geo = d._geo || {};
+  const manquants = attendus.filter(l => !d._geo[l]);
+  if(!manquants.length && !force) return d._geo;
+  const g = await geocode();
+  if(!g) return d._geo;
+  const rows = await osmSights(+g.latitude, +g.longitude);
+  if(rows.length){
+    for(const l of manquants){
+      const m = matchSight(l, rows);
+      if(m) d._geo[l] = [m.lat, m.lon];
+    }
+  }
+  /* l'hôtel : sa position vient du relevé des hébergements, déjà en cache */
+  const hn = d.logement?.nom || state.cache.hotels?.hotels?.[0]?.nom;
+  if(hn && !d._geoHotel){
+    const stays = Object.keys(state.cache).filter(k => k.startsWith('osm_stay2_'))
+      .flatMap(k => state.cache[k] || []);
+    const m = stays.length ? matchSight(hn, stays) : null;
+    if(m) d._geoHotel = { nom: m.nom, lat: m.lat, lon: m.lon };
+  }
+  save();
+  return d._geo;
 }
 
 /* code pays ISO à partir du nom FR du pays (pour biaiser le géocodage) */
@@ -1473,6 +1754,17 @@ async function loadPlan(force = false){
   /* budget de temps : les données réelles ne doivent JAMAIS bloquer le plan
      (réseau lent/coupé → on continue sans elles au bout de 12 s) */
   const realCtx = await Promise.race([ realData(), new Promise(r => setTimeout(() => r(''), 12000)) ]);
+  /* Lieux réels : même ancrage que les hébergements et les restaurants. Il sert
+     deux fois — l'IA cesse d'inventer des monuments, et les noms recopiés tels
+     quels se retrouvent ensuite sur la carte avec leur position exacte.
+     Comme le reste des données réelles, ça ne doit JAMAIS bloquer le plan. */
+  const sightCtx = await Promise.race([
+    (async () => {
+      const g = await geocode();
+      return g ? osmSightCtx(await osmSights(+g.latitude, +g.longitude)) : '';
+    })().catch(() => ''),
+    new Promise(r => setTimeout(() => r(''), 9000))
+  ]);
   /* Le transport et le logement ont DÉJÀ été trouvés à l'étape 2 : on les garde et on approfondit */
   const dejaTrouve = (t.transport_conseille || t.logement_quartier)
     ? `\nCHOIX DÉJÀ VALIDÉS À L'ÉTAPE 2 (le voyageur les a acceptés en choisissant ce voyage — GARDE-LES, sauf si les données réelles les contredisent) :
@@ -1487,7 +1779,7 @@ TON TRAVAIL : approfondir (détails pratiques, programme jour par jour, budget p
     ? `CO₂ ESTIMÉ pour ${Math.round(_dist)} km (aller-retour, par personne, calcul réel) : avion ~${Math.round(_dist*2*CO2_G_KM.avion/1000)} kg · train ~${Math.round(_dist*2*CO2_G_KM.train/1000)} kg · voiture ~${Math.round(_dist*2*CO2_G_KM.voiture/Math.max(1,_A)/1000)} kg (partagée entre ${_A} voyageur(s)).`
     : '';
   const prompt = `Tu es Acolite, organisateur de voyage expert. ${ctx()}
-${realCtx}${co2Ctx ? co2Ctx + '\n' : ''}${dejaTrouve}
+${realCtx}${sightCtx}${co2Ctx ? co2Ctx + '\n' : ''}${dejaTrouve}
 Destination validée : ${t.nom} (${t.pays})${t.ville_aeroport ? ` · point d'arrivée probable : ${t.ville_aeroport}${t.iata ? ' (' + t.iata + ')' : ''}` : ''}.
 RÈGLE ABSOLUE : ne cite que des quartiers, lieux et établissements RÉELS et vérifiables. En cas de doute, omets plutôt qu'inventer.
 Si les données réelles incluent un trajet en train ou un taux de change, appuie ton choix de transport et tes conversions de budget DESSUS.
@@ -1542,6 +1834,9 @@ Le programme couvre toute la durée (${p.days || 'du séjour'}), 1 ligne par jou
     state.cache.plan = d; save();
     renderPlan(d);
     syncModeFromPlan(d);
+    /* on résout la position des lieux tout de suite : la carte doit être prête
+       quand le voyageur l'ouvre, sans bouton à presser ni attente */
+    ensurePlanGeo().catch(() => {});
   }catch(e){
     const msg = e.name === 'AbortError' ? 'Délai dépassé — le serveur IA n’a pas répondu.' : 'Organisation impossible pour le moment.';
     if(e.message!=='NO_KEY') zone.innerHTML = errHTML(msg, 'plan');
@@ -3092,38 +3387,78 @@ const _e9 = $('#btnFoodGo'); if(_e9) _e9.onclick = () => { delete state.cache.fo
 async function loadFood(){
   const zone = $('#zoneFood');
   if(state.cache.food){ renderFood(state.cache.food); return; }
-  zone.innerHTML = loaderHTML('Dégustation en cours…');
+  zone.innerHTML = loaderHTML('Je cherche les bonnes tables du quartier…');
   const t = state.trip;
   const fb = $('#foodBud').value, ft = $('#foodType').value;
-  const prompt = `Tu es Acolite, fin gourmet local de ${t.nom} (${t.pays}). ${ctx()}
-${fb ? 'Budget resto souhaité : ' + fb + '.' : ''}
+
+  /* On ancre l'IA sur des adresses qui EXISTENT (relevé OpenStreetMap du
+     quartier). Sans ça elle produit des noms plausibles mais fantômes. */
+  let foodCtx = '', osmRows = [];
+  try{
+    const q = state.cache.plan?.logement?.quartier;
+    const g = (q && await geoPlace(`${q} ${t.nom}`, ccFor(t.pays))) || await geoPlace(cleanPlace(t.nom), ccFor(t.pays));
+    if(g){
+      osmRows = await osmFood(+g.latitude, +g.longitude);
+      foodCtx = osmFoodCtx(osmRows);
+    }
+  }catch(e){}
+
+  const prompt = `Tu es Acolite, fin connaisseur des bonnes tables de ${t.nom} (${t.pays}). ${ctx()}${foodCtx}
+${fb ? 'Budget souhaité : ' + fb + '.' : ''}
 ${ft ? 'Envie : ' + ft + '.' : ''}
+OBJECTIF : des adresses où l'on mange BIEN sans payer le prix touristique.
+RÈGLES :
+- Écarte les terrasses des rues très touristiques et les abords immédiats des monuments.
+- Privilégie les endroits où mangent les habitants : cuisine locale, salle modeste, menu du midi.
+- Donne une fourchette de prix CHIFFRÉE et réaliste (ex : « 12–18 € le plat »), jamais « pas cher ».
+- Le « pourquoi » doit être concret et vérifiable (ex : « menu du midi à 14 €, cantine de quartier »), jamais un adjectif creux.
+${osmRows.length ? '- N\'INVENTE AUCUN NOM : choisis uniquement dans la liste réelle ci-dessus et recopie le nom exactement.' : '- Ne cite que des établissements dont tu es certain qu\'ils existent encore.'}
 Réponds UNIQUEMENT en JSON :
 {"restos":[
- {"nom":"nom réel et connu du resto","emoji":"1 emoji plat","style":"ex: trattoria familiale","plat_star":"le plat à commander","budget":"€ / €€ / €€€","quartier":"quartier","pourquoi":"1 phrase qui donne faim"}
+ {"nom":"nom exact","emoji":"1 emoji plat","style":"ex: trattoria de quartier","plat_star":"le plat à commander","budget":"fourchette chiffrée, ex 12–18 € le plat","quartier":"quartier","pourquoi":"1 phrase concrète et vérifiable"}
 ]}
-Exactement 5 restos VARIÉS, vraiment réputés à ${t.nom}.`;
+Exactement 5 adresses VARIÉES (gammes et cuisines différentes).`;
   try{
     const d = await gemini(prompt);
+    /* garde-fou : si l'IA a inventé un nom absent du relevé, on l'écarte */
+    if(osmRows.length && Array.isArray(d?.restos)){
+      const reels = new Set(osmRows.map(r => r.nom.toLowerCase()));
+      const gardes = d.restos.filter(r => r && r.nom && reels.has(String(r.nom).toLowerCase()));
+      if(gardes.length) d.restos = gardes;
+    }
+    d._verifies = osmRows.length > 0;
     state.cache.food = d; save();
     renderFood(d);
-  }catch(e){ if(e.message!=='NO_KEY') zone.innerHTML = errHTML('Chargement des restos impossible.'); }
+  }catch(e){ if(e.message!=='NO_KEY') zone.innerHTML = errHTML('Impossible de charger les adresses pour le moment.', 'food'); }
 }
+_retryFns.food = () => { delete state.cache.food; save(); loadFood(); };
 function renderFood(d){
   const t = state.trip;
-  $('#zoneFood').innerHTML = (d.restos||[]).map(r=>`
-    <div class="item">
-      <div class="emo">${esc(r.emoji||'🍽️')}</div>
-      <div style="flex:1">
-        <h4>${esc(r.nom)} <span class="tag" style="margin-left:6px">${esc(r.style)}</span></h4>
-        <p><strong>À commander :</strong> ${esc(r.plat_star)} — ${esc(r.pourquoi)}</p>
-        <div class="row" style="margin-top:8px">
-          <span class="tl-loc" data-loc="${esc(r.nom)}">📍 Carte</span>
-          <a class="tl-loc" href="https://www.google.com/maps/search/${encodeURIComponent(r.nom + ' ' + t.nom)}" target="_blank" rel="noopener">↗ Google Maps</a>
+  const rows = d.restos || [];
+  if(!rows.length){
+    $('#zoneFood').innerHTML = `<p class="hint" style="margin:0">Aucune adresse trouvée pour ce quartier — essaie une autre envie.</p>`;
+    return;
+  }
+  $('#zoneFood').innerHTML = rows.map(r=>`
+    <div class="resto-card">
+      <div class="rc-top">
+        <span class="rc-emo">${esc(r.emoji||'🍽️')}</span>
+        <div class="rc-id">
+          <h4>${esc(r.nom)}</h4>
+          <div class="rc-meta">${r.style ? esc(r.style) : ''}${r.quartier ? ` · 📍 ${esc(r.quartier)}` : ''}</div>
         </div>
+        <span class="rc-price">${esc(r.budget || '—')}</span>
       </div>
-      <div class="side"><span class="tag money">${esc(r.budget)}</span><p style="font-size:.72rem;margin-top:5px">${esc(r.quartier)}</p></div>
-    </div>`).join('');
+      ${r.plat_star ? `<p class="rc-dish">🍴 À commander : <strong>${esc(r.plat_star)}</strong></p>` : ''}
+      ${r.pourquoi ? `<p class="rc-why">${esc(r.pourquoi)}</p>` : ''}
+      <div class="rc-acts">
+        <span class="tl-loc" data-loc="${esc(r.nom)}">📍 Voir sur la carte</span>
+        <a class="tl-loc" href="https://www.google.com/maps/search/${encodeURIComponent(r.nom + ' ' + t.nom)}" target="_blank" rel="noopener">↗ Avis &amp; horaires</a>
+      </div>
+    </div>`).join('')
+    + `<p class="hint" style="margin-top:12px">${d._verifies
+        ? '✅ Adresses <strong>relevées sur OpenStreetMap</strong> : elles existent bel et bien. Acolite a choisi parmi elles.'
+        : 'Sélection d\'Acolite — vérifie les horaires avant de t\'y rendre.'} Les avis se consultent en un clic.</p>`;
 }
 
 /* ============================================================
@@ -4164,6 +4499,22 @@ function enterApp(){
    (date au format AAAA-MM-JJ) et incrémente CACHE dans sw.js.
 ============================================================ */
 const CHANGELOG = [
+  { v:'4.5', date:'2026-07-24', titre:'Une carte qui montre enfin ta journée', items:[
+    '🗺️ Chaque journée se lit d’un coup d’œil : tes étapes numérotées, reliées dans l’ordre de la balade, avec ton hôtel repéré',
+    '📍 « Où je suis » te dit à quelle distance est ta prochaine étape et en combien de minutes à pied',
+    '🧭 Tes lieux ne sont plus inventés : ils sont relevés sur le terrain, donc toujours au bon endroit sur la carte',
+    '📴 La carte reste consultable sans connexion une fois que tu l’as ouverte — pratique en avion ou à l’étranger'
+  ]},
+  { v:'4.4', date:'2026-07-24', titre:'Des restaurants qui existent vraiment', items:[
+    '🍽️ Acolite relève les vraies adresses du quartier et choisit parmi elles — fini les restaurants inventés',
+    '💶 Il vise le bon rapport qualité/prix : cuisine locale, menu du midi, loin des pièges à touristes',
+    '🍴 Chaque adresse indique le plat à commander, une fourchette de prix chiffrée et pourquoi elle vaut le détour'
+  ]},
+  { v:'4.3', date:'2026-07-24', titre:'Le jeu monte d’un cran', items:[
+    '🔥 Enchaîne les tirs sans laisser passer d’astéroïde : ton multiplicateur grimpe jusqu’à ×5',
+    '✨ Astéroïdes dorés qui rapportent triple, points qui s’envolent, niveaux et secousse à l’impact',
+    '🏅 Ton record personnel est gardé, et Échap ferme le jeu'
+  ]},
   { v:'4.2', date:'2026-07-24', titre:'Un jeu personnalisable et un transport enfin clair', items:[
     '🎨 Le jeu « Défends la Terre » est plus grand et personnalisable : change le style des astéroïdes et de la planète (sans changer la difficulté)',
     '🚆 L’onglet Transport est réécrit : ce que tu prends, pourquoi, le prix et l’impact climat — en clair',
@@ -4700,136 +5051,491 @@ function searchBar(on, first){
   }
 }
 
-/* --- Carte du projet : sélecteur de trajet + carte plein cadre --- */
-async function projRoute(route){
-  const frame = $('#projMap');
-  if(!frame) return;
-  const t = state.trip || {};
-  const q = state.cache.plan?.logement?.quartier;
+/* ============================================================
+   MOTEUR DE CARTE — tuiles OpenStreetMap, sans aucune librairie
+   ------------------------------------------------------------
+   Pourquoi maison plutôt qu'une librairie : l'iframe d'OSM ne pose qu'UN
+   marqueur, elle ne pouvait donc jamais montrer une journée entière. Et une
+   librairie se charge depuis un CDN, indisponible en avion — or « consultable
+   hors-ligne » est la promesse du produit. Ici les tuiles sont de simples
+   <img> : le service worker sait les garder, et la CSP les autorise déjà.
+   Projection Web Mercator, la même que celle des tuiles.
+============================================================ */
+const AM_TS = 256, AM_ZMIN = 3, AM_ZMAX = 18;
+function amProject(lat, lon, z){
+  const s = AM_TS * Math.pow(2, z);
+  const la = Math.max(-85.0511, Math.min(85.0511, +lat || 0)) * Math.PI / 180;
+  return {
+    x: ((+lon || 0) + 180) / 360 * s,
+    y: (1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * s
+  };
+}
+function amUnproject(x, y, z){
+  const s = AM_TS * Math.pow(2, z);
+  const n = Math.PI - 2 * Math.PI * y / s;
+  return {
+    lat: 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))),
+    lon: x / s * 360 - 180
+  };
+}
+/* minutes de marche pour une distance à vol d'oiseau (5 km/h, +25 % de détours) */
+const amWalkMin = km => Math.max(1, Math.round(km * 1.25 / 5 * 60));
+const amDist = km => km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 
-  /* On tente, dans l'ordre : la ville-étape du jour (multi-bases) → le quartier →
-     la ville de l'aéroport → la ville → le pays. Le géocodeur connaît mal les monuments. */
-  const raw = route.walk
-    ? [route.ville, q, t.ville_aeroport, t.nom, t.pays]
-    : [t.ville_aeroport, t.nom, t.pays];
-  const essais = [...new Set(raw.map(cleanPlace).filter(Boolean))];
-  const cc = ccFor(t.pays);
-  let g = null;
-  for(const nom of essais.filter(Boolean)){
-    const ck = 'geo_' + cc + '_' + nom;
-    if(state.cache[ck]){ g = state.cache[ck]; break; }
-    const r = await geoPlace(nom, cc);
-    if(r){
-      g = { lat:+r.latitude, lon:+r.longitude };
-      state.cache[ck] = g; save();
-      break;
+function acoMapCreate(el){
+  el.classList.add('acomap');
+  el.innerHTML = `<div class="am-tiles"></div>
+    <svg class="am-lines" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+    <div class="am-marks"></div>
+    <div class="am-pop" hidden></div>
+    <div class="am-zoom">
+      <button type="button" class="am-zb" data-amz="1" title="Zoomer" aria-label="Zoomer">+</button>
+      <button type="button" class="am-zb" data-amz="-1" title="Dézoomer" aria-label="Dézoomer">−</button>
+    </div>
+    <a class="am-credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>`;
+
+  const elTiles = el.querySelector('.am-tiles');
+  const elLines = el.querySelector('.am-lines');
+  const elMarks = el.querySelector('.am-marks');
+  const elPop   = el.querySelector('.am-pop');
+
+  const M = {
+    center: { lat: 48.8566, lon: 2.3522 },
+    zoom: 12,
+    marks: [],          /* { lat, lon, kind, n, nom } */
+    line: [],           /* [[lat,lon], …] */
+    dash: [],           /* trait pointillé (position → prochaine étape) */
+    tiles: new Map(),
+    raf: 0
+  };
+
+  /* ---- tuiles ---- */
+  function drawTiles(w, h, z, ox, oy){
+    const n = Math.pow(2, z);
+    const x0 = Math.floor(ox / AM_TS), x1 = Math.floor((ox + w) / AM_TS);
+    const y0 = Math.max(0, Math.floor(oy / AM_TS)), y1 = Math.min(n - 1, Math.floor((oy + h) / AM_TS));
+    const garde = new Set();
+    for(let x = x0; x <= x1; x++){
+      for(let y = y0; y <= y1; y++){
+        const xw = ((x % n) + n) % n;
+        const k = `${z}:${xw}:${y}:${x}`;
+        garde.add(k);
+        let img = M.tiles.get(k);
+        if(!img){
+          img = new Image();
+          img.className = 'am-tile';
+          img.alt = '';
+          img.decoding = 'async';
+          img.addEventListener('load', () => img.classList.add('on'), { once: true });
+          img.src = `https://tile.openstreetmap.org/${z}/${xw}/${y}.png`;
+          elTiles.appendChild(img);
+          M.tiles.set(k, img);
+        }
+        img.style.transform = `translate3d(${Math.round(x * AM_TS - ox)}px,${Math.round(y * AM_TS - oy)}px,0)`;
+      }
+    }
+    for(const [k, img] of M.tiles){
+      if(!garde.has(k)){ img.remove(); M.tiles.delete(k); }
     }
   }
-  if(!g){
-    frame.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-10,35,30,60&layer=mapnik';
-    $('#zoneStops').innerHTML = '';
+
+  /* ---- marqueurs : le DOM n'est reconstruit que si la liste change ---- */
+  function buildMarks(){
+    elMarks.innerHTML = M.marks.map((m, i) => {
+      const lbl = m.kind === 'stop' ? String(m.n)
+        : m.kind === 'hotel' ? '🏨' : m.kind === 'me' ? '📍'
+        : m.kind === 'start' ? '🏠' : m.kind === 'end' ? '🎯' : '•';
+      return `<button type="button" class="am-mark am-${esc(m.kind)}" data-ammark="${i}"
+        title="${esc(m.nom || '')}" aria-label="${esc(m.nom || '')}">${esc(lbl)}</button>`;
+    }).join('');
+  }
+  function placeMarks(w, h, z, ox, oy){
+    const els = elMarks.children;
+    for(let i = 0; i < M.marks.length; i++){
+      const m = M.marks[i], node = els[i];
+      if(!node) continue;
+      const p = amProject(m.lat, m.lon, z);
+      node.style.transform = `translate3d(${Math.round(p.x - ox)}px,${Math.round(p.y - oy)}px,0)`;
+    }
+  }
+
+  /* ---- traits ---- */
+  function drawLines(w, h, z, ox, oy){
+    elLines.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    elLines.setAttribute('width', w);
+    elLines.setAttribute('height', h);
+    const pts = arr => arr.map(([la, lo]) => {
+      const p = amProject(la, lo, z);
+      return `${Math.round(p.x - ox)},${Math.round(p.y - oy)}`;
+    }).join(' ');
+    let html = '';
+    if(M.line.length > 1){
+      /* deux traits superposés : le noir épais dessous fait la bordure dure
+         du style néo-brutaliste, le jaune passe par-dessus */
+      html += `<polyline class="am-line-b" points="${pts(M.line)}"/>`
+           +  `<polyline class="am-line-f" points="${pts(M.line)}"/>`;
+    }
+    if(M.dash.length > 1) html += `<polyline class="am-dash" points="${pts(M.dash)}"/>`;
+    elLines.innerHTML = html;
+  }
+
+  function draw(){
+    M.raf = 0;
+    const w = el.clientWidth, h = el.clientHeight;
+    if(!w || !h) return;
+    const z = Math.round(M.zoom);
+    const c = amProject(M.center.lat, M.center.lon, z);
+    const ox = c.x - w / 2, oy = c.y - h / 2;
+    drawTiles(w, h, z, ox, oy);
+    drawLines(w, h, z, ox, oy);
+    placeMarks(w, h, z, ox, oy);
+    if(!elPop.hidden && elPop._i != null){
+      const m = M.marks[elPop._i];
+      if(m){
+        const p = amProject(m.lat, m.lon, z);
+        elPop.style.transform = `translate3d(${Math.round(p.x - ox)}px,${Math.round(p.y - oy)}px,0)`;
+      }
+    }
+  }
+  function schedule(){ if(!M.raf) M.raf = requestAnimationFrame(draw); }
+
+  /* ---- zoom autour d'un point de l'écran (curseur ou pincement) ---- */
+  function zoomAt(cx, cy, d){
+    const r = el.getBoundingClientRect();
+    const z0 = Math.round(M.zoom);
+    const z1 = Math.max(AM_ZMIN, Math.min(AM_ZMAX, z0 + d));
+    if(z1 === z0) return;
+    const px = cx - r.left, py = cy - r.top;
+    const c0 = amProject(M.center.lat, M.center.lon, z0);
+    const g = amUnproject(c0.x - r.width / 2 + px, c0.y - r.height / 2 + py, z0);
+    const p1 = amProject(g.lat, g.lon, z1);
+    M.zoom = z1;
+    M.center = amUnproject(p1.x - px + r.width / 2, p1.y - py + r.height / 2, z1);
+    hidePop();
+    draw();
+  }
+
+  /* ---- déplacement ---- */
+  let drag = null;
+  const pts = new Map();
+  let pinch = 0;
+  el.addEventListener('pointerdown', e => {
+    if(e.target.closest('.am-zb, .am-credit, .am-mark')) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if(pts.size === 2){ drag = null; pinch = pinchDist(); return; }
+    drag = { x: e.clientX, y: e.clientY, moved: 0 };
+    try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    el.classList.add('am-grab');
+  });
+  function pinchDist(){
+    const [a, b] = [...pts.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+  el.addEventListener('pointermove', e => {
+    if(pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if(pts.size === 2 && pinch){
+      const d = pinchDist();
+      const [a, b] = [...pts.values()];
+      if(d / pinch > 1.55){ zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, 1); pinch = d; }
+      else if(d / pinch < 0.65){ zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, -1); pinch = d; }
+      return;
+    }
+    if(!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    drag.x = e.clientX; drag.y = e.clientY;
+    const z = Math.round(M.zoom);
+    const c = amProject(M.center.lat, M.center.lon, z);
+    M.center = amUnproject(c.x - dx, c.y - dy, z);
+    schedule();
+  });
+  function endPointer(e){
+    pts.delete(e.pointerId);
+    if(pts.size < 2) pinch = 0;
+    if(drag){ drag = null; el.classList.remove('am-grab'); }
+  }
+  el.addEventListener('pointerup', endPointer);
+  el.addEventListener('pointercancel', endPointer);
+  el.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
+  el.addEventListener('dblclick', e => {
+    if(e.target.closest('.am-zb, .am-credit')) return;
+    zoomAt(e.clientX, e.clientY, 1);
+  });
+  el.addEventListener('click', e => {
+    const zb = e.target.closest('.am-zb');
+    if(zb){
+      const r = el.getBoundingClientRect();
+      zoomAt(r.left + r.width / 2, r.top + r.height / 2, +zb.dataset.amz);
+      return;
+    }
+    const mk = e.target.closest('.am-mark');
+    if(mk){ showPop(+mk.dataset.ammark); return; }
+    hidePop();
+  });
+
+  /* ---- bulle d'un lieu : le nom, et de quoi s'y faire guider ---- */
+  function showPop(i){
+    const m = M.marks[i];
+    if(!m || !m.nom){ hidePop(); return; }
+    const url = `https://www.google.com/maps/search/${encodeURIComponent(m.nom + (m.ville ? ', ' + m.ville : ''))}`;
+    elPop._i = i;
+    elPop.hidden = false;
+    elPop.innerHTML = `<span class="am-pop-in"><b>${esc(m.nom)}</b>`
+      + `<a href="${esc(url)}" target="_blank" rel="noopener">↗ M'y guider</a></span>`;
+    draw();
+  }
+  function hidePop(){ elPop.hidden = true; elPop._i = null; }
+
+  if(window.ResizeObserver) new ResizeObserver(() => schedule()).observe(el);
+
+  return {
+    el,
+    setView(lat, lon, z){ M.center = { lat: +lat, lon: +lon }; if(z) M.zoom = z; draw(); },
+    panTo(lat, lon, z){
+      M.center = { lat: +lat, lon: +lon };
+      if(z) M.zoom = Math.max(AM_ZMIN, Math.min(AM_ZMAX, z));
+      hidePop(); draw();
+    },
+    setMarks(list){ M.marks = list || []; hidePop(); buildMarks(); draw(); },
+    setLine(line, dash){ M.line = line || []; M.dash = dash || []; draw(); },
+    openMark(i){ showPop(i); },
+    /* cadre la carte sur un ensemble de points, avec une marge en pixels */
+    fit(points, pad){
+      const pl = (points || []).filter(p => p && isFinite(p[0]) && isFinite(p[1]));
+      if(!pl.length) return;
+      if(pl.length === 1){ M.center = { lat: pl[0][0], lon: pl[0][1] }; M.zoom = 15; draw(); return; }
+      const las = pl.map(p => p[0]), los = pl.map(p => p[1]);
+      const N = Math.max(...las), S = Math.min(...las), E = Math.max(...los), W = Math.min(...los);
+      const w = Math.max(40, el.clientWidth - (pad || 40) * 2);
+      const h = Math.max(40, el.clientHeight - (pad || 40) * 2);
+      let z = AM_ZMAX;
+      for(; z > AM_ZMIN; z--){
+        const a = amProject(N, W, z), b = amProject(S, E, z);
+        if(Math.abs(b.x - a.x) <= w && Math.abs(b.y - a.y) <= h) break;
+      }
+      M.zoom = z;
+      /* centre calculé en pixels : la moyenne des latitudes décale en Mercator */
+      const a = amProject(N, W, z), b = amProject(S, E, z);
+      M.center = amUnproject((a.x + b.x) / 2, (a.y + b.y) / 2, z);
+      draw();
+    },
+    draw
+  };
+}
+
+/* ============================================================
+   CARTE DU VOYAGE — une journée = des étapes numérotées reliées
+============================================================ */
+let _acoMap = null;
+let _mapIdx = 0;
+
+function mapEngine(){
+  const box = $('#projMap');
+  if(!box) return null;
+  if(!_acoMap) _acoMap = acoMapCreate(box);
+  return _acoMap;
+}
+
+/* position du point de départ (ville du voyageur), mise en cache */
+async function fromCoords(){
+  const nom = cleanPlace(state.prefs?.from || '');
+  if(!nom) return null;
+  const ck = 'geo_from_' + nom.toLowerCase();
+  if(state.cache[ck]) return state.cache[ck];
+  const g = await geoPlace(nom);
+  if(!g) return null;
+  const v = { lat: +g.latitude, lon: +g.longitude };
+  state.cache[ck] = v; save();
+  return v;
+}
+
+/* Construit la liste des trajets : l'aller, puis une entrée par journée.
+   Chaque étape porte sa position réelle — c'est ce qui permet le tracé. */
+async function buildProjectMap(){
+  const t = state.trip, p = state.prefs || {}, c = state.cache;
+  const bar = $('#mapDays');
+  if(!bar) return;
+  const map = mapEngine();
+  if(!t){
+    bar.innerHTML = '';
+    $('#mapNote').textContent = '';
+    if(map) map.setMarks([]), map.setLine([]), map.setView(48.8566, 2.3522, 5);
     return;
   }
-  const d = route.walk ? 0.014 : 0.06;
-  frame.src = `https://www.openstreetmap.org/export/embed.html`
-    + `?bbox=${g.lon - d * 1.6},${g.lat - d},${g.lon + d * 1.6},${g.lat + d}`
-    + `&layer=mapnik&marker=${g.lat},${g.lon}`;
+  /* les positions des lieux : déjà là si le plan est récent, sinon on les
+     relève maintenant (un voyage créé avant cette version) */
+  await ensurePlanGeo().catch(() => null);
 
-  /* Les étapes du jour, cliquables : chacune ouvre le lieu dans Maps */
+  const plan = c.plan;
+  const geo = plan?._geo || {};
+  const g = await geocode();
+  const villeLL = g ? { lat: +g.latitude, lon: +g.longitude } : null;
+  const hotel = plan?._geoHotel || null;
+  const routes = [];
+
+  /* ---- l'aller : un vrai trait départ → arrivée, pas un point isolé ---- */
+  const dep = await fromCoords();
+  if(villeLL){
+    const ico = ({ plane: '✈️', train: '🚆', car: '🚗' })[state.mode] || '✈️';
+    const modeNom = ({ plane: 'avion', train: 'train', car: 'voiture' })[state.mode] || 'avion';
+    const km = c._real?.dist;
+    const co2 = km ? Math.round(km * 2 * (CO2_G_KM[modeNom === 'avion' ? 'avion' : modeNom === 'train' ? 'train' : 'voiture']) / 1000) : null;
+    routes.push({
+      label: `${ico} Aller`,
+      note: `${p.from || 'Départ'} → ${t.nom}`
+        + (km ? ` · ${km} km` : '')
+        + (co2 ? ` · ~${co2} kg de CO₂ aller-retour` : ''),
+      marks: [
+        ...(dep ? [{ lat: dep.lat, lon: dep.lon, kind: 'start', nom: p.from || 'Départ' }] : []),
+        { lat: villeLL.lat, lon: villeLL.lon, kind: 'end', nom: t.nom, ville: t.pays }
+      ],
+      line: dep ? [[dep.lat, dep.lon], [villeLL.lat, villeLL.lon]] : [],
+      stops: []
+    });
+  }
+
+  /* ---- une entrée par journée ---- */
+  (plan?.programme || []).forEach(j => {
+    const lieux = (j.lieux || []).filter(Boolean);
+    if(!lieux.length) return;
+    const ville = j.base || t.nom;
+    const stops = lieux.map(l => {
+      const ll = geo[l];
+      return { nom: l, ville, lat: ll ? ll[0] : null, lon: ll ? ll[1] : null };
+    });
+    const situes = stops.filter(s => s.lat != null);
+    const marks = situes.map((s, i) => ({ lat: s.lat, lon: s.lon, kind: 'stop', n: i + 1, nom: s.nom, ville }));
+    if(hotel) marks.push({ lat: hotel.lat, lon: hotel.lon, kind: 'hotel', nom: hotel.nom, ville });
+    routes.push({
+      label: `J${j.jour}`,
+      note: `${j.base ? j.base + ' · ' : ''}${j.resume || ''}`,
+      marks,
+      line: situes.map(s => [s.lat, s.lon]),
+      stops,
+      ville
+    });
+  });
+
+  window._projRoutes = routes;
+  _mapIdx = Math.min(_mapIdx, Math.max(0, routes.length - 1));
+  bar.innerHTML = routes.map((r, i) =>
+    `<button type="button" class="rt${i === _mapIdx ? ' on' : ''}" data-mapday="${i}">${esc(r.label)}</button>`
+  ).join('');
+  showRoute(_mapIdx);
+}
+
+/* Affiche un trajet : marqueurs, tracé, cadrage, et la bande d'étapes */
+function showRoute(i){
+  const routes = window._projRoutes || [];
+  const r = routes[i];
+  const map = mapEngine();
+  if(!r || !map) return;
+  _mapIdx = i;
+  $$('#mapDays .rt').forEach((b, k) => b.classList.toggle('on', k === i));
+
+  map.setMarks(r.marks || []);
+  map.setLine(r.line || []);
+  const pts = (r.marks || []).map(m => [m.lat, m.lon]);
+  if(pts.length) map.fit(pts, 56);
+
+  const note = $('#mapNote');
+  if(note){
+    const sans = (r.stops || []).filter(s => s.lat == null).length;
+    note.textContent = r.note || '';
+    note.title = r.note || '';
+    /* on le dit plutôt que de laisser croire que la journée est vide */
+    const av = $('#mapWarn');
+    if(av) av.textContent = sans ? `${sans} lieu${sans > 1 ? 'x' : ''} non localisé${sans > 1 ? 's' : ''}` : '';
+  }
+  renderStops(r);
+  updateProjOpen(r);
+}
+
+/* La bande d'étapes : cliquer recentre la carte au lieu de quitter l'app */
+function renderStops(r){
   const stops = $('#zoneStops');
   if(!stops) return;
-  if(!route.walk || !route.stops.length){
-    stops.innerHTML = '';
-    return;
-  }
-  stops.innerHTML = route.stops.map((s, i) => {
-    const nom = s.split(',')[0];
-    const url = `https://www.google.com/maps/search/${encodeURIComponent(s)}`;
-    return `<a class="stop" href="${esc(url)}" target="_blank" rel="noopener"><b>${i + 1}</b> ${esc(nom)}</a>`;
+  if(!(r.stops || []).length){ stops.innerHTML = ''; return; }
+  stops.innerHTML = r.stops.map((s, i) => {
+    const situe = s.lat != null;
+    return `<button type="button" class="stop${situe ? '' : ' off'}" data-mapstop="${i}"
+      title="${esc(s.nom)}"><b>${i + 1}</b> ${esc(String(s.nom).split(',')[0])}</button>`;
   }).join('');
 }
 
-function buildProjectMap(){
-  const t = state.trip, p = state.prefs || {}, c = state.cache;
-  const sel = $('#mapDay');
-  if(!sel) return;
-  if(!t){
-    sel.innerHTML = '<option>Aucun voyage en cours</option>';
-    sel.disabled = true;
-    $('#projMap').src = 'https://www.openstreetmap.org/export/embed.html?bbox=-10,35,30,60&layer=mapnik';
-    if(navigator.geolocation){
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          const la = pos.coords.latitude, lo = pos.coords.longitude;
-          $('#projMap').src = `https://www.openstreetmap.org/export/embed.html?bbox=${lo-0.05},${la-0.03},${lo+0.05},${la+0.03}&layer=mapnik&marker=${la},${lo}`;
-        },
-        () => {}, { timeout: 6000 }
-      );
-    }
-    return;
-  }
-  sel.disabled = false;
-  const routes = [];
-  routes.push({ label:`${({plane:'✈️',train:'🚆',car:'🚗'})[state.mode]||'✈️'} Aller — ${p.from || 'départ'} → ${t.nom}`,
-                saddr: p.from || 'Paris', stops:[`${t.nom}, ${t.pays}`], walk:false });
-  const base = c.plan?.logement?.quartier ? `${c.plan.logement.quartier}, ${t.nom}` : `${t.nom}, ${t.pays}`;
-  const days = (c.plan?.programme || []).map(x => ({ jour:x.jour, resume:x.resume, lieux:x.lieux || [], base:x.base }));
-  days.forEach(x => {
-    /* multi-bases : les lieux du jour se rattachent à SA ville-étape, pas au nom de l'itinéraire */
-    const ville = x.base || t.nom;
-    const lieux = (x.lieux || []).filter(Boolean).map(l => `${l}, ${ville}`).slice(0, 8);
-    if(lieux.length){
-      routes.push({
-        label: `🗓️ Jour ${x.jour} — ${x.base ? x.base + ' · ' : ''}${String(x.resume || '').slice(0, 26)}`,
-        saddr: x.base ? `${x.base}` : base, stops: lieux, walk: true, ville: x.base || ''
-      });
-    }
-  });
-  window._projRoutes = routes;
-  sel.innerHTML = routes.map((r, i) => `<option value="${i}">${esc(r.label)}</option>`).join('');
-  sel.value = '0';
-  const r0 = routes[0];
-  projRoute(r0);
-  updateProjOpen(r0);
-}
 function updateProjOpen(r){
   const a = $('#projOpen');
-  if(a) a.href = 'https://www.google.com/maps/dir/' + [r.saddr, ...r.stops].map(encodeURIComponent).join('/');
+  if(!a) return;
+  const noms = (r.stops || []).map(s => `${s.nom}, ${s.ville || ''}`);
+  const pts = noms.length ? noms : (r.marks || []).map(m => m.nom).filter(Boolean);
+  a.href = 'https://www.google.com/maps/dir/' + pts.map(encodeURIComponent).join('/');
 }
-document.addEventListener('change', e => {
-  if(e.target.id !== 'mapDay') return;
-  const r = (window._projRoutes || [])[+e.target.value];
-  if(!r) return;
-  projRoute(r);
-  updateProjOpen(r);
-});
-/* ‹ › : passer au trajet précédent/suivant sans ouvrir la liste */
+
 function mapStep(dir){
-  const sel = $('#mapDay'), routes = window._projRoutes || [];
-  if(!sel || sel.disabled || routes.length < 2) return;
-  const i = (+sel.value + dir + routes.length) % routes.length;
-  sel.value = String(i);
-  projRoute(routes[i]);
-  updateProjOpen(routes[i]);
+  const routes = window._projRoutes || [];
+  if(routes.length < 2) return;
+  showRoute((_mapIdx + dir + routes.length) % routes.length);
 }
-/* 🧭 : centre la carte sur la position réelle du voyageur (pratique sur place) */
+
+/* 🧭 : ta position ET la prochaine étape — sur place, c'est la seule
+   question qui compte. On trace le pointillé jusqu'à l'étape la plus proche. */
 function mapLocate(){
-  if(!navigator.geolocation){ toast('Géolocalisation indisponible sur cet appareil'); return; }
+  const map = mapEngine();
+  if(!navigator.geolocation || !map){ toast('Géolocalisation indisponible sur cet appareil'); return; }
   toast('🧭 Recherche de ta position…');
-  navigator.geolocation.getCurrentPosition(
-    pos => {
-      const la = pos.coords.latitude, lo = pos.coords.longitude, d = 0.008;
-      $('#projMap').src = `https://www.openstreetmap.org/export/embed.html?bbox=${lo-d*1.6},${la-d},${lo+d*1.6},${la+d}&layer=mapnik&marker=${la},${lo}`;
+  navigator.geolocation.getCurrentPosition(pos => {
+    const me = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+    const r = (window._projRoutes || [])[_mapIdx];
+    const situes = (r?.stops || []).filter(s => s.lat != null);
+    const marks = (r?.marks || []).filter(m => m.kind !== 'me').concat([{ ...me, kind: 'me', nom: 'Toi' }]);
+    map.setMarks(marks);
+    if(!situes.length){
+      map.setLine(r?.line || []);
+      map.panTo(me.lat, me.lon, 15);
       toast('📍 Te voilà !');
-    },
-    () => toast('Position refusée ou introuvable'),
-    { timeout: 8000 }
-  );
+      return;
+    }
+    /* l'étape la plus proche : c'est « et maintenant ? » répondu en un chiffre */
+    let best = null, bestKm = Infinity;
+    for(const s of situes){
+      const km = havKm({ latitude: me.lat, longitude: me.lon }, { latitude: s.lat, longitude: s.lon });
+      if(km < bestKm){ bestKm = km; best = s; }
+    }
+    map.setLine(r.line || [], [[me.lat, me.lon], [best.lat, best.lon]]);
+    map.fit([[me.lat, me.lon], [best.lat, best.lon]], 70);
+    toast(`📍 Tu es à ${amDist(bestKm)} de ${String(best.nom).split(',')[0]} — ${amWalkMin(bestKm)} min à pied`);
+  }, () => toast('Position refusée ou introuvable'), { timeout: 8000, enableHighAccuracy: true });
 }
+
 document.addEventListener('click', e => {
+  const day = e.target.closest('[data-mapday]');
+  if(day){ showRoute(+day.dataset.mapday); return; }
+  const st = e.target.closest('[data-mapstop]');
+  if(st){
+    const r = (window._projRoutes || [])[_mapIdx];
+    const s = (r?.stops || [])[+st.dataset.mapstop];
+    if(!s) return;
+    if(s.lat == null){ toast(`« ${String(s.nom).split(',')[0]} » n’a pas pu être localisé`); return; }
+    const map = mapEngine();
+    if(!map) return;
+    map.panTo(s.lat, s.lon, 16);
+    /* on ouvre la bulle du marqueur correspondant pour faire le lien visuel */
+    const idx = (r.marks || []).findIndex(m => m.kind === 'stop' && m.nom === s.nom);
+    if(idx >= 0) map.openMark(idx);
+    return;
+  }
   if(e.target.id === 'mapPrev') mapStep(-1);
   if(e.target.id === 'mapNext') mapStep(1);
   if(e.target.id === 'mapLocate') mapLocate();
+});
+/* flèches ← → sur la bande des jours */
+document.addEventListener('keydown', e => {
+  if(!e.target.closest?.('#mapDays')) return;
+  if(e.key === 'ArrowRight'){ e.preventDefault(); mapStep(1); $('#mapDays .rt.on')?.focus(); }
+  if(e.key === 'ArrowLeft'){ e.preventDefault(); mapStep(-1); $('#mapDays .rt.on')?.focus(); }
 });
 
 /* --- Profil : infos + stats + paramètres --- */
